@@ -8,6 +8,10 @@ import os
 import sys
 from pathlib import Path
 
+# ── 项目元信息 ────────────────────────────────────────────────────
+VERSION = "0.1.0"
+"""应用版本号，用于健康检查和 API 响应。"""
+
 # ── 项目路径 ──────────────────────────────────────────────────────
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / "data"
@@ -45,9 +49,22 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/langchain_app",
 )
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+"""数据库连接池大小，默认 10。"""
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+"""数据库连接池最大溢出数，默认 20。"""
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "paperrag")
 REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL_SECONDS", "300"))
+
+# ── CORS 与安全 ──────────────────────────────────────────────────
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+ALLOWED_ORIGINS = (
+    ["*"]
+    if _raw_origins == "*"
+    else [o.strip() for o in _raw_origins.split(",")]
+)
+"""CORS 允许的来源。逗号分隔列表，或 * 表示全部允许（开发模式）。"""
 
 # ── 认证配置 ──────────────────────────────────────────────────────
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "replace-with-strong-random-secret")
@@ -55,6 +72,8 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 ADMIN_INVITE_CODE = os.getenv("ADMIN_INVITE_CODE", "paperrag-admin-2026")
 PASSWORD_PBKDF2_ROUNDS = int(os.getenv("PASSWORD_PBKDF2_ROUNDS", "310000"))
+MIN_PASSWORD_LENGTH = int(os.getenv("MIN_PASSWORD_LENGTH", "8"))
+"""密码最小长度，默认 8。设为 0 可禁用检查（开发环境）。"""
 
 # ── BM25 稀疏统计 ─────────────────────────────────────────────────
 BM25_STATE_PATH = os.getenv("BM25_STATE_PATH", str(DATA_DIR / "bm25_state.json"))

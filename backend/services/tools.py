@@ -6,17 +6,14 @@
   1. get_current_weather: 调用高德地图天气 API 获取实时天气 / 天气预报。
   2. search_knowledge_base: 调用 RAG 流水线执行混合检索（密集 + 稀疏向量）。
 
-全局状态管理：
-  - _LAST_RAG_CONTEXT: 存储最近一次 RAG 检索的上下文（含 rag_trace）。
-  - _KNOWLEDGE_TOOL_CALLS_THIS_TURN: 限制每轮对话中知识库工具调用次数。
-  - _RAG_STEP_QUEUE / _RAG_STEP_LOOP: 用于流式对话时跨线程推送 RAG 步骤。
-
-跨线程安全设计：
-  emit_rag_step 通过 call_soon_threadsafe 将 RAG 步骤推入 asyncio.Queue，
-  使得运行在线程池中的同步工具也能向主事件循环中的流式输出管道推送事件。
+状态管理使用 contextvars 替代模块级全局变量，确保：
+  - asyncio 多任务间隔离（每个请求有独立上下文）
+  - 跨线程安全（contextvars 自动传播到线程池）
+  - 无需 global 关键字，类型检查更友好
 """
 
 import asyncio
+import contextvars
 from typing import Optional
 
 import requests
@@ -24,33 +21,39 @@ from langchain_core.tools import tool
 
 from backend.core.config import AMAP_WEATHER_API, AMAP_API_KEY
 from backend.core.logging_config import get_logger
-from backend.rag.rag_pipeline import run_rag_graph
 
 logger = get_logger(__name__)
 
-# ── 全局状态变量（进程级单例） ───────────────────────────────────────
+# ── contextvars 上下文变量（替代进程级全局变量） ────────────────────
 
-_LAST_RAG_CONTEXT: Optional[dict] = None
-"""最近一次 RAG 检索的上下文（包含 rag_trace 等追踪信息）。"""
+_rag_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "_rag_context_var", default=None
+)
+"""最近一次 RAG 检索的上下文（包含 rag_trace 等追踪信息），按请求隔离。"""
 
-_KNOWLEDGE_TOOL_CALLS_THIS_TURN: int = 0
-"""当前轮次中 search_knowledge_base 工具的调用次数，用于限流。"""
+_knowledge_calls_var: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "_knowledge_calls_var", default=0
+)
+"""当前轮次中 search_knowledge_base 工具的调用次数，按请求隔离。"""
 
-_RAG_STEP_QUEUE = None
-"""RAG 步骤队列（asyncio.Queue 或其代理），由 agent 模块在流式对话前设置。"""
+_rag_step_queue_var: contextvars.ContextVar = contextvars.ContextVar(
+    "_rag_step_queue_var", default=None
+)
+"""RAG 步骤队列（asyncio.Queue 或其代理），按请求隔离。"""
 
-_RAG_STEP_LOOP = None
-"""当前 asyncio 事件循环引用，用于跨线程安全调度。"""
+_rag_step_loop_var: contextvars.ContextVar = contextvars.ContextVar(
+    "_rag_step_loop_var", default=None
+)
+"""当前 asyncio 事件循环引用，按请求隔离。"""
 
 
 def _set_last_rag_context(context: dict) -> None:
-    """设置最近一次 RAG 检索上下文（内部函数）。
+    """设置最近一次 RAG 检索上下文（当前请求上下文内）。
 
     Args:
         context: 包含 rag_trace 等字段的上下文字典。
     """
-    global _LAST_RAG_CONTEXT
-    _LAST_RAG_CONTEXT = context
+    _rag_context_var.set(context)
 
 
 def get_last_rag_context(clear: bool = True) -> Optional[dict]:
@@ -64,21 +67,19 @@ def get_last_rag_context(clear: bool = True) -> Optional[dict]:
     Returns:
         RAG 上下文字典，无则返回 None。
     """
-    global _LAST_RAG_CONTEXT
-    context = _LAST_RAG_CONTEXT
+    context = _rag_context_var.get()
     if clear:
-        _LAST_RAG_CONTEXT = None
+        _rag_context_var.set(None)
     return context
 
 
 def reset_tool_call_guards() -> None:
     """每轮对话开始时重置工具调用计数。
 
-    应由 Agent 主循环在每次用户请求前调用，
+    当前请求上下文中重置计数器，
     确保 search_knowledge_base 的限制在新一轮对话中重新计数。
     """
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
+    _knowledge_calls_var.set(0)
 
 
 def set_rag_step_queue(queue) -> None:
@@ -91,16 +92,14 @@ def set_rag_step_queue(queue) -> None:
         queue: asyncio.Queue 实例或实现了 put_nowait 的代理对象。
                传 None 表示清除队列引用（停止推送）。
     """
-    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP
-    _RAG_STEP_QUEUE = queue
+    _rag_step_queue_var.set(queue)
     if queue:
         try:
-            _RAG_STEP_LOOP = asyncio.get_running_loop()
+            _rag_step_loop_var.set(asyncio.get_running_loop())
         except RuntimeError:
-            # 不在事件循环中运行时的 fallback
-            _RAG_STEP_LOOP = asyncio.get_event_loop()
+            _rag_step_loop_var.set(asyncio.get_event_loop())
     else:
-        _RAG_STEP_LOOP = None
+        _rag_step_loop_var.set(None)
 
 
 def emit_rag_step(icon: str, label: str, detail: str = "") -> None:
@@ -114,14 +113,13 @@ def emit_rag_step(icon: str, label: str, detail: str = "") -> None:
         label: 步骤简短描述（如 "混合检索", "重排序"）。
         detail: 步骤详细信息（如 "召回 30 条候选"）。
     """
-    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP
-    if _RAG_STEP_QUEUE is not None and _RAG_STEP_LOOP is not None:
+    queue = _rag_step_queue_var.get()
+    loop = _rag_step_loop_var.get()
+    if queue is not None and loop is not None:
         step = {"icon": icon, "label": label, "detail": detail}
         try:
-            if not _RAG_STEP_LOOP.is_closed():
-                _RAG_STEP_LOOP.call_soon_threadsafe(
-                    _RAG_STEP_QUEUE.put_nowait, step
-                )
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(queue.put_nowait, step)
         except Exception:
             logger.debug("emit_rag_step 推送失败", exc_info=True)
 
@@ -232,19 +230,19 @@ def search_knowledge_base(query: str) -> str:
         格式化后的检索结果字符串，包含来源文档、页码和文本内容。
         若未检索到相关文档，返回提示信息。
     """
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-
-    # 每轮最多调用一次的限制守卫
-    if _KNOWLEDGE_TOOL_CALLS_THIS_TURN >= 1:
+    # 每轮最多调用一次的限制守卫（基于 contextvars，请求隔离）
+    calls = _knowledge_calls_var.get()
+    if calls >= 1:
         return (
             "TOOL_CALL_LIMIT_REACHED: search_knowledge_base has already been called once in this turn. "
             "Use the existing retrieval result and provide the final answer directly."
         )
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN += 1
+    _knowledge_calls_var.set(calls + 1)
 
     logger.info("知识库检索开始: query='%s'", query[:100])
 
-    # 运行 RAG 流水线
+    # 运行 RAG 流水线（延迟导入，避免与 rag_pipeline 的 import 产生循环依赖）
+    from backend.rag.rag_pipeline import run_rag_graph  # noqa: C0415
     rag_result = run_rag_graph(query)
 
     docs = rag_result.get("docs", []) if isinstance(rag_result, dict) else []

@@ -26,7 +26,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-from backend.core.config import DATABASE_URL
+from backend.core.config import DATABASE_URL, DB_POOL_SIZE, DB_MAX_OVERFLOW
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,9 +34,14 @@ logger = get_logger(__name__)
 # ── 数据库引擎 ──────────────────────────────────────────────────────
 # pool_pre_ping=True: 每次从连接池取出连接前先发一个 ping 探测，
 # 确保连接未被服务端断开（避免 "connection closed" 错误）。
+# pool_recycle=3600: 每小时回收连接，防止长连接被数据库断开。
+# pool_size / max_overflow: 连接池大小，通过环境变量配置。
 engine = create_engine(
     DATABASE_URL,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
     pool_pre_ping=True,
+    pool_recycle=3600,
 )
 logger.info(f"数据库引擎已创建: {repr(engine.url)}")
 

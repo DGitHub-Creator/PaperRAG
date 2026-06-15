@@ -55,7 +55,7 @@ from backend.core.auth import (
     require_admin,
     resolve_role,
 )
-from backend.core.config import UPLOAD_DIR, INGESTED_STATE_PATH, DATA_DIR
+from backend.core.config import UPLOAD_DIR, INGESTED_STATE_PATH, DATA_DIR, MIN_PASSWORD_LENGTH
 from backend.core.logging_config import get_logger
 from backend.core.models import User
 from backend.rag.document_loader import DocumentLoader
@@ -245,6 +245,19 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     password = (request.password or "").strip()
     if not username or not password:
         raise HTTPException(status_code=400, detail="用户名和密码不能为空")
+
+    # 密码强度检查
+    if MIN_PASSWORD_LENGTH > 0 and len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位",
+        )
+    categories = sum([bool(re.search(r"[a-z]", password)), bool(re.search(r"[A-Z]", password)), bool(re.search(r"\d", password))])
+    if MIN_PASSWORD_LENGTH > 0 and categories < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="密码必须包含大写字母、小写字母、数字中的至少两种",
+        )
 
     exists = db.query(User).filter(User.username == username).first()
     if exists:
