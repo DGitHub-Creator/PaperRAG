@@ -31,10 +31,11 @@ from pathlib import Path
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from backend.core.config import (
+    BM25_STATE_PATH,
     EMBEDDING_MODEL,
     EMBEDDING_DEVICE,
     DENSE_EMBEDDING_DIM,
-    BM25_STATE_PATH,
+    HF_HOME,
 )
 from backend.core.logging_config import get_logger
 
@@ -52,10 +53,10 @@ def _create_dense_embedder() -> HuggingFaceEmbeddings:
     """
     model_name = EMBEDDING_MODEL or "BAAI/bge-m3"
     device = EMBEDDING_DEVICE or "cpu"
-    logger.info("加载嵌入模型 '%s' (device=%s)", model_name, device)
+    logger.info("加载嵌入模型 '%s' (device=%s, cache=%s)", model_name, device, HF_HOME)
     return HuggingFaceEmbeddings(
         model_name=model_name,
-        model_kwargs={"device": device},
+        model_kwargs={"device": device, "cache_folder": HF_HOME},
         encode_kwargs={"normalize_embeddings": True},
     )
 

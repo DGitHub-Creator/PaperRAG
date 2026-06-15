@@ -18,7 +18,16 @@ DATA_DIR = ROOT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "documents"
 LOG_DIR = ROOT_DIR / "logs"
 
-for _dir in (DATA_DIR, UPLOAD_DIR, LOG_DIR):
+MODEL_CACHE_DIR = ROOT_DIR / "models"
+"""HuggingFace 模型缓存目录（默认项目根目录下的 models/）。
+
+sentence_transformers / transformers 会优先从此目录加载模型缓存，
+避免每次启动从 HuggingFace Hub 重新下载。
+
+可通过 HF_HOME 环境变量覆盖。"""
+HF_HOME = os.getenv("HF_HOME", str(MODEL_CACHE_DIR))
+
+for _dir in (DATA_DIR, UPLOAD_DIR, LOG_DIR, MODEL_CACHE_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
 # ── LLM 模型配置 ──────────────────────────────────────────────────
@@ -56,6 +65,8 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "paperrag")
 REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL_SECONDS", "300"))
+USE_REDIS_JOB_MANAGER = os.getenv("USE_REDIS_JOB_MANAGER", "false").lower() == "true"
+"""是否使用 Redis 任务管理器（替代进程内存，支持多 worker）。"""
 
 # ── CORS 与安全 ──────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
@@ -98,6 +109,10 @@ ENABLE_CONTEXT_EXPANSION = os.getenv("ENABLE_CONTEXT_EXPANSION", "true").lower()
 EXPAND_PREV_PARENT = int(os.getenv("EXPAND_PREV_PARENT", "1"))
 EXPAND_NEXT_PARENT = int(os.getenv("EXPAND_NEXT_PARENT", "1"))
 EXPAND_MAX_TOTAL_CHUNKS = int(os.getenv("EXPAND_MAX_TOTAL_CHUNKS", "30"))
+
+# ── 多轮检索 ────────────────────────────────────────────────────────
+MAX_RAG_RETRIES = int(os.getenv("MAX_RAG_RETRIES", "3"))
+"""RAG 多轮检索最大重试次数（grade → rewrite → retrieve 循环），默认 3 次。"""
 
 # ── HyDE 配置 ─────────────────────────────────────────────────────
 ENABLE_HYDE = os.getenv("ENABLE_HYDE", "true").lower() != "false"
