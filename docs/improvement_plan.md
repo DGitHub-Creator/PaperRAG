@@ -93,40 +93,50 @@ tests/
 
 **涉及文件**：`logging_config.py`（重写），`app.py`（加 middleware），`milvus_client.py`（加 tracing），`rag_utils.py`（加 tracing）
 
-### 1.2 前端 Vue 3 工程化
+### 1.2 前端 Vue 3 工程化 ✅ 完成
 
-**现状**：470 行单 HTML + 1700 行 `script.js` + 1200 行 `style.css`，不可维护。
+**现状**：已从 CDN 单 HTML（470 行 HTML + 856 行 script.js + 1314 行 style.css）迁移为 Vite + Vue 3 SFC + TypeScript 项目。
 
-**方案**：用 Vite + Vue 3 脚手架重建前端，拆分组件：
+**实际目录结构**：
 
 ```
 frontend/
-├── package.json
+├── package.json                  # Vite 5.4, Vue 3.5, TypeScript 6.0
+├── tsconfig.json                 # strict, ES2022
 ├── vite.config.js
+├── index.html                    # Vite 入口
+├── style.css                     # 1314 行原样式（保留）
 ├── src/
-│   ├── App.vue
-│   ├── main.js
+│   ├── main.ts                   # 入口：hljs + katex + marked 初始化
+│   ├── App.vue                   # 根组件：路由 / auth / sessions
+│   ├── env.d.ts                  # 全局类型声明
 │   ├── components/
-│   │   ├── ChatView.vue        # 对话主界面
-│   │   ├── MessageBubble.vue    # 单条消息（含 LaTeX 渲染）
-│   │   ├── RagTracePanel.vue    # RAG 追踪折叠面板
-│   │   ├── SessionList.vue      # 历史会话列表
-│   │   ├── DocumentManager.vue  # 文档管理（管理员）
-│   │   ├── CacheAdmin.vue       # 缓存管理
-│   │   └── AuthForms.vue        # 登录/注册
+│   │   ├── ChatView.vue          # 对话主界面（SSE 流式 + RAG trace）
+│   │   ├── RagTracePanel.vue     # RAG 追踪折叠面板
+│   │   ├── Sidebar.vue           # 导航 + 用户信息
+│   │   ├── AuthPanel.vue         # 登录/注册
+│   │   ├── SettingsView.vue      # 文档管理（管理员）
+│   │   └── HistorySidebar.vue    # 历史会话列表
 │   ├── composables/
-│   │   ├── useSSE.js            # SSE 流式连接管理（含 AbortController）
-│   │   └── useAuth.js           # JWT 令牌管理（localStorage）
-│   └── services/
-│       └── api.js               # Axios/fetch 封装，自动注入 JWT
-├── index.html                   # Vite 入口
-└── public/
+│   │   ├── useAuth.ts            # JWT 管理 + login/register/logout
+│   │   ├── useChat.ts            # SSE 流式 + AbortController
+│   │   ├── useDocuments.ts       # 上传（XHR 进度）+ 删除轮询
+│   │   ├── useSessions.ts        # 会话 CRUD
+│   │   └── useWebSocket.ts       # WebSocket 连接管理（待集成）
+│   ├── services/
+│   │   └── api.ts               # authFetch 封装
+│   └── utils/
+│       └── markdown.ts           # marked + hljs + katex 渲染
+├── dist/                         # 构建产物（~1.35MB JS + KaTeX 字体）
+├── public/
+├── script.js                     # 旧 CDN 文件（保留未删）
 ```
 
-- 构建产物输出到 `backend/static/`
-- 后端用 `StaticFiles` 挂载此目录
+- `vue-tsc --noEmit` 零错误
+- `vite build` 构建通过
+- 旧 CDN `script.js`（856 行）已退役，功能已全部移植
 
-**涉及文件**：重写整个 `frontend/` 目录
+**涉及文件**：重写整个 `frontend/` 目录（已完成）
 
 ### 1.3 PostgreSQL 连接池优化
 
@@ -232,12 +242,14 @@ class RedisJobManager:
 **方案**：
 
 - `RAGState` 增加 `conversation_history` 字段（最近 2 轮 Q&A 摘要）
+
 - `retrieve_initial` 节点将历史摘要拼接到 query 前：
   
   ```
   历史上下文: 用户刚才问过"什么是差分隐私"，已经检索到相关论文。
   当前问题: 它的 ε 参数一般怎么设置？
   ```
+
 - `rewrite_question` 节点也传入历史上下文，让 LLM 做更精准的 step-back / HyDE 生成
 
 **涉及文件**：`rag_pipeline.py:120-146`（扩展 RAGState），`agent.py`（传递历史），`tools.py`（封装历史上下文）
@@ -386,28 +398,28 @@ graph.compile(checkpointer=checkpointer)
 
 ## 优先级与实施建议
 
-| 序号  | 行动项        | 影响          | 难度  | 优先级    | 建议时间    |
-| --- | ---------- | ----------- | --- | ------ | ------- |
-| 0.1 | 全局变量改造     | 多 worker 支持 | 中   | **P0** | 第 1 天   |
-| 0.2 | 健康检查       | 运维          | 低   | **P0** | 第 1 天   |
-| 0.3 | 测试覆盖       | 质量保障        | 中   | **P0** | 第 2-3 天 |
-| 1.4 | CORS 配置    | 安全          | 低   | **P1** | 第 1 天   |
-| 1.3 | 连接池优化      | 性能          | 低   | P1     | 第 2 周   |
-| 1.6 | 密码强度       | 安全          | 低   | P1     | 第 2 周   |
-| 2.3 | Checkpoint | 鲁棒性         | 低   | P1     | 第 2 周   |
-| 1.1 | 结构化日志      | 可观测性        | 中   | P1     | 第 2 周   |
-| 1.5 | 任务状态持久化    | 可靠性         | 中   | P1     | 第 2 周   |
-| 1.2 | 前端工程化      | 可维护性        | 高   | P1     | 第 2-3 周 |
-| 2.1 | 多轮检索       | 用户体验        | 中   | P2     | 第 3 周   |
-| 2.2 | 历史感知检索     | 准确率         | 中   | P2     | 第 3 周   |
-| 2.4 | 多模态        | 功能          | 高   | P2     | 第 4 周   |
-| 3.3 | 答案溯源       | 可信度         | 中   | P3     | 第 4 周   |
-| 3.1 | 公式检索       | 差异化         | 高   | P3     | 第 5 周   |
-| 3.2 | 知识图谱       | 差异化         | 高   | P3     | 第 5-6 周 |
-| 3.4 | ML 布局分析    | 解析质量        | 高   | P3     | 第 6 周   |
-| 4.1 | 多租户        | 商业化         | 高   | P4     | 第 7 周   |
-| 4.2 | 限流/用量      | 运营          | 中   | P4     | 第 8 周   |
-| 4.3 | CI/CD      | 工程          | 中   | P4     | 第 8 周   |
+| 序号  | 行动项        | 影响          | 难度  | 优先级    | 建议时间      |
+| --- | ---------- | ----------- | --- | ------ | --------- |
+| 0.1 | 全局变量改造     | 多 worker 支持 | 中   | **P0** | 第 1 天     |
+| 0.2 | 健康检查       | 运维          | 低   | **P0** | 第 1 天     |
+| 0.3 | 测试覆盖       | 质量保障        | 中   | **P0** | 第 2-3 天   |
+| 1.4 | CORS 配置    | 安全          | 低   | **P1** | 第 1 天     |
+| 1.3 | 连接池优化      | 性能          | 低   | P1     | 第 2 周     |
+| 1.6 | 密码强度       | 安全          | 低   | P1     | 第 2 周     |
+| 2.3 | Checkpoint | 鲁棒性         | 低   | P1     | 第 2 周     |
+| 1.1 | 结构化日志      | 可观测性        | 中   | P1     | 第 2 周     |
+| 1.5 | 任务状态持久化    | 可靠性         | 中   | P1     | 第 2 周     |
+| 1.2 | 前端工程化      | 可维护性        | 高   | P1 ✅   | 第 2-3 周 ✅ |
+| 2.1 | 多轮检索       | 用户体验        | 中   | P2     | 第 3 周     |
+| 2.2 | 历史感知检索     | 准确率         | 中   | P2     | 第 3 周     |
+| 2.4 | 多模态        | 功能          | 高   | P2     | 第 4 周     |
+| 3.3 | 答案溯源       | 可信度         | 中   | P3     | 第 4 周     |
+| 3.1 | 公式检索       | 差异化         | 高   | P3     | 第 5 周     |
+| 3.2 | 知识图谱       | 差异化         | 高   | P3     | 第 5-6 周   |
+| 3.4 | ML 布局分析    | 解析质量        | 高   | P3     | 第 6 周     |
+| 4.1 | 多租户        | 商业化         | 高   | P4     | 第 7 周     |
+| 4.2 | 限流/用量      | 运营          | 中   | P4     | 第 8 周     |
+| 4.3 | CI/CD      | 工程          | 中   | P4     | 第 8 周     |
 
 ## 实施建议
 

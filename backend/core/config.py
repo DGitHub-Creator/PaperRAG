@@ -30,12 +30,23 @@ HF_HOME = os.getenv("HF_HOME", str(MODEL_CACHE_DIR))
 for _dir in (DATA_DIR, UPLOAD_DIR, LOG_DIR, MODEL_CACHE_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
-# ── LLM 模型配置 ──────────────────────────────────────────────────
+# ── LLM 模型配置（统一前缀，向后兼容旧变量）─────────────────────────
 ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 MODEL = os.getenv("MODEL", "")
 GRADE_MODEL = os.getenv("GRADE_MODEL", "gpt-4.1")
 FAST_MODEL = os.getenv("FAST_MODEL", "")
 BASE_URL = os.getenv("BASE_URL", "")
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", os.getenv("MODEL_PROVIDER", "openai"))
+"""LLM 提供商标识，如 openai / deepseek / anthropic / ollama 等。"""
+LLM_API_KEY = os.getenv("LLM_API_KEY", "") or ARK_API_KEY
+"""LLM API Key。默认为空，fallback 到 ARK_API_KEY。"""
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "") or BASE_URL
+"""LLM API 基础 URL。fallback 到 BASE_URL。"""
+LLM_MODEL = os.getenv("LLM_MODEL", "") or MODEL
+"""默认 LLM 模型名。用于 agent、router、stepback。fallback 到 MODEL。"""
+LLM_GRADE_MODEL = os.getenv("LLM_GRADE_MODEL", "") or GRADE_MODEL
+"""评分专用模型名，通常为更强模型。fallback 到 GRADE_MODEL。"""
 
 # ── 嵌入模型配置 ──────────────────────────────────────────────────
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")

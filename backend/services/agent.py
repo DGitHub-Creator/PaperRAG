@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, Sys
 
 from backend.core.config import ARK_API_KEY, MODEL, BASE_URL
 from backend.core.database import SessionLocal
+from backend.core.llm import get_chat_model
 from backend.core.logging_config import get_logger
 from backend.core.models import User, ChatSession, ChatMessage
 from backend.services.cache import cache
@@ -402,14 +403,7 @@ def create_agent_instance():
     Returns:
         tuple[Agent, ChatModel]: (agent 实例, 底层 LLM 模型实例)。
     """
-    model = init_chat_model(
-        model=MODEL,
-        model_provider="openai",
-        api_key=ARK_API_KEY,
-        base_url=BASE_URL,
-        temperature=0.3,
-        stream_usage=True,
-    )
+    model = get_chat_model(role="agent")
 
     agent = create_agent(
         model=model,

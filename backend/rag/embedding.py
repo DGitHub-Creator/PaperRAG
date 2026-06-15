@@ -377,7 +377,3 @@ class EmbeddingService:
         dense_embeddings = self.get_embeddings(texts)
         sparse_embeddings = self.get_sparse_embeddings(texts)
         return dense_embeddings, sparse_embeddings
-
-
-# 全进程唯一实例：写入（api）与检索（rag_utils）共用同一份 BM25 持久化状态
-embedding_service = EmbeddingService()
