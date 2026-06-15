@@ -90,6 +90,38 @@ services:
       - "9091:9091"
     depends_on:
       - "etcd"
+
+  backend:
+    container_name: paperrag-backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/langchain_app
+      - REDIS_URL=redis://redis:6379/0
+      - MILVUS_HOST=standalone
+      - MILVUS_PORT=19530
+      - HF_HOME=/app/models
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/models:/app/models
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/data:/app/data
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      start_period: 15s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      standalone:
+        condition: service_healthy
+
   attu:
     container_name: milvus-attu
     image: zilliz/attu:v2.5.11  

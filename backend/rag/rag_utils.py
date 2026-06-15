@@ -30,6 +30,7 @@ from backend.core.config import (
     EXPAND_MAX_TOTAL_CHUNKS,
     EXPAND_NEXT_PARENT,
     EXPAND_PREV_PARENT,
+    HF_HOME,
     LEAF_RETRIEVE_LEVEL,
     LOCAL_RERANKER,
     MODEL,
@@ -67,8 +68,8 @@ def _get_local_reranker():
     if _local_reranker is None:
         from sentence_transformers import CrossEncoder
         model_name = RERANK_MODEL or "BAAI/bge-reranker-v2-m3"
-        logger.info("加载本地 Reranker 模型: %s", model_name)
-        _local_reranker = CrossEncoder(model_name)
+        logger.info("加载本地 Reranker 模型: %s (cache=%s)", model_name, HF_HOME)
+        _local_reranker = CrossEncoder(model_name, cache_folder=HF_HOME)
     return _local_reranker
 
 
