@@ -7,9 +7,11 @@
   3. 跟踪增量批量导入的每个阶段进度。
 
 设计说明：
-  - 当前使用进程内存保存任务状态，适合单进程开发部署。
-  - 如需支持多进程或服务重启恢复，可将状态迁移到 Redis 或 PostgreSQL。
+  - UploadJobManager: 使用进程内存保存任务状态，适合单进程开发部署。
+  - RedisJobManager: 使用 Redis 保存任务状态，支持多 worker 和服务重启恢复。
+    通过 USE_REDIS_JOB_MANAGER 环境变量切换（默认 false，使用 UploadJobManager）。
   - UploadJobManager 通过 threading.Lock 确保线程安全。
+  - RedisJobManager 通过 Redis 单命令原子性确保线程安全。
   - 所有读写操作均返回 deepcopy，防止外部意外修改内部状态。
 
 预定义步骤模板：
@@ -20,12 +22,16 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Literal
 from uuid import uuid4
 
+import redis
+
+from backend.core.config import REDIS_URL, USE_REDIS_JOB_MANAGER
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -315,10 +321,173 @@ class UploadJobManager:
         return None
 
 
-# ── 模块级单例 ──────────────────────────────────────────────────────
+class RedisJobManager:
+    """基于 Redis 的任务状态管理器（支持多 worker / 服务重启恢复）。
 
-upload_job_manager = UploadJobManager()
-"""文件上传任务管理器单例（全进程共享）。"""
+    接口与 UploadJobManager 完全兼容，可无缝切换。
+    使用 Redis HASH 存储任务数据，TTL 24 小时自动清理。
+    键格式: paperrag:job:{job_id} → {field: value}
+    """
 
-delete_job_manager = UploadJobManager()
-"""文件删除任务管理器单例（全进程共享）。"""
+    _REDIS_PREFIX = "paperrag:job:"
+    _REDIS_TTL = 86400
+
+    def __init__(self):
+        self._redis: redis.Redis | None = None
+
+    def _get_client(self) -> redis.Redis:
+        if self._redis is None:
+            self._redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        return self._redis
+
+    def _key(self, job_id: str) -> str:
+        return f"{self._REDIS_PREFIX}{job_id}"
+
+    @staticmethod
+    def _job_dict(job_id: str, filename: str, steps: list[tuple[str, str]],
+                  current_step: str, message: str, completion_step: str) -> dict:
+        now = datetime.now(UTC).isoformat()
+        return {
+            "job_id": job_id,
+            "filename": filename,
+            "status": "pending",
+            "current_step": current_step,
+            "message": message,
+            "completion_step": completion_step,
+            "total_chunks": 0,
+            "processed_chunks": 0,
+            "error": None,
+            "created_at": now,
+            "updated_at": now,
+            "steps": [
+                {"key": k, "label": lbl, "percent": 0, "status": "pending", "message": ""}
+                for k, lbl in steps
+            ],
+        }
+
+    def create_job(self, filename: str, *,
+                   steps: list[tuple[str, str]] | None = None,
+                   current_step: str = "upload",
+                   message: str = "等待上传",
+                   completion_step: str = "vector_store") -> dict:
+        steps = steps or DEFAULT_STEPS
+        job_id = uuid4().hex
+        job = self._job_dict(job_id, filename, steps, current_step, message, completion_step)
+        r = self._get_client()
+        r.hset(self._key(job_id), mapping=job)
+        r.expire(self._key(job_id), self._REDIS_TTL)
+        logger.debug("Redis 任务已创建: job_id=%s, filename=%s", job_id, filename)
+        return deepcopy(job)
+
+    def get_job(self, job_id: str) -> dict | None:
+        r = self._get_client()
+        raw = r.hgetall(self._key(job_id))
+        if not raw:
+            return None
+        raw["steps"] = json.loads(raw.get("steps", "[]"))
+        raw["total_chunks"] = int(raw.get("total_chunks", 0))
+        raw["processed_chunks"] = int(raw.get("processed_chunks", 0))
+        return deepcopy(raw)
+
+    def update_step(self, job_id: str, step_key: str,
+                    percent: int, status: StepStatus = "running",
+                    message: str = "", *,
+                    total_chunks: int | None = None,
+                    processed_chunks: int | None = None) -> dict | None:
+        percent = max(0, min(100, int(percent)))
+        r = self._get_client()
+        key = self._key(job_id)
+        raw = r.hgetall(key)
+        if not raw:
+            return None
+        steps: list[dict] = json.loads(raw.get("steps", "[]"))
+        step = next((s for s in steps if s["key"] == step_key), None)
+        if not step:
+            return None
+        step["percent"] = percent
+        step["status"] = status
+        step["message"] = message
+        raw["status"] = "failed" if status == "failed" else "running"
+        raw["current_step"] = step_key
+        raw["message"] = message
+        raw["updated_at"] = datetime.now(UTC).isoformat()
+        if total_chunks is not None:
+            raw["total_chunks"] = str(int(total_chunks))
+        if processed_chunks is not None:
+            raw["processed_chunks"] = str(int(processed_chunks))
+        raw["steps"] = json.dumps(steps, ensure_ascii=False)
+        r.hset(key, mapping=raw)
+        return self.get_job(job_id)
+
+    def complete_step(self, job_id: str, step_key: str, message: str = "") -> dict | None:
+        return self.update_step(job_id, step_key, 100, "completed", message)
+
+    def complete_job(self, job_id: str, message: str = "文档入库完成") -> dict | None:
+        r = self._get_client()
+        key = self._key(job_id)
+        raw = r.hgetall(key)
+        if not raw:
+            return None
+        steps: list[dict] = json.loads(raw.get("steps", "[]"))
+        for step in steps:
+            if step["status"] != "failed":
+                step["percent"] = 100
+                step["status"] = "completed"
+        raw["status"] = "completed"
+        raw["current_step"] = raw.get("completion_step") or raw.get("current_step", "")
+        raw["message"] = message
+        raw["error"] = ""
+        raw["updated_at"] = datetime.now(UTC).isoformat()
+        raw["steps"] = json.dumps(steps, ensure_ascii=False)
+        r.hset(key, mapping=raw)
+        logger.info("Redis 任务完成: job_id=%s, filename=%s", job_id, raw.get("filename", ""))
+        return self.get_job(job_id)
+
+    def fail_job(self, job_id: str, step_key: str, error: str) -> dict | None:
+        r = self._get_client()
+        key = self._key(job_id)
+        raw = r.hgetall(key)
+        if not raw:
+            return None
+        steps: list[dict] = json.loads(raw.get("steps", "[]"))
+        step = next((s for s in steps if s["key"] == step_key), None)
+        if step:
+            step["status"] = "failed"
+            step["message"] = error
+        raw["status"] = "failed"
+        raw["current_step"] = step_key
+        raw["message"] = error
+        raw["error"] = error
+        raw["updated_at"] = datetime.now(UTC).isoformat()
+        raw["steps"] = json.dumps(steps, ensure_ascii=False)
+        r.hset(key, mapping=raw)
+        logger.error("Redis 任务失败: job_id=%s, step=%s, error=%s", job_id, step_key, error)
+        return self.get_job(job_id)
+
+    def list_jobs(self) -> list[dict]:
+        r = self._get_client()
+        cursor = 0
+        jobs = []
+        while True:
+            cursor, keys = r.scan(cursor=cursor, match=f"{self._REDIS_PREFIX}*", count=100)
+            for key in keys:
+                raw = r.hgetall(key)
+                if raw:
+                    raw["steps"] = json.loads(raw.get("steps", "[]"))
+                    raw["total_chunks"] = int(raw.get("total_chunks", 0))
+                    raw["processed_chunks"] = int(raw.get("processed_chunks", 0))
+                    jobs.append(raw)
+            if cursor == 0:
+                break
+        return jobs
+
+
+# ── 模块级单例（根据 USE_REDIS_JOB_MANAGER 配置自动选择实现）───────────────
+
+_ManagerClass = RedisJobManager if USE_REDIS_JOB_MANAGER else UploadJobManager
+
+upload_job_manager: UploadJobManager | RedisJobManager = _ManagerClass()
+"""文件上传任务管理器单例（全进程共享）。按配置使用内存或 Redis 实现。"""
+
+delete_job_manager: UploadJobManager | RedisJobManager = _ManagerClass()
+"""文件删除任务管理器单例（全进程共享）。按配置使用内存或 Redis 实现。"""
