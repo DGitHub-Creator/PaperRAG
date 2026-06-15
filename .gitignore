@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env    
+
+#Docker files
+volumes/
+
+# OS files
+.DS_Store
+data/
+
+# Test
+tests/
+test_*
+
+# Study
+langchain-study/
+.claude/
