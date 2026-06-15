@@ -20,6 +20,7 @@ from typing import List, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
@@ -635,8 +636,8 @@ def build_rag_graph():
     graph.add_edge("rewrite_question", "retrieve_expanded")
     graph.add_edge("retrieve_expanded", END)
 
-    logger.info("RAG 状态图编译完成")
-    return graph.compile()
+    logger.info("RAG 状态图编译完成（已启用 MemorySaver checkpoint）")
+    return graph.compile(checkpointer=MemorySaver())
 
 
 # 全局单例：模块加载时编译一次，后续调用复用
@@ -646,6 +647,9 @@ rag_graph = build_rag_graph()
 def run_rag_graph(question: str) -> dict:
     """执行完整 RAG 工作流。
 
+    每次调用使用唯一 thread_id 确保 checkpoint 隔离。
+    线程池场景下 thread_id 基于当前线程名生成。
+
     Args:
         question: 用户问题文本。
 
@@ -653,20 +657,26 @@ def run_rag_graph(question: str) -> dict:
         完整的 RAGState 字典，含 docs、context、rag_trace 等字段。
         rag_trace 包含每阶段的检索元数据，前端可通过折叠面板查看详情。
     """
-    logger.info("RAG 工作流启动: %s", question[:80])
-    result = rag_graph.invoke({
-        "question": question,
-        "query": question,
-        "context": "",
-        "docs": [],
-        "route": None,
-        "expansion_type": None,
-        "expanded_query": None,
-        "step_back_question": None,
-        "step_back_answer": None,
-        "hypothetical_doc": None,
-        "rag_trace": None,
-    })
+    import threading
+
+    thread_id = f"rag-{threading.get_ident()}-{id(question)}"
+    logger.info("RAG 工作流启动: %s (thread=%s)", question[:80], thread_id)
+    result = rag_graph.invoke(
+        {
+            "question": question,
+            "query": question,
+            "context": "",
+            "docs": [],
+            "route": None,
+            "expansion_type": None,
+            "expanded_query": None,
+            "step_back_question": None,
+            "step_back_answer": None,
+            "hypothetical_doc": None,
+            "rag_trace": None,
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
     logger.info(
         "RAG 工作流完成: %d docs, 评分=%s, 策略=%s",
         len(result.get("docs", [])),
