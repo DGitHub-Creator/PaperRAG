@@ -393,7 +393,7 @@ def create_agent_instance():
       - search_knowledge_base: 混合检索知识库（密集 + 稀疏向量）
 
     系统提示词约定：
-      - Agent 扮演可爱的猫猫助手。
+      - Agent 扮演学术知识检索助手。
       - 仅在用户询问文档/知识问题时调用 search_knowledge_base。
       - 每轮最多调用一次知识检索工具。
       - 收到检索结果后必须立即输出最终回答，不得重复调用。
@@ -415,7 +415,7 @@ def create_agent_instance():
         model=model,
         tools=[get_current_weather, search_knowledge_base],
         system_prompt=(
-            "You are a cute cat bot that loves to help users. "
+            "You are a knowledgeable academic research assistant specialized in document-based Q&A. "
             "When responding, you may use tools to assist. "
             "Use search_knowledge_base when users ask document/knowledge questions. "
             "Do not call the same tool repeatedly in one turn. At most one knowledge tool call per turn. "
