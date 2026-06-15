@@ -6,12 +6,14 @@
     3. rewrite_question  — 路由选择重写策略（step_back / hyde / complex）
     4. retrieve_expanded — 多策略扩展检索 + 去重 + 统一元数据
 
+多轮检索:
+    grade_documents → rewrite_question → retrieve_expanded → grade_documents → ...
+    最多循环 MAX_RAG_RETRIES（默认 3）次，达到上限后强制进入 END。
+
 流程图:
     retrieve_initial → grade_documents ──[yes]→ END(生成回答)
-                                      ──[no]→ rewrite_question → retrieve_expanded → END
-
-每次检索阶段通过 emit_rag_step() 向 SSE 流推送实时步骤，
-前端思考气泡同步展示 Search → Grade → Rewrite → Expand 全链路。
+                                      ──[no]→ rewrite_question → retrieve_expanded ──→ grade_documents(循环)
+                                    [已达上限] → END
 """
 
 import logging
@@ -28,6 +30,7 @@ from backend.core.config import (
     ARK_API_KEY,
     BASE_URL,
     GRADE_MODEL,
+    MAX_RAG_RETRIES,
     MODEL,
 )
 from backend.core.logging_config import get_logger
@@ -145,6 +148,12 @@ class RAGState(TypedDict):
     step_back_answer: Optional[str]
     hypothetical_doc: Optional[str]
     rag_trace: Optional[dict]
+    retry_count: int
+    """当前多轮检索的重试次数（0=初次，达到 MAX_RAG_RETRIES 后强制结束）。"""
+    accumulated_docs: List[dict]
+    """多轮检索中累积的所有文档（去重后）。"""
+    conversation_history: Optional[str]
+    """历史对话摘要（最近 2 轮 Q&A），用于上下文感知检索。"""
 
 
 def _format_docs(docs: List[dict]) -> str:
@@ -170,22 +179,31 @@ def retrieve_initial(state: RAGState) -> RAGState:
     """初次检索节点：执行完整的四阶段检索流程。
 
     流程:
-        1. 调用 retrieve_documents(query) → Hybrid/Dense + Rerank + Merge + Expand
-        2. 格式化检索结果为 LLM 上下文
-        3. 构建 RAG trace（检索元数据）
-        4. 通过 emit_rag_step 实时推送步骤到前端
+        1. 若有历史对话，拼接历史摘要 → 增强查询语境
+        2. 调用 retrieve_documents(query) → Hybrid/Dense + Rerank + Merge + Expand
+        3. 格式化检索结果为 LLM 上下文
+        4. 构建 RAG trace（检索元数据）
+        5. 通过 emit_rag_step 实时推送步骤到前端
 
     Args:
-        state: RAGState（从 question 字段读取用户问题）。
+        state: RAGState（从 question 字段读取用户问题，可含 conversation_history）。
 
     Returns:
         更新后的 state（含 docs、context、rag_trace）。
     """
     query = state["question"]
+    history = state.get("conversation_history") or ""
+
+    # 拼接历史上下文（增强检索语境）
+    augmented_query = query
+    if history:
+        augmented_query = f"{history}\n\n当前问题: {query}"
+        emit_rag_step("📜", "检测到历史对话上下文", "已拼接至查询")
+        logger.debug("拼接历史上下文: history_len=%d chars", len(history))
     emit_rag_step("\U0001f50d", "正在检索知识库...", f"查询: {query[:50]}")
 
-    # 执行完整检索流程
-    retrieved = retrieve_documents(query, top_k=5)
+    # 执行完整检索流程（使用增强查询）
+    retrieved = retrieve_documents(augmented_query, top_k=5)
     results = retrieved.get("docs", [])
     retrieve_meta = retrieved.get("meta", {})
 
@@ -255,6 +273,8 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "docs": results,
         "context": context,
         "rag_trace": rag_trace,
+        "retry_count": 0,
+        "accumulated_docs": results,
     }
 
 
@@ -267,14 +287,30 @@ def grade_documents_node(state: RAGState) -> RAGState:
         - 若 grader 模型不可用 → 默认走 rewrite_question 路径
         - 若 binary_score == 'yes' → 直接进入 END（生成回答）
         - 若 binary_score == 'no' → 进入 rewrite_question 节点
+        - 若重试次数已达 MAX_RAG_RETRIES → 强制进入 END（避免无限循环）
 
     Args:
-        state: RAGState（含 question、context 字段）。
+        state: RAGState（含 question、context、retry_count 字段）。
 
     Returns:
         更新后的 state（含 route 决策和评分结果）。
     """
     grader = _get_grader_model()
+    retry_count = state.get("retry_count", 0)
+
+    # 已达最大重试次数 → 强制生成回答
+    if retry_count >= MAX_RAG_RETRIES:
+        emit_rag_step("🔄", f"已达最大重试次数（{MAX_RAG_RETRIES}），强制进入生成")
+        rag_trace = state.get("rag_trace", {}) or {}
+        rag_trace.update({
+            "grade_score": "max_retries",
+            "grade_route": "generate_answer",
+            "rewrite_needed": False,
+            "retry_count": retry_count,
+        })
+        logger.info("多轮检索已达上限（%d），强制生成回答", MAX_RAG_RETRIES)
+        return {"route": "generate_answer", "rag_trace": rag_trace}
+
     emit_rag_step("\U0001f4ca", "正在评估文档相关性...")
 
     if not grader:
@@ -287,7 +323,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
         rag_trace = state.get("rag_trace", {}) or {}
         rag_trace.update(grade_update)
         logger.info("评分模型不可用，默认进入重写流程")
-        return {"route": "rewrite_question", "rag_trace": rag_trace}
+        return {"route": "rewrite_question", "rag_trace": rag_trace, "retry_count": retry_count + 1}
 
     question = state["question"]
     context = state.get("context", "")
@@ -314,8 +350,8 @@ def grade_documents_node(state: RAGState) -> RAGState:
     rag_trace = state.get("rag_trace", {}) or {}
     rag_trace.update(grade_update)
 
-    logger.info("相关性评分: %s → %s", score, route)
-    return {"route": route, "rag_trace": rag_trace}
+    logger.info("相关性评分: %s → %s (第 %d 轮)", score, route, retry_count)
+    return {"route": route, "rag_trace": rag_trace, "retry_count": retry_count + 1}
 
 
 # ── 节点 3: 查询重写 ─────────────────────────────────────────────
@@ -329,14 +365,16 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         - complex: 同时执行 step_back 和 hyde，适合多步骤复杂问题
 
     路由失败时默认使用 step_back（最保守、最通用的策略）。
+    若有历史对话上下文，会将其拼入路由 prompt 辅助决策。
 
     Args:
-        state: RAGState（含 question 字段）。
+        state: RAGState（含 question 字段，可含 conversation_history）。
 
     Returns:
         更新后的 state（含 expansion_type、expanded_query、rewrite_strategy 等）。
     """
     question = state["question"]
+    history = state.get("conversation_history") or ""
     emit_rag_step("✏️", "正在重写查询...")
 
     # LLM 路由选择策略
@@ -344,12 +382,15 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     strategy = "step_back"
 
     if router:
+        context_hint = ""
+        if history:
+            context_hint = f"\n历史对话上下文（仅供参考）: {history[:300]}"
         prompt = (
             "请根据用户问题选择最合适的查询扩展策略，仅输出策略名。\n"
             "- step_back：包含具体名称、日期、代码等细节，需要先理解通用概念的问题。\n"
             "- hyde：模糊、概念性、需要解释或定义的问题。\n"
             "- complex：多步骤、需要分解或综合多种信息的复杂问题。\n"
-            f"用户问题：{question}"
+            f"用户问题：{question}{context_hint}"
         )
         try:
             decision = router.with_structured_output(RewriteStrategy).invoke(
@@ -587,13 +628,23 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         sum(1 for _ in [1] if strategy in ("hyde", "complex")),
         sum(1 for _ in [1] if strategy in ("step_back", "complex")),
     )
-    return {"docs": deduped, "context": context, "rag_trace": rag_trace}
+
+    # 累积到历史文档池（后续轮次去重参考）
+    accumulated = list(state.get("accumulated_docs") or [])
+    seen_acc = {(d.get("filename"), d.get("page_number"), d.get("text")) for d in accumulated}
+    for d in deduped:
+        key = (d.get("filename"), d.get("page_number"), d.get("text"))
+        if key not in seen_acc:
+            seen_acc.add(key)
+            accumulated.append(d)
+
+    return {"docs": deduped, "context": context, "rag_trace": rag_trace, "accumulated_docs": accumulated}
 
 
 # ── 图构建 ────────────────────────────────────────────────────────
 
 def build_rag_graph():
-    """构建 LangGraph 状态图。
+    """构建 LangGraph 状态图（支持多轮检索循环）。
 
     节点:
         - retrieve_initial: 初次检索
@@ -604,7 +655,7 @@ def build_rag_graph():
     边:
         retrieve_initial → grade_documents
         grade_documents → generate_answer(END) | rewrite_question(条件)
-        rewrite_question → retrieve_expanded → END
+        rewrite_question → retrieve_expanded → grade_documents(多轮循环，最多 MAX_RAG_RETRIES 次)
 
     Returns:
         已编译的 StateGraph 实例。
@@ -634,7 +685,7 @@ def build_rag_graph():
     )
 
     graph.add_edge("rewrite_question", "retrieve_expanded")
-    graph.add_edge("retrieve_expanded", END)
+    graph.add_edge("retrieve_expanded", "grade_documents")  # 多轮循环：回到评分节点
 
     logger.info("RAG 状态图编译完成（已启用 MemorySaver checkpoint）")
     return graph.compile(checkpointer=MemorySaver())
@@ -644,7 +695,7 @@ def build_rag_graph():
 rag_graph = build_rag_graph()
 
 
-def run_rag_graph(question: str) -> dict:
+def run_rag_graph(question: str, conversation_history: str = "") -> dict:
     """执行完整 RAG 工作流。
 
     每次调用使用唯一 thread_id 确保 checkpoint 隔离。
@@ -652,6 +703,7 @@ def run_rag_graph(question: str) -> dict:
 
     Args:
         question: 用户问题文本。
+        conversation_history: 历史对话摘要（最近 2 轮 Q&A），用于上下文感知检索。
 
     Returns:
         完整的 RAGState 字典，含 docs、context、rag_trace 等字段。
@@ -674,6 +726,9 @@ def run_rag_graph(question: str) -> dict:
             "step_back_answer": None,
             "hypothetical_doc": None,
             "rag_trace": None,
+            "retry_count": 0,
+            "accumulated_docs": [],
+            "conversation_history": conversation_history or None,
         },
         config={"configurable": {"thread_id": thread_id}},
     )
