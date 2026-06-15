@@ -19,13 +19,10 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 
 from backend.core.config import (
-    ARK_API_KEY,
     AUTO_MERGE_ENABLED,
     AUTO_MERGE_THRESHOLD,
-    BASE_URL,
     ENABLE_CONTEXT_EXPANSION,
     EXPAND_MAX_TOTAL_CHUNKS,
     EXPAND_NEXT_PARENT,
@@ -33,22 +30,19 @@ from backend.core.config import (
     HF_HOME,
     LEAF_RETRIEVE_LEVEL,
     LOCAL_RERANKER,
-    MODEL,
     RERANK_API_KEY,
     RERANK_BINDING_HOST,
     RERANK_MODEL,
 )
+from backend.core.dependencies import (
+    get_embedding_service,
+    get_milvus_manager,
+    get_parent_chunk_store,
+)
 from backend.core.logging_config import get_logger
-from backend.rag.embedding import embedding_service as _embedding_service
-from backend.rag.parent_chunk_store import ParentChunkStore
-from backend.vectordb.milvus_client import MilvusManager
 
 load_dotenv()
 logger = get_logger(__name__)
-
-# ── 全局检索依赖（与 api 共用 embedding_service，保证 BM25 状态一致）──
-_milvus_manager = MilvusManager()
-_parent_chunk_store = ParentChunkStore()
 
 # 模型懒加载单例
 _stepback_model = None
@@ -117,7 +111,7 @@ def _merge_to_parent_level(
         return docs, 0
 
     # 从 DocStore 批量拉取父块
-    parent_docs = _parent_chunk_store.get_documents_by_ids(merge_parent_ids)
+    parent_docs = get_parent_chunk_store().get_documents_by_ids(merge_parent_ids)
     parent_map = {
         item.get("chunk_id", ""): item
         for item in parent_docs if item.get("chunk_id")
@@ -390,7 +384,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
     for (filename, pi) in all_parents:
         try:
             filter_expr = f'filename == "{filename}" && parent_idx == {pi}'
-            rows = _milvus_manager.query_all(
+            rows = get_milvus_manager().query_all(
                 filter_expr=filter_expr,
                 output_fields=[
                     "text", "filename", "file_type", "page_number",
@@ -472,16 +466,9 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
 def _get_stepback_model():
     """懒加载查询重写 LLM（温度 0.2，用于生成退步问题/HyDE 文档）。"""
     global _stepback_model
-    if not ARK_API_KEY or not MODEL:
-        return None
     if _stepback_model is None:
-        _stepback_model = init_chat_model(
-            model=MODEL,
-            model_provider="openai",
-            api_key=ARK_API_KEY,
-            base_url=BASE_URL,
-            temperature=0.2,
-        )
+        from backend.core.llm import get_chat_model
+        _stepback_model = get_chat_model(role="stepback")
     return _stepback_model
 
 
@@ -621,11 +608,12 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
 
     # ── 尝试混合检索（Dense + Sparse + RRF）──────────────────────
     try:
-        dense_embeddings = _embedding_service.get_embeddings([query])
+        _es = get_embedding_service()
+        dense_embeddings = _es.get_embeddings([query])
         dense_embedding = dense_embeddings[0]
-        sparse_embedding = _embedding_service.get_sparse_embedding(query)
+        sparse_embedding = _es.get_sparse_embedding(query)
 
-        retrieved = _milvus_manager.hybrid_retrieve(
+        retrieved = get_milvus_manager().hybrid_retrieve(
             dense_embedding=dense_embedding,
             sparse_embedding=sparse_embedding,
             top_k=candidate_k,
@@ -651,9 +639,10 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
 
         # ── 降级为纯稠密检索 ─────────────────────────────────────
         try:
-            dense_embeddings = _embedding_service.get_embeddings([query])
+            _es = get_embedding_service()
+            dense_embeddings = _es.get_embeddings([query])
             dense_embedding = dense_embeddings[0]
-            retrieved = _milvus_manager.dense_retrieve(
+            retrieved = get_milvus_manager().dense_retrieve(
                 dense_embedding=dense_embedding,
                 top_k=candidate_k,
                 filter_expr=filter_expr,
