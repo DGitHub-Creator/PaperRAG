@@ -21,18 +21,11 @@ import os
 from typing import List, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-from backend.core.config import (
-    ARK_API_KEY,
-    BASE_URL,
-    GRADE_MODEL,
-    MAX_RAG_RETRIES,
-    MODEL,
-)
+from backend.core.config import MAX_RAG_RETRIES
 from backend.core.logging_config import get_logger
 from backend.rag.rag_utils import (
     generate_hypothetical_document,
@@ -51,45 +44,20 @@ _router_model = None
 
 
 def _get_grader_model():
-    """懒加载相关性评分模型（温度 0，需要结构化输出）。
-
-    使用 GRADE_MODEL（默认 gpt-4.1）进行 binary 评分。
-    温度设为 0 保证评分结果确定性和可复现。
-    """
+    """懒加载相关性评分模型（温度 0，需要结构化输出）。"""
     global _grader_model
-    if not ARK_API_KEY or not GRADE_MODEL:
-        logger.warning("评分模型未配置（ARK_API_KEY/GRADE_MODEL），将跳过相关性评分")
-        return None
     if _grader_model is None:
-        _grader_model = init_chat_model(
-            model=GRADE_MODEL,
-            model_provider="openai",
-            api_key=ARK_API_KEY,
-            base_url=BASE_URL,
-            temperature=0,
-            stream_usage=True,
-        )
+        from backend.core.llm import get_chat_model
+        _grader_model = get_chat_model(role="grade")
     return _grader_model
 
 
 def _get_router_model():
-    """懒加载查询重写策略路由模型（温度 0，需要结构化输出）。
-
-    在 step_back / hyde / complex 三种策略中自动选择最合适的。
-    """
+    """懒加载查询重写策略路由模型（温度 0，需要结构化输出）。"""
     global _router_model
-    if not ARK_API_KEY or not MODEL:
-        logger.warning("路由模型未配置，将默认使用 step_back 策略")
-        return None
     if _router_model is None:
-        _router_model = init_chat_model(
-            model=MODEL,
-            model_provider="openai",
-            api_key=ARK_API_KEY,
-            base_url=BASE_URL,
-            temperature=0,
-            stream_usage=True,
-        )
+        from backend.core.llm import get_chat_model
+        _router_model = get_chat_model(role="router")
     return _router_model
 
 
@@ -691,10 +659,6 @@ def build_rag_graph():
     return graph.compile(checkpointer=MemorySaver())
 
 
-# 全局单例：模块加载时编译一次，后续调用复用
-rag_graph = build_rag_graph()
-
-
 def run_rag_graph(question: str, conversation_history: str = "") -> dict:
     """执行完整 RAG 工作流。
 
@@ -711,9 +675,11 @@ def run_rag_graph(question: str, conversation_history: str = "") -> dict:
     """
     import threading
 
+    from backend.core.dependencies import get_rag_graph
+
     thread_id = f"rag-{threading.get_ident()}-{id(question)}"
     logger.info("RAG 工作流启动: %s (thread=%s)", question[:80], thread_id)
-    result = rag_graph.invoke(
+    result = get_rag_graph().invoke(
         {
             "question": question,
             "query": question,

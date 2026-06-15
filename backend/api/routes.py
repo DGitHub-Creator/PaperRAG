@@ -58,9 +58,12 @@ from backend.core.auth import (
 from backend.core.config import UPLOAD_DIR, INGESTED_STATE_PATH, DATA_DIR, MIN_PASSWORD_LENGTH
 from backend.core.logging_config import get_logger
 from backend.core.models import User
+from backend.core.dependencies import (
+    get_embedding_service,
+    get_milvus_manager,
+    get_parent_chunk_store,
+)
 from backend.rag.document_loader import DocumentLoader
-from backend.rag.embedding import embedding_service
-from backend.rag.parent_chunk_store import ParentChunkStore
 from backend.schemas.schemas import (
     AuthResponse,
     ChatRequest,
@@ -92,8 +95,6 @@ from backend.services.upload_jobs import (
     delete_job_manager,
     upload_job_manager,
 )
-from backend.vectordb.milvus_client import MilvusManager
-from backend.vectordb.milvus_writer import MilvusWriter
 
 logger = get_logger(__name__)
 
@@ -105,19 +106,16 @@ COMPUTED_UPLOAD_DIR = UPLOAD_DIR  # 从 backend.core.config 导入
 loader = DocumentLoader()
 """文档加载器实例：负责解析 PDF / Word / Excel 并生成三级分块。"""
 
-parent_chunk_store = ParentChunkStore()
-"""父级分块存储实例：将 Level 1/2 的分块存入 PostgreSQL。"""
-
-milvus_manager = MilvusManager()
-"""Milvus 管理实例：负责集合初始化和数据查询/删除。"""
-
-milvus_writer = MilvusWriter(
-    embedding_service=embedding_service, milvus_manager=milvus_manager
-)
-"""Milvus 写入实例：将叶子分块向量化后写入 Milvus。"""
-
 router = APIRouter()
 """FastAPI 路由器实例（prefix 由 app.py 统一配置）。"""
+
+
+def _get_milvus_writer():
+    from backend.vectordb.milvus_writer import MilvusWriter
+    return MilvusWriter(
+        embedding_service=get_embedding_service(),
+        milvus_manager=get_milvus_manager(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -137,12 +135,12 @@ def _remove_bm25_stats_for_filename(filename: str) -> None:
     Args:
         filename: 要清理 BM25 统计的文件名。
     """
-    rows = milvus_manager.query_all(
+    rows = get_milvus_manager().query_all(
         filter_expr=f'filename == "{filename}"',
         output_fields=["text"],
     )
     texts = [r.get("text") or "" for r in rows]
-    embedding_service.increment_remove_documents(texts)
+    get_embedding_service().increment_remove_documents(texts)
     logger.debug("BM25 统计已扣减: filename=%s, chunks=%d", filename, len(texts))
 
 
@@ -588,18 +586,18 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
         upload_job_manager.update_step(
             job_id, "cleanup", 10, "running", "正在清理同名旧文档"
         )
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
         delete_expr = f'filename == "{filename}"'
         try:
             _remove_bm25_stats_for_filename(filename)
         except Exception:
             pass
         try:
-            milvus_manager.delete(delete_expr)
+            get_milvus_manager().delete(delete_expr)
         except Exception:
             pass
         try:
-            parent_chunk_store.delete_by_filename(filename)
+            get_parent_chunk_store().delete_by_filename(filename)
         except Exception:
             pass
         upload_job_manager.complete_step(job_id, "cleanup", "旧版本清理完成")
@@ -632,7 +630,7 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
         upload_job_manager.update_step(
             job_id, "parent_store", 20, "running", "正在写入父级分块"
         )
-        parent_chunk_store.upsert_documents(parent_docs)
+        get_parent_chunk_store().upsert_documents(parent_docs)
         upload_job_manager.complete_step(
             job_id, "parent_store", f"父级分块已入库：{len(parent_docs)} 个"
         )
@@ -663,7 +661,7 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
                 processed_chunks=processed,
             )
 
-        milvus_writer.write_documents(leaf_docs, progress_callback=_on_vector_progress)
+        _get_milvus_writer().write_documents(leaf_docs, progress_callback=_on_vector_progress)
         upload_job_manager.complete_step(
             job_id, "vector_store", f"向量化入库完成：{total_leaf} 个叶子分块"
         )
@@ -694,7 +692,7 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         delete_job_manager.update_step(
             job_id, "prepare", 20, "running", "正在初始化 Milvus 集合"
         )
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
         delete_expr = f'filename == "{filename}"'
         delete_job_manager.complete_step(job_id, "prepare", "删除任务已创建")
 
@@ -711,7 +709,7 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         delete_job_manager.update_step(
             job_id, "milvus", 30, "running", "正在删除 Milvus 向量数据"
         )
-        result = milvus_manager.delete(delete_expr)
+        result = get_milvus_manager().delete(delete_expr)
         deleted_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
         delete_job_manager.complete_step(
             job_id, "milvus", f"向量数据已删除：{deleted_count} 条"
@@ -722,7 +720,7 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         delete_job_manager.update_step(
             job_id, "parent_store", 30, "running", "正在删除 PostgreSQL 父级分块"
         )
-        parent_chunk_store.delete_by_filename(filename)
+        get_parent_chunk_store().delete_by_filename(filename)
         delete_job_manager.complete_step(job_id, "parent_store", "父级分块已删除")
 
         # 完成摘要
@@ -758,15 +756,15 @@ def _process_ingest_job(
     """
     failed_step = "scan"
     try:
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
 
         # Step 1: 清理已移除的文档
         for name in to_delete:
             try:
                 delete_expr = f'filename == "{name}"'
                 _remove_bm25_stats_for_filename(name)
-                milvus_manager.delete(delete_expr)
-                parent_chunk_store.delete_by_filename(name)
+                get_milvus_manager().delete(delete_expr)
+                get_parent_chunk_store().delete_by_filename(name)
             except Exception:
                 pass
 
@@ -807,8 +805,8 @@ def _process_ingest_job(
                 try:
                     delete_expr = f'filename == "{fp.name}"'
                     _remove_bm25_stats_for_filename(fp.name)
-                    milvus_manager.delete(delete_expr)
-                    parent_chunk_store.delete_by_filename(fp.name)
+                    get_milvus_manager().delete(delete_expr)
+                    get_parent_chunk_store().delete_by_filename(fp.name)
                 except Exception:
                     pass
                 processed += 1
@@ -827,7 +825,7 @@ def _process_ingest_job(
             upload_job_manager.update_step(
                 job_id, "parent_store", 10, "running", "正在写入父级分块"
             )
-            parent_chunk_store.upsert_documents(all_parent_docs)
+            get_parent_chunk_store().upsert_documents(all_parent_docs)
             upload_job_manager.complete_step(
                 job_id, "parent_store", f"父块入库：{len(all_parent_docs)}"
             )
@@ -851,7 +849,7 @@ def _process_ingest_job(
                     total_chunks=total_count, processed_chunks=processed_count,
                 )
 
-            milvus_writer.write_documents(all_leaf_docs, progress_callback=_progress)
+            _get_milvus_writer().write_documents(all_leaf_docs, progress_callback=_progress)
             upload_job_manager.complete_step(
                 job_id, "vector_store", f"向量入库：{total_leaf}"
             )
@@ -890,9 +888,9 @@ async def list_documents(_: User = Depends(require_admin)):
         HTTPException 500: 查询失败时。
     """
     try:
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
 
-        results = milvus_manager.query(
+        results = get_milvus_manager().query(
             output_fields=["filename", "file_type"],
             limit=10000,
         )
@@ -1047,7 +1045,7 @@ async def upload_document(
             raise HTTPException(status_code=400, detail="仅支持 PDF、Word 和 Excel 文档")
 
         os.makedirs(COMPUTED_UPLOAD_DIR, exist_ok=True)
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
 
         # 清理同名旧文档
         delete_expr = f'filename == "{filename}"'
@@ -1056,11 +1054,11 @@ async def upload_document(
         except Exception:
             pass
         try:
-            milvus_manager.delete(delete_expr)
+            get_milvus_manager().delete(delete_expr)
         except Exception:
             pass
         try:
-            parent_chunk_store.delete_by_filename(filename)
+            get_parent_chunk_store().delete_by_filename(filename)
         except Exception:
             pass
 
@@ -1089,8 +1087,8 @@ async def upload_document(
             raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
 
         # 写入存储
-        parent_chunk_store.upsert_documents(parent_docs)
-        milvus_writer.write_documents(leaf_docs)
+        get_parent_chunk_store().upsert_documents(parent_docs)
+        _get_milvus_writer().write_documents(leaf_docs)
 
         logger.info(
             "同步上传完成: filename=%s, leaf=%d, parent=%d",
@@ -1195,12 +1193,12 @@ async def delete_document(filename: str, _: User = Depends(require_admin)):
         HTTPException 500: 删除操作失败。
     """
     try:
-        milvus_manager.init_collection()
+        get_milvus_manager().init_collection()
 
         delete_expr = f'filename == "{filename}"'
         _remove_bm25_stats_for_filename(filename)
-        result = milvus_manager.delete(delete_expr)
-        parent_chunk_store.delete_by_filename(filename)
+        result = get_milvus_manager().delete(delete_expr)
+        get_parent_chunk_store().delete_by_filename(filename)
 
         # 同步清理摄入状态追踪
         _remove_ingested_record(filename)
