@@ -13,7 +13,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
+from backend.core.config import ALLOWED_ORIGINS
 from backend.core.database import init_db
 from backend.core.logging_config import setup_root_logger
 
@@ -31,9 +33,9 @@ def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。
 
     配置项:
-        - CORS: 允许所有来源（开发模式）
+        - CORS: 从 ALLOWED_ORIGINS 环境变量读取，默认全开（开发模式）
         - 静态文件: 挂载 frontend/ 目录到根路径
-        - 路由: 注册 API Router（auth、chat、sessions、documents）
+        - 路由: 注册 Health Router + API Router（auth、chat、sessions、documents）
         - 启动事件: 自动初始化数据库表
 
     Returns:
@@ -49,14 +51,19 @@ def create_app() -> FastAPI:
         init_db()
         logger.info("数据库初始化完成")
 
-    # ── CORS 中间件 ─────────────────────────────────────────────
+    # ── CORS 中间件（生产环境通过 ALLOWED_ORIGINS 环境变量限制）─
+    origins = ALLOWED_ORIGINS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    if origins != ["*"]:
+        logger.info("CORS 已限制来源: %s", origins)
+    else:
+        logger.warning("CORS 允许所有来源（仅推荐开发环境使用）")
 
     # ── 开发环境无缓存中间件 ────────────────────────────────────
     @app.middleware("http")
@@ -70,7 +77,9 @@ def create_app() -> FastAPI:
             response.headers["Expires"] = "0"
         return response
 
-    # ── 注册 API 路由 ───────────────────────────────────────────
+    # ── 注册路由 ────────────────────────────────────────────────
+    # 健康检查优先注册，避免被静态文件挂载覆盖
+    app.include_router(health_router)
     app.include_router(api_router)
 
     # ── 挂载前端静态文件 ────────────────────────────────────────
