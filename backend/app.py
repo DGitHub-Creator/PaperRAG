@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
+from backend.api.ws import router as ws_router
 from backend.core.config import ALLOWED_ORIGINS
 from backend.core.database import init_db
 from backend.core.logging_config import setup_root_logger
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     # 健康检查优先注册，避免被静态文件挂载覆盖
     app.include_router(health_router)
     app.include_router(api_router)
+    app.include_router(ws_router)
 
     # ── 挂载前端静态文件 ────────────────────────────────────────
     if FRONTEND_DIR.exists():

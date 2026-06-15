@@ -19,8 +19,8 @@ Milvus 写入器 —— 文档向量化并批量写入 Milvus 向量库。
 日志通过 backend.core.logging_config.get_logger 获取标准化 logger。
 """
 
-from backend.rag.embedding import EmbeddingService, embedding_service as _default_embedding_service
-from backend.vectordb.milvus_client import MilvusManager
+from backend.core.dependencies import get_embedding_service, get_milvus_manager
+from backend.rag.embedding import EmbeddingService
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -44,19 +44,18 @@ class MilvusWriter:
     def __init__(
         self,
         embedding_service: EmbeddingService | None = None,
-        milvus_manager: MilvusManager | None = None,
+        milvus_manager = None,
     ):
         """初始化 MilvusWriter。
 
         Args:
             embedding_service: EmbeddingService 实例。
-                               默认使用模块级单例 _default_embedding_service，
-                               该实例在 embedding 模块加载时自动初始化模型。
+                               默认使用懒加载 get_embedding_service() 获取。
             milvus_manager: MilvusManager 实例。
-                            默认创建新的 MilvusManager() 实例。
+                            默认使用懒加载 get_milvus_manager() 获取。
         """
-        self.embedding_service = embedding_service or _default_embedding_service
-        self.milvus_manager = milvus_manager or MilvusManager()
+        self.embedding_service = embedding_service or get_embedding_service()
+        self.milvus_manager = milvus_manager or get_milvus_manager()
         logger.info("MilvusWriter 已初始化")
 
     def write_documents(
