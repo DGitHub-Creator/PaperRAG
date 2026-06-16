@@ -37,6 +37,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.3.0",
     "alembic>=1.18.0",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,26 @@ test = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["backend"]
+omit = [
+    "backend/vectordb/*",
+    "backend/rag/document_loader.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "logger.warning",
+    "logger.exception",
+    "logger.debug",
+    "logger.info",
+]
 
 [tool.ruff]
 target-version = "py312"

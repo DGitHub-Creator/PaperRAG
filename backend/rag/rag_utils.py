@@ -13,7 +13,6 @@
 """
 
 import json
-import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
@@ -40,6 +39,9 @@ from backend.core.dependencies import (
     get_parent_chunk_store,
 )
 from backend.core.logging_config import get_logger
+from backend.rag.formula_normalizer import extract_formulas, normalize_formula
+from backend.rag.formula_index import get_formula_lsh_index
+from backend.rag.citation_extractor import extract_citations, extract_citation_refs
 
 load_dotenv()
 logger = get_logger(__name__)
@@ -582,16 +584,153 @@ def step_back_expand(query: str) -> dict:
 
 # ── 核心检索入口 ─────────────────────────────────────────────────
 
-def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
-    """核心检索函数：Hybrid 检索 → Rerank → Auto-merge → Context Expansion。
+def _formula_search(query: str, top_k: int = 3) -> list[dict]:
+    """执行公式感知检索：提取查询中的 LaTeX 公式 → LSH 匹配 → Milvus 查询。
 
-    完整的四阶段检索流程:
-        1. Hybrid Search: Dense(BGE-M3) + Sparse(BM25) + RRF 融合，候选量 = top_k * 3
-        2. Rerank: 本地 Cross-Encoder 或 Jina API 精排至 top_k
-        3. Auto-merge: L3→L2→L1 三级合并，减少碎片化
-        4. Context Expansion: 拉取兄弟块 + 相邻父块，定理块优先
+    若查询中不含公式，返回空列表。公式检索结果通过 `chunk_id` 精确匹配
+    从 Milvus 获取完整的 chunk 数据。
+
+    Args:
+        query: 用户查询文本。
+        top_k: 返回的最大公式匹配 chunk 数。
+
+    Returns:
+        匹配的 chunk 字典列表（与 hybrid/dense 检索的输出格式一致）。
+    """
+    formulas = extract_formulas(query)
+    if not formulas:
+        return []
+
+    index = get_formula_lsh_index()
+    seen_chunk_ids: set[str] = set()
+    results: list[dict] = []
+
+    for formula in formulas:
+        norm = normalize_formula(formula)
+        if not norm:
+            continue
+        candidates = index.query(norm, top_k=top_k * 2)
+
+        for formula_id, similarity in candidates:
+            # formula_id 格式: {chunk_id}::f{idx}
+            chunk_id = formula_id.split("::")[0]
+            if chunk_id in seen_chunk_ids or not chunk_id:
+                continue
+            seen_chunk_ids.add(chunk_id)
+
+            try:
+                rows = get_milvus_manager().query(
+                    filter_expr=f'chunk_id == "{chunk_id}"',
+                    output_fields=[
+                        "text", "filename", "file_type", "page_number",
+                        "chunk_id", "parent_chunk_id", "root_chunk_id",
+                        "chunk_level", "chunk_idx",
+                        "parent_idx", "child_idx", "num_children",
+                        "has_theorem_in_parent", "has_proof_in_parent",
+                    ],
+                    limit=1,
+                )
+                if rows:
+                    doc = {
+                        "text": rows[0].get("text", ""),
+                        "filename": rows[0].get("filename", ""),
+                        "file_type": rows[0].get("file_type", ""),
+                        "page_number": rows[0].get("page_number", 0),
+                        "chunk_id": rows[0].get("chunk_id", ""),
+                        "parent_chunk_id": rows[0].get("parent_chunk_id", ""),
+                        "root_chunk_id": rows[0].get("root_chunk_id", ""),
+                        "chunk_level": rows[0].get("chunk_level", 0),
+                        "chunk_idx": rows[0].get("chunk_idx", 0),
+                        "parent_idx": rows[0].get("parent_idx", 0),
+                        "child_idx": rows[0].get("child_idx", 0),
+                        "num_children": rows[0].get("num_children", 0),
+                        "has_theorem_in_parent": rows[0].get("has_theorem_in_parent", False),
+                        "has_proof_in_parent": rows[0].get("has_proof_in_parent", False),
+                        "score": similarity,
+                        "formula_match": True,
+                    }
+                    results.append(doc)
+            except Exception as ex:
+                logger.debug("公式查询 chunk_id=%s 失败: %s", chunk_id, ex)
+                continue
+
+        if len(results) >= top_k:
+            break
+
+    return results[:top_k]
+
+
+def _build_formula_index(docs: list[dict]) -> None:
+    """从文档分块中提取公式并构建 LSH 索引。
+
+    通常在文档入库后调用。根据 chunk 的 `formulas` 元数据字段，
+    将每个公式标准化后写入 LSH 索引。
+
+    Args:
+        docs: 文档分块列表（来自 DocumentLoader.load_document）。
+    """
+    index = get_formula_lsh_index()
+    count = 0
+    for doc in docs:
+        formulas = doc.get("formulas", [])
+        chunk_id = doc.get("chunk_id", "")
+        if not formulas or not chunk_id:
+            continue
+        for i, raw in enumerate(formulas):
+            norm = normalize_formula(raw)
+            if norm:
+                formula_id = f"{chunk_id}::f{i}"
+                index.add(norm, formula_id)
+                count += 1
+    if count:
+        logger.info("公式 LSH 索引已构建: %d 个公式", count)
+
+
+def _citation_boost(docs: list[dict], query: str) -> list[dict]:
+    """引文相关 chunk 优先级提升：对检索结果中包含查询中引用的 chunk 提高排序。
+
+    当查询包含 [1]、[Author, Year] 等引用标记时，
+    将同样包含这些引文的 chunk 在结果中前移。
+
+    Args:
+        docs: 检索结果列表。
+        query: 用户查询文本。
+
+    Returns:
+        重排序后的文档列表（引文匹配在前）。
+    """
+    refs = extract_citation_refs(query)
+    if not refs:
+        return docs
+    if not docs:
+        return docs
+
+    target_refs = set(refs)
+    cited: list[dict] = []
+    others: list[dict] = []
+
+    for doc in docs:
+        chunk_refs = extract_citation_refs(doc.get("text", ""))
+        if set(chunk_refs) & target_refs:
+            cited.append(doc)
+        else:
+            others.append(doc)
+
+    return cited + others
+
+
+def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
+    """核心检索函数：Hybrid 检索 → Formula 检索 → Rerank → Auto-merge → Context Expansion。
+
+    完整的五阶段检索流程:
+        1. Formula Search: 检测查询中 LaTeX 公式，LSH 索引匹配候选 chunk
+        2. Hybrid Search: Dense(BGE-M3) + Sparse(BM25) + RRF 融合，候选量 = top_k * 3
+        3. Rerank: 本地 Cross-Encoder 或 Jina API 精排至 top_k
+        4. Auto-merge: L3→L2→L1 三级合并，减少碎片化
+        5. Context Expansion: 拉取兄弟块 + 相邻父块，定理块优先
 
     降级策略:
+        - Formula 检索无匹配 → 跳过公式路径
         - Hybrid 失败 → 自动降级为 Dense-only 检索
         - Rerank 失败/未配置 → 跳过精排，直接截断
         - 全部失败 → 返回空结果 + 完整 meta
@@ -606,63 +745,60 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
     candidate_k = max(top_k * 3, top_k)
     filter_expr = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
 
-    # ── 尝试混合检索（Dense + Sparse + RRF）──────────────────────
+    # ── Formula 感知检索（查询含 LaTeX 时启用）────────────────────
+    formula_docs = _formula_search(query, top_k=top_k)
+    formula_match = len(formula_docs) > 0
+
+    # ── 文本检索（Hybrid 优先，Dense 降级）─────────────────────────
+    result: Dict[str, Any] | None = None
     try:
         _es = get_embedding_service()
-        dense_embeddings = _es.get_embeddings([query])
-        dense_embedding = dense_embeddings[0]
-        sparse_embedding = _es.get_sparse_embedding(query)
-
+        de = _es.get_embeddings([query])[0]
+        se = _es.get_sparse_embedding(query)
         retrieved = get_milvus_manager().hybrid_retrieve(
-            dense_embedding=dense_embedding,
-            sparse_embedding=sparse_embedding,
-            top_k=candidate_k,
-            filter_expr=filter_expr,
+            dense_embedding=de, sparse_embedding=se,
+            top_k=candidate_k, filter_expr=filter_expr,
         )
-        logger.debug(
-            "Hybrid 检索完成: %d candidates (k=%d)", len(retrieved), candidate_k,
-        )
-
-        reranked, rerank_meta = _rerank_documents(query, retrieved, top_k)
-        merged_docs, merge_meta = _auto_merge_documents(reranked, top_k)
-        expanded_docs, expand_meta = _expand_context(merged_docs)
-
-        rerank_meta["retrieval_mode"] = "hybrid"
-        rerank_meta["candidate_k"] = candidate_k
-        rerank_meta["leaf_retrieve_level"] = LEAF_RETRIEVE_LEVEL
-        rerank_meta.update(merge_meta)
-        rerank_meta.update(expand_meta)
-        return {"docs": expanded_docs, "meta": rerank_meta}
-
+        reranked, rm = _rerank_documents(query, retrieved, top_k)
+        merged, mm = _auto_merge_documents(reranked, top_k)
+        expanded, em = _expand_context(merged)
+        rm["retrieval_mode"] = "hybrid"
+        rm["formula_match"] = formula_match
+        rm["formula_result_count"] = len(formula_docs)
+        result = {"docs": expanded, "meta": rm}
     except Exception as e:
         logger.warning("Hybrid 检索失败，降级为 Dense-only: %s", e)
 
-        # ── 降级为纯稠密检索 ─────────────────────────────────────
+    if result is None:
         try:
             _es = get_embedding_service()
-            dense_embeddings = _es.get_embeddings([query])
-            dense_embedding = dense_embeddings[0]
+            de = _es.get_embeddings([query])[0]
             retrieved = get_milvus_manager().dense_retrieve(
-                dense_embedding=dense_embedding,
-                top_k=candidate_k,
-                filter_expr=filter_expr,
+                dense_embedding=de, top_k=candidate_k, filter_expr=filter_expr,
             )
-            logger.debug("Dense 检索完成: %d candidates", len(retrieved))
-
-            reranked, rerank_meta = _rerank_documents(query, retrieved, top_k)
-            merged_docs, merge_meta = _auto_merge_documents(reranked, top_k)
-            expanded_docs, expand_meta = _expand_context(merged_docs)
-
-            rerank_meta["retrieval_mode"] = "dense_fallback"
-            rerank_meta["candidate_k"] = candidate_k
-            rerank_meta["leaf_retrieve_level"] = LEAF_RETRIEVE_LEVEL
-            rerank_meta.update(merge_meta)
-            rerank_meta.update(expand_meta)
-            return {"docs": expanded_docs, "meta": rerank_meta}
-
+            reranked, rm = _rerank_documents(query, retrieved, top_k)
+            merged, mm = _auto_merge_documents(reranked, top_k)
+            expanded, em = _expand_context(merged)
+            rm["retrieval_mode"] = "dense_fallback"
+            rm["formula_match"] = formula_match
+            rm["formula_result_count"] = len(formula_docs)
+            result = {"docs": expanded, "meta": rm}
         except Exception as e2:
             logger.error("Dense 检索也失败: %s", e2)
-            return _empty_retrieve_result(candidate_k)
+            result = _empty_retrieve_result(candidate_k)
+
+    # ── 融合 formula 结果到文本结果 ───────────────────────────────
+    if formula_match and result.get("docs"):
+        seen = {d.get("chunk_id") for d in result["docs"]}
+        for fd in formula_docs:
+            if fd.get("chunk_id") not in seen:
+                result["docs"].append(fd)
+        logger.debug("Formula 检索融合: +%d docs (共 %d)", len(formula_docs), len(result["docs"]))
+
+    # ── 引文优先级提升 ───────────────────────────────────────────
+    result["docs"] = _citation_boost(result["docs"], query)
+
+    return result
 
 
 def _empty_retrieve_result(candidate_k: int) -> Dict[str, Any]:
@@ -688,5 +824,7 @@ def _empty_retrieve_result(candidate_k: int) -> Dict[str, Any]:
             "context_expansion_enabled": ENABLE_CONTEXT_EXPANSION,
             "context_expansion_applied": False,
             "candidate_count": 0,
+            "formula_match": False,
+            "formula_result_count": 0,
         },
     }

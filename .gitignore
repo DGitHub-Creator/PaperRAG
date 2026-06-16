@@ -17,9 +17,10 @@ volumes/
 .DS_Store
 data/
 
-# Test
-tests/
-test_*
+# Test (only exclude compiled/cache files within tests)
+tests/__pycache__/
+tests/**/__pycache__/
+.pytest_cache/
 
 # Study
 langchain-study/

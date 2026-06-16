@@ -42,27 +42,47 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from backend.core.auth import (
     authenticate_user,
     create_access_token,
+    create_refresh_token,
     get_current_user,
     get_db,
     get_password_hash,
     require_admin,
     resolve_role,
 )
-from backend.core.config import UPLOAD_DIR, INGESTED_STATE_PATH, DATA_DIR, MIN_PASSWORD_LENGTH
-from backend.core.logging_config import get_logger
-from backend.core.models import User
+from backend.core.config import (
+    DATA_DIR,
+    INGESTED_STATE_PATH,
+    JWT_ALGORITHM,
+    JWT_SECRET_KEY,
+    MIN_PASSWORD_LENGTH,
+    UPLOAD_DIR,
+)
 from backend.core.dependencies import (
     get_embedding_service,
     get_milvus_manager,
     get_parent_chunk_store,
 )
+from backend.core.logging_config import get_logger
+from backend.core.models import User
+from backend.core.rate_limit import limiter
+from backend.core.stats import get_stats, reset_stats
 from backend.rag.document_loader import DocumentLoader
 from backend.schemas.schemas import (
     AuthResponse,
@@ -81,6 +101,7 @@ from backend.schemas.schemas import (
     IncrementalIngestResponse,
     LoginRequest,
     MessageInfo,
+    RefreshTokenRequest,
     RegisterRequest,
     SessionDeleteResponse,
     SessionInfo,
@@ -112,6 +133,7 @@ router = APIRouter()
 
 def _get_milvus_writer():
     from backend.vectordb.milvus_writer import MilvusWriter
+
     return MilvusWriter(
         embedding_service=get_embedding_service(),
         milvus_manager=get_milvus_manager(),
@@ -219,7 +241,8 @@ def _compute_file_hash(file_path: Path) -> str:
 
 
 @router.post("/auth/register", response_model=AuthResponse)
-async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def register(request: RegisterRequest, request_obj: Request, db: Session = Depends(get_db)):
     """用户注册端点。
 
     处理逻辑：
@@ -250,7 +273,13 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
             status_code=400,
             detail=f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位",
         )
-    categories = sum([bool(re.search(r"[a-z]", password)), bool(re.search(r"[A-Z]", password)), bool(re.search(r"\d", password))])
+    categories = sum(
+        [
+            bool(re.search(r"[a-z]", password)),
+            bool(re.search(r"[A-Z]", password)),
+            bool(re.search(r"\d", password)),
+        ]
+    )
     if MIN_PASSWORD_LENGTH > 0 and categories < 2:
         raise HTTPException(
             status_code=400,
@@ -262,19 +291,21 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="用户名已存在")
 
     role = resolve_role(request.role, request.admin_code)
-    user = User(
-        username=username, password_hash=get_password_hash(password), role=role
-    )
+    user = User(username=username, password_hash=get_password_hash(password), role=role)
     db.add(user)
     db.commit()
 
-    token = create_access_token(username=username, role=role)
+    access_token = create_access_token(username=username, role=role)
+    refresh_token = create_refresh_token(username=username, role=role)
     logger.info("用户注册成功: username=%s, role=%s", username, role)
-    return AuthResponse(access_token=token, username=username, role=role)
+    return AuthResponse(
+        access_token=access_token, refresh_token=refresh_token, username=username, role=role
+    )
 
 
 @router.post("/auth/login", response_model=AuthResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+async def login(request: LoginRequest, request_obj: Request, db: Session = Depends(get_db)):
     """用户登录端点。
 
     使用 authenticate_user 验证凭据，成功则返回 JWT 令牌。
@@ -292,9 +323,15 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, request.username, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    token = create_access_token(username=user.username, role=user.role)
+    access_token = create_access_token(username=user.username, role=user.role)
+    refresh_token = create_refresh_token(username=user.username, role=user.role)
     logger.info("用户登录成功: username=%s", user.username)
-    return AuthResponse(access_token=token, username=user.username, role=user.role)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+    )
 
 
 @router.get("/auth/me", response_model=CurrentUserResponse)
@@ -310,15 +347,67 @@ async def me(current_user: User = Depends(get_current_user)):
     return CurrentUserResponse(username=current_user.username, role=current_user.role)
 
 
+@router.post("/auth/refresh", response_model=AuthResponse)
+@limiter.limit("20/minute")
+async def refresh_token(
+    request: RefreshTokenRequest, request_obj: Request, db: Session = Depends(get_db)
+):
+    """刷新访问令牌。
+
+    使用有效的 Refresh Token 获取新的 access_token 和 refresh_token。
+    Refresh Token 必须具有 "type": "refresh" 标识，且未过期。
+
+    Args:
+        request: 刷新请求体（refresh_token）。
+        db: SQLAlchemy 数据库会话。
+
+    Returns:
+        AuthResponse: 包含新的 access_token, refresh_token, username, role。
+
+    Raises:
+        HTTPException 401: Refresh Token 无效、过期或类型不匹配。
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="无效或过期的刷新令牌",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(request.refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            logger.warning(
+                "Refresh Token 类型不匹配: 期望 'refresh'，实际 '%s'", payload.get("type")
+            )
+            raise credentials_exception
+        username: str | None = payload.get("sub")
+        role: str | None = payload.get("role")
+        if not username or not role:
+            logger.warning("Refresh Token payload 缺少 sub 或 role")
+            raise credentials_exception
+    except JWTError:
+        logger.warning("Refresh Token 解码失败或已过期")
+        raise credentials_exception
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        logger.warning(f"Refresh Token 中的用户 '{username}' 在数据库中不存在")
+        raise credentials_exception
+
+    new_access = create_access_token(username=user.username, role=user.role)
+    new_refresh = create_refresh_token(username=user.username, role=user.role)
+    logger.info("令牌刷新成功: username=%s", user.username)
+    return AuthResponse(
+        access_token=new_access, refresh_token=new_refresh, username=user.username, role=user.role
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 # 会话端点
 # ═══════════════════════════════════════════════════════════════════
 
 
 @router.get("/sessions/{session_id}", response_model=SessionMessagesResponse)
-async def get_session_messages(
-    session_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user)):
     """获取指定会话的所有历史消息。
 
     Args:
@@ -362,8 +451,7 @@ async def list_sessions(current_user: User = Depends(get_current_user)):
     """
     try:
         sessions = [
-            SessionInfo(**item)
-            for item in storage.list_session_infos(current_user.username)
+            SessionInfo(**item) for item in storage.list_session_infos(current_user.username)
         ]
         sessions.sort(key=lambda x: x.updated_at, reverse=True)
         return SessionListResponse(sessions=sessions)
@@ -373,9 +461,7 @@ async def list_sessions(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
-async def delete_session(
-    session_id: str, current_user: User = Depends(get_current_user)
-):
+async def delete_session(session_id: str, current_user: User = Depends(get_current_user)):
     """删除当前用户的指定会话（含其所有消息）。
 
     Args:
@@ -408,9 +494,7 @@ async def delete_session(
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(
-    request: ChatRequest, current_user: User = Depends(get_current_user)
-):
+async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
     """同步对话端点 —— 向 Agent 发送消息并等待完整响应。
 
     处理流程：
@@ -583,9 +667,7 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
 
         # Step 2: cleanup —— 清理同名旧文档
         failed_step = "cleanup"
-        upload_job_manager.update_step(
-            job_id, "cleanup", 10, "running", "正在清理同名旧文档"
-        )
+        upload_job_manager.update_step(job_id, "cleanup", 10, "running", "正在清理同名旧文档")
         get_milvus_manager().init_collection()
         delete_expr = f'filename == "{filename}"'
         try:
@@ -604,19 +686,13 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
 
         # Step 3: parse —— 解析文档并生成三级分块
         failed_step = "parse"
-        upload_job_manager.update_step(
-            job_id, "parse", 5, "running", "正在解析文档并执行三级分块"
-        )
+        upload_job_manager.update_step(job_id, "parse", 5, "running", "正在解析文档并执行三级分块")
         new_docs = loader.load_document(file_path, filename)
         if not new_docs:
             raise ValueError("文档处理失败，未能提取内容")
 
-        parent_docs = [
-            doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)
-        ]
-        leaf_docs = [
-            doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3
-        ]
+        parent_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)]
+        leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
         if not leaf_docs:
             raise ValueError("文档处理失败，未生成可检索叶子分块")
         upload_job_manager.complete_step(
@@ -627,9 +703,7 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
 
         # Step 4: parent_store —— 写入父级分块到 PostgreSQL
         failed_step = "parent_store"
-        upload_job_manager.update_step(
-            job_id, "parent_store", 20, "running", "正在写入父级分块"
-        )
+        upload_job_manager.update_step(job_id, "parent_store", 20, "running", "正在写入父级分块")
         get_parent_chunk_store().upsert_documents(parent_docs)
         upload_job_manager.complete_step(
             job_id, "parent_store", f"父级分块已入库：{len(parent_docs)} 个"
@@ -668,7 +742,9 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
         upload_job_manager.complete_job(job_id, f"成功上传并处理 {filename}")
 
     except Exception as e:
-        logger.exception("上传任务失败: job_id=%s, filename=%s, step=%s", job_id, filename, failed_step)
+        logger.exception(
+            "上传任务失败: job_id=%s, filename=%s, step=%s", job_id, filename, failed_step
+        )
         upload_job_manager.fail_job(job_id, failed_step, str(e))
 
 
@@ -689,31 +765,23 @@ def _process_delete_job(job_id: str, filename: str) -> None:
     try:
         # Step 1: prepare
         failed_step = "prepare"
-        delete_job_manager.update_step(
-            job_id, "prepare", 20, "running", "正在初始化 Milvus 集合"
-        )
+        delete_job_manager.update_step(job_id, "prepare", 20, "running", "正在初始化 Milvus 集合")
         get_milvus_manager().init_collection()
         delete_expr = f'filename == "{filename}"'
         delete_job_manager.complete_step(job_id, "prepare", "删除任务已创建")
 
         # Step 2: bm25
         failed_step = "bm25"
-        delete_job_manager.update_step(
-            job_id, "bm25", 20, "running", "正在同步 BM25 统计"
-        )
+        delete_job_manager.update_step(job_id, "bm25", 20, "running", "正在同步 BM25 统计")
         _remove_bm25_stats_for_filename(filename)
         delete_job_manager.complete_step(job_id, "bm25", "BM25 统计已同步")
 
         # Step 3: milvus
         failed_step = "milvus"
-        delete_job_manager.update_step(
-            job_id, "milvus", 30, "running", "正在删除 Milvus 向量数据"
-        )
+        delete_job_manager.update_step(job_id, "milvus", 30, "running", "正在删除 Milvus 向量数据")
         result = get_milvus_manager().delete(delete_expr)
         deleted_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
-        delete_job_manager.complete_step(
-            job_id, "milvus", f"向量数据已删除：{deleted_count} 条"
-        )
+        delete_job_manager.complete_step(job_id, "milvus", f"向量数据已删除：{deleted_count} 条")
 
         # Step 4: parent_store
         failed_step = "parent_store"
@@ -724,12 +792,12 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         delete_job_manager.complete_step(job_id, "parent_store", "父级分块已删除")
 
         # 完成摘要
-        delete_job_manager.complete_job(
-            job_id, f"已删除 {filename}，向量数据 {deleted_count} 条"
-        )
+        delete_job_manager.complete_job(job_id, f"已删除 {filename}，向量数据 {deleted_count} 条")
 
     except Exception as e:
-        logger.exception("删除任务失败: job_id=%s, filename=%s, step=%s", job_id, filename, failed_step)
+        logger.exception(
+            "删除任务失败: job_id=%s, filename=%s, step=%s", job_id, filename, failed_step
+        )
         delete_job_manager.fail_job(job_id, failed_step, str(e))
 
 
@@ -770,7 +838,8 @@ def _process_ingest_job(
 
         total = len(to_process)
         upload_job_manager.complete_step(
-            job_id, "scan",
+            job_id,
+            "scan",
             f"扫描完成：{total} 个文件待处理，{len(to_delete)} 个已清理",
         )
 
@@ -783,21 +852,17 @@ def _process_ingest_job(
         for fp, reason in to_process:
             try:
                 upload_job_manager.update_step(
-                    job_id, "parse",
-                    int(processed / max(total, 1) * 100), "running",
+                    job_id,
+                    "parse",
+                    int(processed / max(total, 1) * 100),
+                    "running",
                     f"正在解析 ({processed + 1}/{total}): {fp.name} [{reason}]",
                 )
                 new_docs = loader.load_document(str(fp), fp.name)
                 if not new_docs:
                     continue
-                parent_docs = [
-                    d for d in new_docs
-                    if int(d.get("chunk_level", 0) or 0) in (1, 2)
-                ]
-                leaf_docs = [
-                    d for d in new_docs
-                    if int(d.get("chunk_level", 0) or 0) == 3
-                ]
+                parent_docs = [d for d in new_docs if int(d.get("chunk_level", 0) or 0) in (1, 2)]
+                leaf_docs = [d for d in new_docs if int(d.get("chunk_level", 0) or 0) == 3]
                 all_parent_docs.extend(parent_docs)
                 all_leaf_docs.extend(leaf_docs)
 
@@ -815,7 +880,8 @@ def _process_ingest_job(
                 continue
 
         upload_job_manager.complete_step(
-            job_id, "parse",
+            job_id,
+            "parse",
             f"解析完成：父块 {len(all_parent_docs)}，叶子块 {len(all_leaf_docs)}",
         )
 
@@ -835,31 +901,38 @@ def _process_ingest_job(
             failed_step = "vector_store"
             total_leaf = len(all_leaf_docs)
             upload_job_manager.update_step(
-                job_id, "vector_store", 0, "running",
+                job_id,
+                "vector_store",
+                0,
+                "running",
                 f"向量化入库：0 / {total_leaf}",
-                total_chunks=total_leaf, processed_chunks=0,
+                total_chunks=total_leaf,
+                processed_chunks=0,
             )
 
             def _progress(processed_count: int, total_count: int) -> None:
                 """向量化进度回调 —— 实时更新批量导入任务状态。"""
                 pct = round(processed_count * 100 / total_count) if total_count else 100
                 upload_job_manager.update_step(
-                    job_id, "vector_store", pct, "running",
+                    job_id,
+                    "vector_store",
+                    pct,
+                    "running",
                     f"向量化：{processed_count} / {total_count}",
-                    total_chunks=total_count, processed_chunks=processed_count,
+                    total_chunks=total_count,
+                    processed_chunks=processed_count,
                 )
 
             _get_milvus_writer().write_documents(all_leaf_docs, progress_callback=_progress)
-            upload_job_manager.complete_step(
-                job_id, "vector_store", f"向量入库：{total_leaf}"
-            )
+            upload_job_manager.complete_step(job_id, "vector_store", f"向量入库：{total_leaf}")
 
         # Step 5: 更新摄入状态文件
         new_state = {n: current_state[n] for n in current_state}
         _save_ingested_state(new_state)
 
         upload_job_manager.complete_step(
-            job_id, "bm25",
+            job_id,
+            "bm25",
             f"完成：{processed} 文件，{len(all_leaf_docs)} 叶子块",
         )
         upload_job_manager.complete_job(job_id, f"批量导入完成：{processed} 个文件")
@@ -960,17 +1033,13 @@ async def upload_document_async(
             job["job_id"], "upload", 1, "running", "正在保存文件到服务器"
         )
         await _save_upload_file(file, file_path)
-        upload_job_manager.complete_step(
-            job["job_id"], "upload", "文件已上传，等待后台处理"
-        )
+        upload_job_manager.complete_step(job["job_id"], "upload", "文件已上传，等待后台处理")
     except Exception as e:
         upload_job_manager.fail_job(job["job_id"], "upload", f"文件保存失败: {e}")
         logger.exception("文件保存失败: filename=%s", filename)
         raise HTTPException(status_code=500, detail=f"文件保存失败: {e}")
 
-    background_tasks.add_task(
-        _process_upload_job, job["job_id"], str(file_path), filename
-    )
+    background_tasks.add_task(_process_upload_job, job["job_id"], str(file_path), filename)
     logger.info("异步上传任务已创建: job_id=%s, filename=%s", job["job_id"], filename)
     return DocumentUploadStartResponse(
         job_id=job["job_id"],
@@ -979,9 +1048,7 @@ async def upload_document_async(
     )
 
 
-@router.get(
-    "/documents/upload/jobs/{job_id}", response_model=DocumentUploadJobResponse
-)
+@router.get("/documents/upload/jobs/{job_id}", response_model=DocumentUploadJobResponse)
 async def get_upload_job(job_id: str, _: User = Depends(require_admin)):
     """查询指定上传任务的进度。
 
@@ -1017,9 +1084,7 @@ async def list_upload_jobs(_: User = Depends(require_admin)):
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
-async def upload_document(
-    file: UploadFile = File(...), _: User = Depends(require_admin)
-):
+async def upload_document(file: UploadFile = File(...), _: User = Depends(require_admin)):
     """同步文档上传端点（旧版兼容接口）。
 
     与异步版本不同，此端点等待全部处理完成后才返回。
@@ -1038,7 +1103,7 @@ async def upload_document(
     """
     try:
         filename = file.filename or ""
-        file_lower = filename.lower()
+        filename.lower()
         if not filename:
             raise HTTPException(status_code=400, detail="文件名不能为空")
         if not _is_supported_document(filename):
@@ -1077,12 +1142,8 @@ async def upload_document(
         if not new_docs:
             raise HTTPException(status_code=500, detail="文档处理失败，未能提取内容")
 
-        parent_docs = [
-            doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)
-        ]
-        leaf_docs = [
-            doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3
-        ]
+        parent_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)]
+        leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
         if not leaf_docs:
             raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
 
@@ -1092,7 +1153,9 @@ async def upload_document(
 
         logger.info(
             "同步上传完成: filename=%s, leaf=%d, parent=%d",
-            filename, len(leaf_docs), len(parent_docs),
+            filename,
+            len(leaf_docs),
+            len(parent_docs),
         )
         return DocumentUploadResponse(
             filename=filename,
@@ -1114,9 +1177,7 @@ async def upload_document(
 # ═══════════════════════════════════════════════════════════════════
 
 
-@router.delete(
-    "/documents/delete/async/{filename}", response_model=DocumentDeleteStartResponse
-)
+@router.delete("/documents/delete/async/{filename}", response_model=DocumentDeleteStartResponse)
 async def delete_document_async(
     filename: str,
     background_tasks: BackgroundTasks,
@@ -1141,9 +1202,7 @@ async def delete_document_async(
         message="等待删除",
         completion_step="parent_store",
     )
-    delete_job_manager.update_step(
-        job["job_id"], "prepare", 1, "running", "删除任务已提交"
-    )
+    delete_job_manager.update_step(job["job_id"], "prepare", 1, "running", "删除任务已提交")
     background_tasks.add_task(_process_delete_job, job["job_id"], filename)
     logger.info("异步删除任务已创建: job_id=%s, filename=%s", job["job_id"], filename)
     return DocumentDeleteStartResponse(
@@ -1153,9 +1212,7 @@ async def delete_document_async(
     )
 
 
-@router.get(
-    "/documents/delete/jobs/{job_id}", response_model=DocumentDeleteJobResponse
-)
+@router.get("/documents/delete/jobs/{job_id}", response_model=DocumentDeleteJobResponse)
 async def get_delete_job(job_id: str, _: User = Depends(require_admin)):
     """查询指定删除任务的进度。
 
@@ -1206,9 +1263,7 @@ async def delete_document(filename: str, _: User = Depends(require_admin)):
         logger.info("同步删除完成: filename=%s", filename)
         return DocumentDeleteResponse(
             filename=filename,
-            chunks_deleted=result.get("delete_count", 0)
-            if isinstance(result, dict)
-            else 0,
+            chunks_deleted=result.get("delete_count", 0) if isinstance(result, dict) else 0,
             message=f"成功删除文档 {filename} 的向量数据（本地文件已保留）",
         )
     except Exception as e:
@@ -1256,7 +1311,9 @@ async def incremental_ingest(
     pdf_files = sorted(target_dir.glob("*.pdf"))
     if not pdf_files:
         return IncrementalIngestResponse(
-            job_id="", message="未找到 PDF 文件", files_total=0,
+            job_id="",
+            message="未找到 PDF 文件",
+            files_total=0,
         )
 
     prev_state = {} if request.full_rebuild else _load_ingested_state()
@@ -1286,8 +1343,10 @@ async def incremental_ingest(
 
     if not to_process and not to_delete:
         return IncrementalIngestResponse(
-            job_id="", message="知识库已是最新",
-            files_total=len(pdf_files), files_skipped=skipped,
+            job_id="",
+            message="知识库已是最新",
+            files_total=len(pdf_files),
+            files_skipped=skipped,
         )
 
     # 创建后台批量导入任务
@@ -1300,7 +1359,11 @@ async def incremental_ingest(
     )
 
     background_tasks.add_task(
-        _process_ingest_job, job["job_id"], to_process, to_delete, current,
+        _process_ingest_job,
+        job["job_id"],
+        to_process,
+        to_delete,
+        current,
     )
 
     logger.info(
@@ -1348,3 +1411,32 @@ async def clear_cache(_: User = Depends(require_admin)):
     except Exception as e:
         logger.exception("清空缓存失败")
         raise HTTPException(status_code=500, detail=f"清空缓存失败: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 统计与运维端点
+# ═══════════════════════════════════════════════════════════════════
+
+
+@router.get("/stats/usage")
+async def usage_stats(_: User = Depends(require_admin)):
+    """获取 API 使用统计（管理员权限）。
+
+    返回每个请求路径的访问次数和最后访问时间，
+    按访问次数降序排列。
+
+    Returns:
+        list[dict]: 统计列表。
+    """
+    return get_stats()
+
+
+@router.delete("/stats/usage")
+async def reset_usage_stats(_: User = Depends(require_admin)):
+    """重置 API 使用统计（管理员权限）。
+
+    Returns:
+        dict: 操作消息。
+    """
+    reset_stats()
+    return {"message": "统计已重置"}

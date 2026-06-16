@@ -17,10 +17,8 @@ Pydantic 数据模型定义 —— API 请求/响应的 Schema。
   增量导入:   IncrementalIngestRequest, IncrementalIngestResponse
 """
 
-from typing import Optional, List
 
 from pydantic import BaseModel
-
 
 # ═══════════════════════════════════════════════════════════════════
 # 认证相关 Schema
@@ -38,8 +36,8 @@ class RegisterRequest(BaseModel):
     """
     username: str
     password: str
-    role: Optional[str] = "user"
-    admin_code: Optional[str] = None
+    role: str | None = "user"
+    admin_code: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -58,14 +56,25 @@ class AuthResponse(BaseModel):
 
     Fields:
         access_token: JWT 访问令牌。
+        refresh_token: JWT 刷新令牌。
         token_type: 令牌类型，固定为 "bearer"。
         username: 用户名。
         role: 用户角色（"user" 或 "admin"）。
     """
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     username: str
     role: str
+
+
+class RefreshTokenRequest(BaseModel):
+    """刷新令牌请求。
+
+    Fields:
+        refresh_token: 有效的 Refresh Token。
+    """
+    refresh_token: str
 
 
 class CurrentUserResponse(BaseModel):
@@ -92,7 +101,7 @@ class ChatRequest(BaseModel):
         session_id: 会话 ID，用于多轮对话上下文关联。默认 "default_session"。
     """
     message: str
-    session_id: Optional[str] = "default_session"
+    session_id: str | None = "default_session"
 
 
 class RetrievedChunk(BaseModel):
@@ -112,16 +121,16 @@ class RetrievedChunk(BaseModel):
         chapter_path: 章节路径（可选）。
     """
     filename: str
-    page_number: Optional[str | int] = None
-    text: Optional[str] = None
-    score: Optional[float] = None
-    rrf_rank: Optional[int] = None
-    rerank_score: Optional[float] = None
-    parent_idx: Optional[int] = None
-    child_idx: Optional[int] = None
-    has_theorem_in_parent: Optional[bool] = None
-    has_proof_in_parent: Optional[bool] = None
-    chapter_path: Optional[str] = None
+    page_number: str | int | None = None
+    text: str | None = None
+    score: float | None = None
+    rrf_rank: int | None = None
+    rerank_score: float | None = None
+    parent_idx: int | None = None
+    child_idx: int | None = None
+    has_theorem_in_parent: bool | None = None
+    has_proof_in_parent: bool | None = None
+    chapter_path: str | None = None
 
 
 class RagTrace(BaseModel):
@@ -169,40 +178,40 @@ class RagTrace(BaseModel):
     """
     tool_used: bool
     tool_name: str
-    query: Optional[str] = None
-    expanded_query: Optional[str] = None
-    step_back_question: Optional[str] = None
-    step_back_answer: Optional[str] = None
-    expansion_type: Optional[str] = None
-    hypothetical_doc: Optional[str] = None
-    retrieval_stage: Optional[str] = None
-    grade_score: Optional[str] = None
-    grade_route: Optional[str] = None
-    rewrite_needed: Optional[bool] = None
-    rewrite_strategy: Optional[str] = None
-    rewrite_query: Optional[str] = None
-    rerank_enabled: Optional[bool] = None
-    rerank_applied: Optional[bool] = None
-    rerank_model: Optional[str] = None
-    rerank_endpoint: Optional[str] = None
-    rerank_error: Optional[str] = None
-    retrieval_mode: Optional[str] = None
-    candidate_k: Optional[int] = None
-    leaf_retrieve_level: Optional[int] = None
-    auto_merge_enabled: Optional[bool] = None
-    auto_merge_applied: Optional[bool] = None
-    auto_merge_threshold: Optional[int] = None
-    auto_merge_replaced_chunks: Optional[int] = None
-    auto_merge_steps: Optional[int] = None
-    context_expansion_enabled: Optional[bool] = None
-    context_expansion_applied: Optional[bool] = None
-    expand_prev_parent: Optional[int] = None
-    expand_next_parent: Optional[int] = None
-    expand_max_chunks: Optional[int] = None
-    expanded_chunk_count: Optional[int] = None
-    retrieved_chunks: Optional[List[RetrievedChunk]] = None
-    initial_retrieved_chunks: Optional[List[RetrievedChunk]] = None
-    expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None
+    query: str | None = None
+    expanded_query: str | None = None
+    step_back_question: str | None = None
+    step_back_answer: str | None = None
+    expansion_type: str | None = None
+    hypothetical_doc: str | None = None
+    retrieval_stage: str | None = None
+    grade_score: str | None = None
+    grade_route: str | None = None
+    rewrite_needed: bool | None = None
+    rewrite_strategy: str | None = None
+    rewrite_query: str | None = None
+    rerank_enabled: bool | None = None
+    rerank_applied: bool | None = None
+    rerank_model: str | None = None
+    rerank_endpoint: str | None = None
+    rerank_error: str | None = None
+    retrieval_mode: str | None = None
+    candidate_k: int | None = None
+    leaf_retrieve_level: int | None = None
+    auto_merge_enabled: bool | None = None
+    auto_merge_applied: bool | None = None
+    auto_merge_threshold: int | None = None
+    auto_merge_replaced_chunks: int | None = None
+    auto_merge_steps: int | None = None
+    context_expansion_enabled: bool | None = None
+    context_expansion_applied: bool | None = None
+    expand_prev_parent: int | None = None
+    expand_next_parent: int | None = None
+    expand_max_chunks: int | None = None
+    expanded_chunk_count: int | None = None
+    retrieved_chunks: list[RetrievedChunk] | None = None
+    initial_retrieved_chunks: list[RetrievedChunk] | None = None
+    expanded_retrieved_chunks: list[RetrievedChunk] | None = None
 
 
 class ChatResponse(BaseModel):
@@ -213,7 +222,7 @@ class ChatResponse(BaseModel):
         rag_trace: RAG 检索追踪信息（仅在使用了知识库检索时提供）。
     """
     response: str
-    rag_trace: Optional[RagTrace] = None
+    rag_trace: RagTrace | None = None
 
 
 class MessageInfo(BaseModel):
@@ -228,7 +237,7 @@ class MessageInfo(BaseModel):
     type: str
     content: str
     timestamp: str
-    rag_trace: Optional[RagTrace] = None
+    rag_trace: RagTrace | None = None
 
 
 class SessionMessagesResponse(BaseModel):
@@ -237,7 +246,7 @@ class SessionMessagesResponse(BaseModel):
     Fields:
         messages: 消息列表。
     """
-    messages: List[MessageInfo]
+    messages: list[MessageInfo]
 
 
 class SessionInfo(BaseModel):
@@ -259,7 +268,7 @@ class SessionListResponse(BaseModel):
     Fields:
         sessions: 会话摘要列表。
     """
-    sessions: List[SessionInfo]
+    sessions: list[SessionInfo]
 
 
 class SessionDeleteResponse(BaseModel):
@@ -290,7 +299,7 @@ class DocumentInfo(BaseModel):
     filename: str
     file_type: str
     chunk_count: int
-    uploaded_at: Optional[str] = None
+    uploaded_at: str | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -299,7 +308,7 @@ class DocumentListResponse(BaseModel):
     Fields:
         documents: 文档信息列表。
     """
-    documents: List[DocumentInfo]
+    documents: list[DocumentInfo]
 
 
 class DocumentUploadResponse(BaseModel):
@@ -368,10 +377,10 @@ class DocumentUploadJobResponse(BaseModel):
     message: str
     total_chunks: int = 0
     processed_chunks: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     created_at: str
     updated_at: str
-    steps: List[UploadStepInfo]
+    steps: list[UploadStepInfo]
 
 
 class DocumentDeleteStartResponse(BaseModel):
@@ -421,7 +430,7 @@ class IncrementalIngestRequest(BaseModel):
         full_rebuild: 是否执行全量重建。为 True 时会重新处理所有文件，
                       忽略已有的摄入状态记录。
     """
-    directory: Optional[str] = None
+    directory: str | None = None
     full_rebuild: bool = False
 
 

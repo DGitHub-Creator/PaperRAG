@@ -255,3 +255,109 @@ class ParentChunk(Base):
             f"<ParentChunk(chunk_id='{self.chunk_id[:16]}...', "
             f"filename='{self.filename}', level={self.chunk_level}, idx={self.chunk_idx})>"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 论文知识图谱模型
+# ══════════════════════════════════════════════════════════════════════
+
+
+class PaperNode(Base):
+    """论文节点 —— 知识图谱中的论文/文档实体。
+
+    每篇被索引的论文创建一个节点，挂载该论文的引文引用和缩略语。
+    """
+
+    __tablename__ = "paper_nodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    filename: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    year: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    authors: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    abstract: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    citation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    citations_from = relationship(
+        "CitationEdge",
+        foreign_keys="CitationEdge.source_id",
+        back_populates="source",
+        cascade="all, delete-orphan",
+    )
+    citations_to = relationship(
+        "CitationEdge",
+        foreign_keys="CitationEdge.target_id",
+        back_populates="target",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<PaperNode(id={self.id}, filename='{self.filename}')>"
+
+
+class CitationEdge(Base):
+    """引文边 —— 论文间的引用关系。
+
+    source_id → target_id 表示 source 引用了 target。
+    context 字段存储引文出现的上下文文本片段。
+    """
+
+    __tablename__ = "citation_edges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    context: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    source = relationship(
+        "PaperNode", foreign_keys=[source_id], back_populates="citations_from"
+    )
+    target = relationship(
+        "PaperNode", foreign_keys=[target_id], back_populates="citations_to"
+    )
+
+    def __repr__(self) -> str:
+        return f"<CitationEdge({self.source_id} → {self.target_id})>"
+
+
+class GlossaryEntry(Base):
+    """缩略语条目 —— 论文中出现的缩写-全称映射。
+
+    chunk_id 关联到 Milvus 中的具体分块，便于定位上下文。
+    """
+
+    __tablename__ = "glossary_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    paper_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    term: Mapped[str] = mapped_column(String(200), nullable=False)
+    definition: Mapped[str] = mapped_column(String(1000), nullable=False)
+    chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    paper = relationship("PaperNode", backref="glossary_entries")
+
+    def __repr__(self) -> str:
+        return f"<GlossaryEntry(term='{self.term}', paper_id={self.paper_id})>"

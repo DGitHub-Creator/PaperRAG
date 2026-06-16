@@ -1,0 +1,61 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: langchain_app
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies
+        run: |
+          pip install .[test]
+          pip install slowapi
+      - name: Check migration consistency
+        run: alembic check
+        env:
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/langchain_app
+          JWT_SECRET_KEY: test-secret-key
+          MILVUS_HOST: ""
+          REDIS_URL: ""
+      - name: Test with coverage
+        run: pytest --cov --cov-fail-under=45 --cov-report=term-missing
+        env:
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/langchain_app
+          JWT_SECRET_KEY: test-secret-key
+          MILVUS_HOST: ""
+          REDIS_URL: ""

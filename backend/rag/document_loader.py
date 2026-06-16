@@ -21,7 +21,7 @@
 
 import os
 import traceback
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -43,6 +43,10 @@ from backend.core.config import (
 from backend.core.logging_config import get_logger
 from backend.rag.academic_cleaner import clean_paper_text
 from backend.rag.theorem_detector import detect_theorem_proof
+from backend.rag.formula_normalizer import extract_formulas
+from backend.rag.citation_extractor import extract_citations, has_citations
+from backend.rag.glossary_extractor import extract_glossary, has_glossary
+from backend.rag.layout_analyzer import analyze_layout, extract_regions_by_type
 
 logger = get_logger(__name__)
 
@@ -458,6 +462,12 @@ class DocumentLoader:
             "chapter_path": "",
             "has_theorem_in_parent": False,
             "has_proof_in_parent": False,
+            "has_formula": False,
+            "formulas": [],
+            "has_citation": False,
+            "citations": [],
+            "has_glossary": False,
+            "glossary_terms": [],
         }
 
         page_chunks = self._split_page_to_three_levels(
@@ -465,6 +475,20 @@ class DocumentLoader:
             base_doc=base_doc,
             page_global_chunk_idx=page_global_chunk_idx,
         )
+
+        # 对每个 chunk 提取公式/引文/缩略语元数据
+        for chunk in page_chunks:
+            chunk_text = chunk.get("text", "")
+            formulas = extract_formulas(chunk_text)
+            chunk["has_formula"] = len(formulas) > 0
+            chunk["formulas"] = formulas[:5]
+            citations = extract_citations(chunk_text)
+            chunk["has_citation"] = len(citations) > 0
+            chunk["citations"] = [c.raw for c in citations[:10]]
+            glossary = extract_glossary(chunk_text)
+            chunk["has_glossary"] = len(glossary) > 0
+            chunk["glossary_terms"] = [g.term for g in glossary[:5]]
+
         documents.extend(page_chunks)
         return documents
 
@@ -525,6 +549,9 @@ class DocumentLoader:
 
             for c_idx, child_text in enumerate(children):
                 chunk_id = f"{filename}_p{p_idx}_c{c_idx}"
+                formulas = extract_formulas(child_text)
+                citations = extract_citations(child_text)
+                glossary = extract_glossary(child_text)
                 all_docs.append({
                     "text": child_text,
                     "chunk_id": chunk_id,
@@ -545,6 +572,15 @@ class DocumentLoader:
                     "chapter_path": chapter_path,
                     "has_theorem_in_parent": has_theorem,
                     "has_proof_in_parent": has_proof,
+                    # ── 公式感知元数据 ─────────────────────
+                    "has_formula": len(formulas) > 0,
+                    "formulas": formulas[:5],   # 最多保留 5 个公式
+                    # ── 引文元数据 ─────────────────────────
+                    "has_citation": len(citations) > 0,
+                    "citations": [c.raw for c in citations[:10]],
+                    # ── 缩略语元数据 ────────────────────────
+                    "has_glossary": len(glossary) > 0,
+                    "glossary_terms": [g.term for g in glossary[:5]],
                 })
                 global_idx += 1
 
@@ -578,9 +614,33 @@ class DocumentLoader:
 
         # 分块策略选择
         if self._enable_structural_chunking:
-            return self._split_structural(full_text, filename, parser)
+            chunks = self._split_structural(full_text, filename, parser)
         else:
-            return self._split_standard(full_text, filename, "PDF", file_path, parser)
+            chunks = self._split_standard(full_text, filename, "PDF", file_path, parser)
+
+        # 可选 ML 布局分析
+        try:
+            layout_blocks = analyze_layout(file_path)
+            if layout_blocks:
+                figure_count = len(extract_regions_by_type(layout_blocks, {"Figure"}))
+                table_count = len(extract_regions_by_type(layout_blocks, {"Table"}))
+                logger.info(
+                    "  [%s] 布局分析: %d 个区块 (%d 图, %d 表)",
+                    filename, len(layout_blocks), figure_count, table_count,
+                )
+                # 标记包含图表/表格的 chunk
+                figure_pages = {b.page_number for b in extract_regions_by_type(
+                    layout_blocks, {"Figure"})}
+                table_pages = {b.page_number for b in extract_regions_by_type(
+                    layout_blocks, {"Table"})}
+                for chunk in chunks:
+                    page = chunk.get("page_number", 0)
+                    chunk["has_figure"] = page in figure_pages
+                    chunk["has_table"] = page in table_pages
+        except Exception:
+            pass
+
+        return chunks
 
     # ── 公开接口 ──────────────────────────────────────────────────────
 

@@ -1,0 +1,72 @@
+"""文档加载模块单元测试 —— PDF 多解析器降级链。"""
+
+from unittest.mock import MagicMock, patch
+
+
+class TestParsePdfWithFallback:
+    def test_first_parser_succeeds(self):
+        text = "This is a valid academic paper content with more than fifty non-whitespace characters for testing purposes. " * 3
+        with (
+            patch("backend.rag.document_loader._PDF_PARSERS", [
+                ("fast_parser", lambda p: text),
+                ("slow_parser", lambda p: ""),
+            ]),
+        ):
+            from backend.rag.document_loader import parse_pdf_with_fallback
+            result_text, parser_name = parse_pdf_with_fallback("/path/to/test.pdf")
+            assert parser_name == "fast_parser"
+            assert len(result_text) > 50
+
+    def test_second_parser_on_empty(self):
+        text = "A shorter but still valid document text that has more than fifty characters in total for testing. " * 2
+        with (
+            patch("backend.rag.document_loader._PDF_PARSERS", [
+                ("parser_a", lambda p: ""),
+                ("parser_b", lambda p: text),
+            ]),
+        ):
+            from backend.rag.document_loader import parse_pdf_with_fallback
+            result_text, parser_name = parse_pdf_with_fallback("/path/to/test.pdf")
+            assert parser_name == "parser_b"
+
+    def test_skip_too_short_text(self):
+        text = "This is a valid academic paper content with more than fifty non-whitespace characters for testing purposes. " * 3
+        with (
+            patch("backend.rag.document_loader._PDF_PARSERS", [
+                ("parser_a", lambda p: "short"),
+                ("parser_b", lambda p: text),
+            ]),
+        ):
+            from backend.rag.document_loader import parse_pdf_with_fallback
+            result_text, parser_name = parse_pdf_with_fallback("/path/to/test.pdf")
+            assert parser_name == "parser_b"
+
+    def test_all_parsers_fail_raises(self):
+        with (
+            patch("backend.rag.document_loader._PDF_PARSERS", [
+                ("parser_a", lambda p: ""),
+                ("parser_b", lambda p: ""),
+            ]),
+        ):
+            from backend.rag.document_loader import parse_pdf_with_fallback
+            import pytest
+            with pytest.raises(RuntimeError):
+                parse_pdf_with_fallback("/path/to/test.pdf")
+
+
+class TestDocumentLoader:
+    def test_init_reads_config(self):
+        with (
+            patch("backend.rag.document_loader.CHUNK_SIZE", 800),
+            patch("backend.rag.document_loader.CHUNK_OVERLAP", 100),
+            patch("backend.rag.document_loader.PARSE_MAX_WORKERS", 4),
+        ):
+            from backend.rag.document_loader import DocumentLoader
+            loader = DocumentLoader()
+            assert loader._max_workers == 4
+
+    def test_load_empty_path(self):
+        from backend.rag.document_loader import DocumentLoader
+        import pytest
+        with pytest.raises(Exception):
+            DocumentLoader().load_document("/nonexistent/file.pdf", "test.pdf")
