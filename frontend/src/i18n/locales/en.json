@@ -1,0 +1,98 @@
+{
+  "app": {
+    "title": "PaperRAG - Academic Knowledge Base",
+    "subtitle": "Meow Assistant",
+    "loading": "Loading..."
+  },
+  "auth": {
+    "login_title": "Login to PaperRAG",
+    "register_title": "Register PaperRAG",
+    "login_tip": "Login to use chat and history; admins can manage documents.",
+    "register_tip": "Register to use chat and history; admins can manage documents.",
+    "username": "Username",
+    "password": "Password",
+    "role": "Role",
+    "role_user": "User",
+    "role_admin": "Admin",
+    "admin_code": "Admin Invite Code",
+    "login_btn": "Login",
+    "register_btn": "Register",
+    "submitting": "Submitting...",
+    "switch_to_register": "No account? Register",
+    "switch_to_login": "Already have an account? Login",
+    "username_required": "Username and password are required",
+    "auth_failed": "Authentication failed",
+    "login_expired": "Login expired, please login again",
+    "login_success": "Login successful",
+    "register_success": "Registration successful",
+    "logout": "Logout"
+  },
+  "nav": {
+    "new_chat": "New Chat",
+    "history": "History",
+    "settings": "Settings",
+    "clear_chat": "Clear Chat",
+    "clear_confirm": "Clear current conversation?"
+  },
+  "chat": {
+    "welcome_title": "Hi there! I'm Meow",
+    "welcome_desc": "I can help you code, answer questions, or just chat~ Meow!",
+    "placeholder": "Say something to Meow... (Shift+Enter for new line)",
+    "send": "Send",
+    "stop": "Stop",
+    "thinking": "Thinking...",
+    "online": "Meow is online...",
+    "aborted": "(Aborted)",
+    "aborted_suffix": "\n\n_(Response aborted)_",
+    "error_prefix": "Error: ",
+    "error_msg": "Hmm... something went wrong: ",
+    "retrieval_process": "Retrieval Process",
+    "footer_hint": "AI-generated content may contain errors. Please verify carefully."
+  },
+  "history": {
+    "title": "Chat History",
+    "empty": "No history yet",
+    "messages": "messages",
+    "delete_confirm": "Delete this session?",
+    "load_failed": "Failed to load history: ",
+    "load_session_failed": "Failed to load session: ",
+    "delete_failed": "Failed to delete: "
+  },
+  "settings": {
+    "title": "Document Management",
+    "desc": "Upload documents for vectorization. Supports PDF / Word / Excel formats.",
+    "upload_title": "Upload Document",
+    "select_file": "Select File",
+    "start_upload": "Upload",
+    "uploading": "Uploading...",
+    "refresh": "Refresh",
+    "documents_title": "Uploaded Documents",
+    "empty_documents": "No documents yet",
+    "delete_confirm_prefix": "Delete \"",
+    "delete_confirm_suffix": "\"?",
+    "delete_confirm_detail": "Delete document \"{name}\"? This will also remove all related vectors from Milvus.",
+    "upload_steps": {
+      "upload": "Uploading",
+      "cleanup": "Cleaning old version",
+      "parse": "Parsing & Chunking",
+      "parent_store": "Storing parent chunks",
+      "vector_store": "Vectorizing & storing"
+    },
+    "delete_steps": {
+      "prepare": "Preparing deletion",
+      "bm25": "Syncing BM25 stats",
+      "milvus": "Deleting vector data",
+      "parent_store": "Deleting parent chunks"
+    },
+    "upload_progress": "Upload Progress",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "load_failed": "Failed to load documents: ",
+    "upload_failed_prefix": "Upload failed: ",
+    "query_failed": "Progress query failed: ",
+    "delete_failed_prefix": "Delete failed: "
+  },
+  "ws": {
+    "error": "WebSocket connection error"
+  }
+}
