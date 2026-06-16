@@ -17,9 +17,11 @@ volumes/
 .DS_Store
 data/
 
-# Test
-tests/
-test_*
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
 
 # Study
 langchain-study/
