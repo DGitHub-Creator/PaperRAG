@@ -1,4 +1,5 @@
 import { ref } from "vue"
+import { t } from "../i18n"
 
 export function useWebSocket() {
   const ws = ref<WebSocket | null>(null)
@@ -14,7 +15,7 @@ export function useWebSocket() {
       try { onMessage(JSON.parse(ev.data)) }
       catch (_) { /* ignore parse errors */ }
     }
-    socket.onerror = () => { isConnected.value = false; onError?.("WebSocket 连接错误") }
+    socket.onerror = () => { isConnected.value = false; onError?.(t("ws.error")) }
     socket.onclose = () => { isConnected.value = false }
     ws.value = socket
   }

@@ -1,20 +1,20 @@
 <template>
   <div class="auth-panel">
-    <h2>{{ mode === 'login' ? '登录 PaperRAG' : '注册 PaperRAG' }}</h2>
-    <p>登录后即可使用聊天和历史记录；管理员可管理文档知识库。</p>
+    <h2>{{ mode === 'login' ? $t('auth.login_title') : $t('auth.register_title') }}</h2>
+    <p>{{ mode === 'login' ? $t('auth.login_tip') : $t('auth.register_tip') }}</p>
     <div class="auth-form">
-      <input v-model="form.username" type="text" placeholder="用户名" />
-      <input v-model="form.password" type="password" placeholder="密码" />
+      <input v-model="form.username" type="text" :placeholder="$t('auth.username')" />
+      <input v-model="form.password" type="password" :placeholder="$t('auth.password')" />
       <select v-if="mode === 'register'" v-model="form.role">
-        <option value="user">普通用户</option>
-        <option value="admin">管理员</option>
+        <option value="user">{{ $t('auth.role_user') }}</option>
+        <option value="admin">{{ $t('auth.role_admin') }}</option>
       </select>
-      <input v-if="mode === 'register' && form.role === 'admin'" v-model="form.admin_code" type="password" placeholder="管理员邀请码" />
+      <input v-if="mode === 'register' && form.role === 'admin'" v-model="form.admin_code" type="password" :placeholder="$t('auth.admin_code')" />
       <button class="send-btn auth-submit" :disabled="loading" @click="submit">
-        {{ loading ? '提交中...' : (mode === 'login' ? '登录' : '注册') }}
+        {{ loading ? $t('auth.submitting') : (mode === 'login' ? $t('auth.login_btn') : $t('auth.register_btn')) }}
       </button>
       <button class="auth-switch" @click="$emit('switch', mode === 'login' ? 'register' : 'login')">
-        {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+        {{ mode === 'login' ? $t('auth.switch_to_register') : $t('auth.switch_to_login') }}
       </button>
     </div>
   </div>
@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from "vue"
+import { t } from "../i18n"
 
 defineProps<{ mode: string }>()
 const emit = defineEmits<{
@@ -32,7 +33,7 @@ const form = reactive({ username: "", password: "", role: "user", admin_code: ""
 const loading = ref(false)
 
 async function submit(): Promise<void> {
-  if (!form.username.trim() || !form.password.trim()) { alert("用户名和密码不能为空"); return }
+  if (!form.username.trim() || !form.password.trim()) { alert(t("auth.username_required")); return }
   loading.value = true
   try {
     emit("submit", form.username.trim(), form.password.trim(), form.role, form.admin_code || null)

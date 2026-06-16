@@ -122,7 +122,7 @@ frontend/
 │   │   ├── useChat.ts            # SSE 流式 + AbortController
 │   │   ├── useDocuments.ts       # 上传（XHR 进度）+ 删除轮询
 │   │   ├── useSessions.ts        # 会话 CRUD
-│   │   └── useWebSocket.ts       # WebSocket 连接管理（待集成）
+│   │   └── useWebSocket.ts       # WebSocket 连接管理（已集成到 useChat）
 │   ├── services/
 │   │   └── api.ts               # authFetch 封装
 │   └── utils/
@@ -409,7 +409,7 @@ graph.compile(checkpointer=checkpointer)
 | 2.3 | Checkpoint | 鲁棒性         | 低   | P1     | 第 2 周     |
 | 1.1 | 结构化日志      | 可观测性        | 中   | P1     | 第 2 周     |
 | 1.5 | 任务状态持久化    | 可靠性         | 中   | P1     | 第 2 周     |
-| 1.2 | 前端工程化      | 可维护性        | 高   | P1 ✅   | 第 2-3 周 ✅ |
+| 1.2 | 前端工程化 (含 TS + i18n + WS) | 可维护性 | 高 | P1 ✅ | 第 2-3 周 ✅ |
 | 2.1 | 多轮检索       | 用户体验        | 中   | P2     | 第 3 周     |
 | 2.2 | 历史感知检索     | 准确率         | 中   | P2     | 第 3 周     |
 | 2.4 | 多模态        | 功能          | 高   | P2     | 第 4 周     |

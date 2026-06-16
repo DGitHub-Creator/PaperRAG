@@ -1,5 +1,7 @@
 import { ref, nextTick } from "vue"
 import { authFetch } from "../services/api"
+import { useWebSocket } from "./useWebSocket"
+import { t } from "../i18n"
 
 export interface RAGStep {
   icon?: string
@@ -29,6 +31,9 @@ export function useChat() {
   const sessionId = ref("session_" + Date.now())
   const abortController = ref<AbortController | null>(null)
 
+  const ws = useWebSocket()
+  let wsBotIdx = -1
+
   function scrollToBottom(): void {
     nextTick(() => {
       const el = document.querySelector(".chat-container")
@@ -56,7 +61,42 @@ export function useChat() {
   }
 
   function stop(): void {
-    if (abortController.value) abortController.value.abort()
+    if (abortController.value) {
+      abortController.value.abort()
+    } else if (ws.isConnected.value) {
+      ws.disconnect()
+    }
+  }
+
+  function handleEvent(ev: any, botIdx: number): void {
+    const msg = messages.value[botIdx]
+    if (!msg) return
+    if (ev.type === "content") {
+      if (msg.isThinking) msg.isThinking = false
+      msg.text += ev.content
+    } else if (ev.type === "trace") {
+      msg.ragTrace = ev.rag_trace
+    } else if (ev.type === "rag_step") {
+      msg.ragSteps!.push(ev.step)
+    } else if (ev.type === "error") {
+      msg.isThinking = false
+      msg.text += `\n[Error: ${ev.content}]`
+    }
+  }
+
+  function connectWs(token: string): void {
+    ws.connect(token, (data: any) => {
+      if (data.type === "done") {
+        isLoading.value = false
+      } else {
+        handleEvent(data, wsBotIdx)
+        scrollToBottom()
+      }
+    })
+  }
+
+  function disconnectWs(): void {
+    ws.disconnect()
   }
 
   async function send(text: string): Promise<void> {
@@ -70,7 +110,14 @@ export function useChat() {
       text: "", isUser: false, isThinking: true, ragTrace: null, ragSteps: [],
     }) - 1
 
+    if (ws.isConnected.value) {
+      wsBotIdx = botIdx
+      ws.send({ message: text, session_id: sessionId.value })
+      return
+    }
+
     abortController.value = new AbortController()
+    wsBotIdx = -1
 
     try {
       const res = await authFetch("/chat/stream", {
@@ -98,19 +145,7 @@ export function useChat() {
           const raw = line.slice(6)
           if (raw === "[DONE]") continue
           try {
-            const ev = JSON.parse(raw)
-            const msg = messages.value[botIdx]
-            if (ev.type === "content") {
-              if (msg.isThinking) msg.isThinking = false
-              msg.text += ev.content
-            } else if (ev.type === "trace") {
-              msg.ragTrace = ev.rag_trace
-            } else if (ev.type === "rag_step") {
-              msg.ragSteps!.push(ev.step)
-            } else if (ev.type === "error") {
-              msg.isThinking = false
-              msg.text += `\n[Error: ${ev.content}]`
-            }
+            handleEvent(JSON.parse(raw), botIdx)
           } catch (_) { /* ignore parse errors */ }
         }
         scrollToBottom()
@@ -120,9 +155,9 @@ export function useChat() {
       if (!msg) return
       msg.isThinking = false
       if (err instanceof Error && err.name === "AbortError") {
-        msg.text = msg.text || "(已终止回答)"
+        msg.text = msg.text || t("chat.aborted")
       } else {
-        msg.text = `错误：${err instanceof Error ? err.message : String(err)}`
+        msg.text = `${t("chat.error_prefix")}${err instanceof Error ? err.message : String(err)}`
       }
     } finally {
       isLoading.value = false
@@ -131,5 +166,5 @@ export function useChat() {
     }
   }
 
-  return { messages, isLoading, sessionId, newChat, clearChat, loadMessages, send, stop }
+  return { messages, isLoading, sessionId, newChat, clearChat, loadMessages, send, stop, connectWs, disconnectWs }
 }

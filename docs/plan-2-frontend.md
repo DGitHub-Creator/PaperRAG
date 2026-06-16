@@ -1,4 +1,4 @@
-# Plan 2 — 前端工程化（✅ 2.1–2.3 完成，⏳ 2.4–2.5 待执行）
+# Plan 2 — 前端工程化（✅ 全部完成）
 
 > 目标：从 CDN 单页 HTML 渐进迁移到 Vite + Vue3 SFC，已达成 TypeScript 工程化。
 
@@ -53,18 +53,22 @@
 | main | `.js` | `.ts` — 入口 |
 | 6 个 .vue 组件 | plain | `lang="ts"` — defineProps/Emits 泛型 |
 
-## 2.4 国际化 i18n（P2）⏳
+## 2.4 国际化 i18n（P2）✅
 
 | # | 动作 | 状态 |
 |---|------|------|
-| 1 | vue-i18n 集成 | ⏳ |
+| 1 | vue-i18n 集成 | ✅ |
+| 2 | 中文 locale (`zh-CN.json`) | ✅ |
+| 3 | 英文 locale (`en.json`) | ✅ |
+| 4 | 组件模板 `$t()` 替换 | ✅ |
+| 5 | Composables `t()` 替换 | ✅ |
 
-## 2.5 WebSocket 前端（P2）
+## 2.5 WebSocket 前端（P2）✅
 
 | # | 动作 | 状态 |
 |---|------|------|
 | 1 | `composables/useWebSocket.ts` | ✅ 已创建 |
-| 2 | WebSocket 降级 SSE 支持 | ⏳ 待集成 |
+| 2 | `useChat.ts` 集成 WS + SSE 双模式 | ✅ 自动检测，优先使用 WS |
 
 ## 涉及文件
 
