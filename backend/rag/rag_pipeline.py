@@ -37,28 +37,7 @@ from backend.services.tools import emit_rag_step
 load_dotenv()
 logger = get_logger(__name__)
 
-# ── 模型懒加载 ────────────────────────────────────────────────────
-
-_grader_model = None
-_router_model = None
-
-
-def _get_grader_model():
-    """懒加载相关性评分模型（温度 0，需要结构化输出）。"""
-    global _grader_model
-    if _grader_model is None:
-        from backend.core.llm import get_chat_model
-        _grader_model = get_chat_model(role="grade")
-    return _grader_model
-
-
-def _get_router_model():
-    """懒加载查询重写策略路由模型（温度 0，需要结构化输出）。"""
-    global _router_model
-    if _router_model is None:
-        from backend.core.llm import get_chat_model
-        _router_model = get_chat_model(role="router")
-    return _router_model
+from backend.core.dependencies import get_grader_model, get_router_model
 
 
 # ── Prompt 与结构化输出 ───────────────────────────────────────────
@@ -263,7 +242,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
     Returns:
         更新后的 state（含 route 决策和评分结果）。
     """
-    grader = _get_grader_model()
+    grader = get_grader_model()
     retry_count = state.get("retry_count", 0)
 
     # 已达最大重试次数 → 强制生成回答
@@ -346,7 +325,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     emit_rag_step("✏️", "正在重写查询...")
 
     # LLM 路由选择策略
-    router = _get_router_model()
+    router = get_router_model()
     strategy = "step_back"
 
     if router:
