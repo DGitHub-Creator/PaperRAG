@@ -1,6 +1,6 @@
-# Plan 4 — 测试体系完善（⏳ 待执行）
+# Plan 4 — 测试体系完善（部分完成）
 
-> 目标：从 27 个测试覆盖关键模块，到覆盖率 > 60%，并集成 CI。
+> 目标：从 51 个测试覆盖核心模块，逐步提升到覆盖率 > 60%。
 
 ---
 
@@ -8,31 +8,27 @@
 
 | 测试文件 | 测试数 | 覆盖模块 |
 |----------|--------|----------|
-| `test_cache.py` | 10 | `SemanticCache` |
-| `test_embedding.py` | 7 | `EmbeddingService.BM25` |
-| `test_health.py` | 2 | `/health`、`/ready` |
-| `test_rag_pipeline.py` | 8 | `grade_documents`、`rewrite_question`、`retrieve_expanded` |
+| `tests/unit/test_auth.py` | 16 | `auth`（密码哈希/JWT/角色解析） |
+| `tests/unit/test_cache.py` | 15 | `SemanticCache`（精确+语义匹配） |
+| `tests/unit/test_tools.py` | 7 | `tools`（contextvars 状态管理） |
+| `tests/unit/test_academic_cleaner.py` | 13 | `academic_cleaner`（学术文本清洗） |
+| **合计** | **51** | |
 
-**未覆盖的核心模块**：认证（auth）、路由端点（routes）、RAG 工具（rag_utils）、Agent（agent）、文档加载（document_loader）、Milvus 写入（milvus_writer）。
-
-**问题**：
-- `tests/` 目录被 `.gitignore` 排除
-- 部分测试依赖真实基础设施（DB/Milvus）
-- 无覆盖率门禁
+**未覆盖的核心模块**：路由端点（routes）、RAG 工具函数（rag_utils）、Agent（agent）、文档加载（document_loader）、Milvus 写入（milvus_writer）。
 
 ---
 
-## 4.1 测试目录治理（P0）
+## 4.1 测试目录治理（P0）✅
 
 | # | 动作 | 状态 |
 |---|------|------|
-| 1 | 从 `.gitignore` 移除 `tests/` | ⏳ |
-| 2 | 创建 `tests/unit/` | ⏳ |
-| 3 | 创建 `tests/integration/` | ⏳ |
+| 1 | 从 `.gitignore` 移除 `tests/` | ✅ |
+| 2 | 创建 `tests/unit/` | ✅ |
+| 3 | 创建 `tests/integration/` | ✅ |
 
-## 4.2 认证模块测试（P1）
+## 4.2 认证模块测试（P1）✅
 
-计划 13 个测试覆盖 `get_password_hash`、`verify_password`、`create_access_token`、`get_current_user`、`require_admin`。
+16 个测试覆盖 `get_password_hash`、`verify_password`、`create_access_token`、`resolve_role`。
 
 | # | 文件 | 状态 |
 |---|------|------|
@@ -70,12 +66,12 @@
 |---|------|------|
 | 1 | `tests/unit/test_document_loader.py` | ⏳ |
 
-## 4.7 覆盖率门禁（P1）
+## 4.7 覆盖率门禁（P1）✅
 
 | # | 动作 | 状态 |
 |---|------|------|
-| 1 | `pyproject.toml` 配置 `[tool.coverage]` | ⏳ |
-| 2 | CI 步骤 `pytest --cov --cov-fail-under=60` | ⏳ |
+| 1 | `pyproject.toml` 配置 `[tool.coverage]` | ✅ `fail_under=40` |
+| 2 | CI 步骤 `pytest --cov --cov-fail-under=60` | ⏳ 待 Plan 3 CI/CD 实施 |
 
 ## 相关改动
 

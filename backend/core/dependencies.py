@@ -67,6 +67,45 @@ def get_rag_graph():
     return _container.get_or_create("rag_graph", build_rag_graph)
 
 
+def get_grader_model():
+    from backend.core.llm import get_chat_model
+    return _container.get_or_create("grader_model", lambda: get_chat_model(role="grade"))
+
+
+def get_router_model():
+    from backend.core.llm import get_chat_model
+    return _container.get_or_create("router_model", lambda: get_chat_model(role="router"))
+
+
+def get_stepback_model():
+    from backend.core.llm import get_chat_model
+    return _container.get_or_create("stepback_model", lambda: get_chat_model(role="stepback"))
+
+
+def get_local_reranker():
+    def _create():
+        from sentence_transformers import CrossEncoder
+        from backend.core.config import RERANK_MODEL, HF_HOME
+        model_name = RERANK_MODEL or "BAAI/bge-reranker-v2-m3"
+        return CrossEncoder(model_name, cache_folder=HF_HOME)
+    return _container.get_or_create("local_reranker", _create)
+
+
+def get_agent_instance():
+    from backend.services.agent import create_agent_instance
+    return _container.get_or_create("agent_instance", lambda: create_agent_instance()[0])
+
+
+def get_agent_model():
+    from backend.services.agent import create_agent_instance
+    return _container.get_or_create("agent_model", lambda: create_agent_instance()[1])
+
+
+def get_conversation_storage():
+    from backend.services.agent import ConversationStorage
+    return _container.get_or_create("conversation_storage", ConversationStorage)
+
+
 def reset_all():
     """重置所有已创建的依赖实例（测试场景使用）。"""
     _container.reset()
