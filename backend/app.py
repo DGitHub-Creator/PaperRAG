@@ -85,13 +85,16 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
 
     # ── 挂载前端静态文件 ────────────────────────────────────────
-    if FRONTEND_DIR.exists():
+    # 生产优先: dist/ → 开发备选: frontend/
+    dist_dir = FRONTEND_DIR / "dist"
+    static_dir = dist_dir if dist_dir.exists() and (dist_dir / "index.html").exists() else FRONTEND_DIR
+    if static_dir.exists():
         app.mount(
             "/",
-            StaticFiles(directory=str(FRONTEND_DIR), html=True),
+            StaticFiles(directory=str(static_dir), html=True),
             name="static",
         )
-        logger.info("前端静态文件挂载: %s", FRONTEND_DIR)
+        logger.info("前端静态文件挂载: %s (dist=%s)", static_dir, dist_dir.exists())
 
     return app
 

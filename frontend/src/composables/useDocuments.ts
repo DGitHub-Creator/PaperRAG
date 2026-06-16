@@ -1,5 +1,6 @@
-import { ref, reactive, type UnwrapNestedRefs } from "vue"
+import { ref, reactive } from "vue"
 import { authFetch } from "../services/api"
+import { t } from "../i18n"
 
 interface StepState {
   key: string
@@ -84,7 +85,7 @@ export function useDocuments() {
       if (!res.ok) throw new Error("加载失败")
       const data = await res.json()
       documents.value = mergeDocs(data.documents)
-    } catch (e: unknown) { alert("加载文档列表失败：" + (e instanceof Error ? e.message : String(e))) }
+    } catch (e: unknown) { alert(t("settings.load_failed") + (e instanceof Error ? e.message : String(e))) }
     finally { documentsLoading.value = false }
   }
 
@@ -125,7 +126,7 @@ export function useDocuments() {
           }
         }
       } catch (e: unknown) {
-        uploadProgress.value = "进度查询失败：" + (e instanceof Error ? e.message : String(e))
+        uploadProgress.value = t("settings.query_failed") + (e instanceof Error ? e.message : String(e))
         stopUploadPoll()
         isUploading.value = false
       }
@@ -160,7 +161,7 @@ export function useDocuments() {
   }
 
   async function upload(): Promise<void> {
-    if (!selectedFile.value) { alert("请先选择文件"); return }
+    if (!selectedFile.value) { alert(t("settings.select_file")); return }
     isUploading.value = true
     uploadProgress.value = "正在上传..."
     uploadSteps.value = DEFAULT_UPLOAD_STEPS.map((s) => ({ ...s }))
@@ -171,7 +172,7 @@ export function useDocuments() {
       startUploadPoll(data.job_id)
     } catch (e: unknown) {
       updateUploadStep("upload", 100, "failed", e instanceof Error ? e.message : String(e))
-      uploadProgress.value = "上传失败：" + (e instanceof Error ? e.message : String(e))
+      uploadProgress.value = t("settings.upload_failed_prefix") + (e instanceof Error ? e.message : String(e))
       isUploading.value = false
     }
   }
@@ -218,7 +219,7 @@ export function useDocuments() {
 
   async function deleteDoc(filename: string): Promise<void> {
     if (deleteJobs[filename]?.status === "running") return
-    if (!confirm(`确定删除 "${filename}"？`)) return
+    if (!confirm(t("settings.delete_confirm_prefix") + filename + t("settings.delete_confirm_suffix"))) return
     clearRemoveTimer(filename)
     deleteJobs[filename] = { status: "running", message: "提交中...", collapsed: false, steps: DEFAULT_DELETE_STEPS.map((s, i) => i === 0 ? { ...s, percent: 1, status: "running", message: "提交中" } : { ...s }) }
     try {

@@ -17,6 +17,7 @@ import { createApp } from "vue"
 import App from "./App.vue"
 import "../style.css"
 import { configureRenderer } from "./utils/markdown"
+import i18n from "./i18n"
 
 configureRenderer()
-createApp(App).mount("#app")
+createApp(App).use(i18n).mount("#app")

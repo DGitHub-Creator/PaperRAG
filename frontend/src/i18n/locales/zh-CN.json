@@ -1,0 +1,98 @@
+{
+  "app": {
+    "title": "PaperRAG - 学术论文知识库",
+    "subtitle": "喵喵助手",
+    "loading": "加载中..."
+  },
+  "auth": {
+    "login_title": "登录 PaperRAG",
+    "register_title": "注册 PaperRAG",
+    "login_tip": "登录后即可使用聊天和历史记录；管理员可管理文档知识库。",
+    "register_tip": "注册后即可使用聊天和历史记录；管理员可管理文档知识库。",
+    "username": "用户名",
+    "password": "密码",
+    "role": "角色",
+    "role_user": "普通用户",
+    "role_admin": "管理员",
+    "admin_code": "管理员邀请码",
+    "login_btn": "登录",
+    "register_btn": "注册",
+    "submitting": "提交中...",
+    "switch_to_register": "没有账号？去注册",
+    "switch_to_login": "已有账号？去登录",
+    "username_required": "用户名和密码不能为空",
+    "auth_failed": "认证失败",
+    "login_expired": "登录已过期，请重新登录",
+    "login_success": "登录成功",
+    "register_success": "注册成功",
+    "logout": "退出登录"
+  },
+  "nav": {
+    "new_chat": "新建会话",
+    "history": "历史记录",
+    "settings": "设置",
+    "clear_chat": "清空当前对话",
+    "clear_confirm": "确定清空当前对话？"
+  },
+  "chat": {
+    "welcome_title": "你好呀！我是喵喵",
+    "welcome_desc": "我可以帮你写代码、回答问题，或者只是陪你聊天~ 喵！",
+    "placeholder": "和喵喵说点什么吧... (Shift+Enter 换行)",
+    "send": "发送",
+    "stop": "终止回答",
+    "thinking": "正在思考中...",
+    "online": "喵喵在线中...",
+    "aborted": "(已终止回答)",
+    "aborted_suffix": "\n\n_(回答已被终止)_",
+    "error_prefix": "错误：",
+    "error_msg": "喵呜... 出了点问题：",
+    "retrieval_process": "检索过程",
+    "footer_hint": "AI 生成的内容可能包含错误，请仔细甄别。"
+  },
+  "history": {
+    "title": "历史会话",
+    "empty": "暂无历史记录",
+    "messages": "条消息",
+    "delete_confirm": "确定删除会话？",
+    "load_failed": "加载历史记录失败：",
+    "load_session_failed": "加载会话失败：",
+    "delete_failed": "删除失败："
+  },
+  "settings": {
+    "title": "文档管理",
+    "desc": "上传文档进行向量化处理，支持 PDF / Word / Excel 格式",
+    "upload_title": "上传文档",
+    "select_file": "选择文件",
+    "start_upload": "开始上传",
+    "uploading": "上传中...",
+    "refresh": "刷新列表",
+    "documents_title": "已上传文档",
+    "empty_documents": "暂无文档",
+    "delete_confirm_prefix": "确定删除 \"",
+    "delete_confirm_suffix": "\"？",
+    "delete_confirm_detail": "确定要删除文档 \"{name}\" 吗？这将同时删除 Milvus 中的所有相关向量。",
+    "upload_steps": {
+      "upload": "文档上传",
+      "cleanup": "清理旧版本",
+      "parse": "解析与分块",
+      "parent_store": "父级分块入库",
+      "vector_store": "向量化入库"
+    },
+    "delete_steps": {
+      "prepare": "准备删除",
+      "bm25": "同步 BM25 统计",
+      "milvus": "删除向量数据",
+      "parent_store": "删除父级分块"
+    },
+    "upload_progress": "上传进度",
+    "expand": "展开",
+    "collapse": "收起",
+    "load_failed": "加载文档列表失败：",
+    "upload_failed_prefix": "上传失败：",
+    "query_failed": "进度查询失败：",
+    "delete_failed_prefix": "删除失败："
+  },
+  "ws": {
+    "error": "WebSocket 连接错误"
+  }
+}
