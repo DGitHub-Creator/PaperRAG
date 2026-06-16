@@ -23,6 +23,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue"
+import { t } from "./i18n"
 import Sidebar from "./components/Sidebar.vue"
 import ChatView from "./components/ChatView.vue"
 import AuthPanel from "./components/AuthPanel.vue"
@@ -33,10 +34,11 @@ import { useChat } from "./composables/useChat"
 import { useSessions } from "./composables/useSessions"
 
 const { currentUser, isAuthenticated, isAdmin, username, fetchMe, login, register, logout: authLogout } = useAuth()
-const { messages, newChat, clearChat, sessionId, loadMessages } = useChat()
+const { messages, newChat, clearChat, sessionId, loadMessages, connectWs, disconnectWs } = useChat()
 const { sessions, showHistorySidebar, list: listSessions, loadMessages: fetchSessionMsgs, remove: deleteSession } = useSessions()
 
 function logout() {
+  disconnectWs()
   authLogout()
   messages.value = []
   sessions.value = []
@@ -49,8 +51,9 @@ const authMode = ref("login")
 let initialized = false
 
 onMounted(async () => {
-  if (localStorage.getItem("accessToken")) {
-    try { await fetchMe(); initialized = true }
+  const token = localStorage.getItem("accessToken")
+  if (token) {
+    try { await fetchMe(); initialized = true; connectWs(token) }
     catch (_) { logout() }
   }
 })
@@ -64,10 +67,12 @@ async function handleAuth(username: string, password: string, role: string, admi
   newChat()
   activeNav.value = "newChat"
   showHistorySidebar.value = false
+  const token = localStorage.getItem("accessToken")
+  if (token) connectWs(token)
 }
 
 function handleNewChat(): void { newChat(); activeNav.value = "newChat"; showHistorySidebar.value = false }
-function handleClearChat(): void { if (confirm("确定清空当前对话？")) clearChat() }
+function handleClearChat(): void { if (confirm(t("nav.clear_confirm"))) clearChat() }
 async function handleHistory(): Promise<void> { activeNav.value = "history"; showHistorySidebar.value = true; await listSessions() }
 function handleSettings(): void { activeNav.value = "settings"; showHistorySidebar.value = false }
 

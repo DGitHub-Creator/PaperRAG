@@ -1,28 +1,28 @@
 <template>
   <div class="settings-panel">
     <div class="settings-header">
-      <h2><i class="fas fa-cog"></i> 文档管理</h2>
-      <p>上传文档进行向量化处理，支持 PDF / Word / Excel 格式</p>
+      <h2><i class="fas fa-cog"></i> {{ $t("settings.title") }}</h2>
+      <p>{{ $t("settings.desc") }}</p>
     </div>
 
     <div class="upload-section">
-      <h3><i class="fas fa-upload"></i> 上传文档</h3>
+      <h3><i class="fas fa-upload"></i> {{ $t("settings.upload_title") }}</h3>
       <div class="upload-area">
         <input type="file" ref="fileInputRef" @change="onFileSelect" accept=".pdf,.doc,.docx,.xls,.xlsx" style="display:none" />
-        <button @click="fileInputRef?.click()" class="upload-btn"><i class="fas fa-cloud-upload-alt"></i> 选择文件</button>
+        <button @click="fileInputRef?.click()" class="upload-btn"><i class="fas fa-cloud-upload-alt"></i> {{ $t("settings.select_file") }}</button>
         <div v-if="selectedFile" class="selected-file">
           <i class="fas fa-file"></i> {{ selectedFile.name }}
-          <button @click="upload" class="btn-primary" :disabled="isUploading"><i class="fas fa-upload"></i> {{ isUploading ? '上传中...' : '开始上传' }}</button>
+          <button @click="upload" class="btn-primary" :disabled="isUploading"><i class="fas fa-upload"></i> {{ isUploading ? $t('settings.uploading') : $t('settings.start_upload') }}</button>
         </div>
         <div v-if="uploadSteps.length" class="upload-progress" :class="{ collapsed: uploadCollapsed }">
           <button type="button" class="upload-progress-header" @click="uploadCollapsed = !uploadCollapsed">
-            <span class="upload-message">{{ uploadProgress || '上传进度' }}</span>
-            <span class="upload-toggle">{{ uploadCollapsed ? '展开' : '收起' }}</span>
+            <span class="upload-message">{{ uploadProgress || $t('settings.upload_progress') }}</span>
+            <span class="upload-toggle">{{ uploadCollapsed ? $t('settings.expand') : $t('settings.collapse') }}</span>
           </button>
           <div v-show="!uploadCollapsed" class="upload-step-list">
             <div v-for="step in uploadSteps" :key="step.key" class="upload-step" :class="`upload-step-${step.status}`">
               <div class="upload-step-header">
-                <span class="upload-step-label">{{ step.label }}</span>
+                <span class="upload-step-label">{{ $t('settings.upload_steps.' + step.key, step.label) || step.label }}</span>
                 <span class="upload-step-percent">{{ step.percent }}%</span>
               </div>
               <div class="upload-step-bar"><div class="upload-step-fill" :style="{ width: step.percent + '%' }"></div></div>
@@ -34,10 +34,10 @@
     </div>
 
     <div class="documents-section">
-      <h3><i class="fas fa-list"></i> 已上传文档</h3>
-      <button @click="load" class="btn-secondary"><i class="fas fa-sync"></i> 刷新列表</button>
-      <div v-if="documentsLoading" class="loading-indicator">加载中...</div>
-      <div v-else-if="!documents.length" class="empty-documents"><i class="fas fa-inbox"></i><p>暂无文档</p></div>
+      <h3><i class="fas fa-list"></i> {{ $t("settings.documents_title") }}</h3>
+      <button @click="load" class="btn-secondary"><i class="fas fa-sync"></i> {{ $t("settings.refresh") }}</button>
+      <div v-if="documentsLoading" class="loading-indicator">{{ $t("app.loading") }}</div>
+      <div v-else-if="!documents.length" class="empty-documents"><i class="fas fa-inbox"></i><p>{{ $t("settings.empty_documents") }}</p></div>
       <div v-else class="documents-list">
         <div v-for="doc in documents" :key="doc.filename" class="document-item" :class="{ deleting: deleteJobs[doc.filename]?.status === 'running' }">
           <div class="document-main">
@@ -55,12 +55,12 @@
             </div>
             <div v-if="deleteJobs[doc.filename]" class="upload-progress delete-progress" :class="{ collapsed: deleteJobs[doc.filename].collapsed }">
               <button type="button" class="upload-progress-header" @click="deleteJobs[doc.filename].collapsed = !deleteJobs[doc.filename].collapsed">
-                <span class="upload-message">{{ deleteJobs[doc.filename].message || '删除进度' }}</span>
-                <span class="upload-toggle">{{ deleteJobs[doc.filename].collapsed ? '展开' : '收起' }}</span>
+                <span class="upload-message">{{ deleteJobs[doc.filename].message || $t('settings.upload_progress') }}</span>
+                <span class="upload-toggle">{{ deleteJobs[doc.filename].collapsed ? $t('settings.expand') : $t('settings.collapse') }}</span>
               </button>
               <div v-show="!deleteJobs[doc.filename].collapsed" class="upload-step-list">
                 <div v-for="step in deleteJobs[doc.filename].steps" :key="step.key" class="upload-step" :class="`upload-step-${step.status}`">
-                  <div class="upload-step-header"><span class="upload-step-label">{{ step.label }}</span><span class="upload-step-percent">{{ step.percent }}%</span></div>
+                  <div class="upload-step-header"><span class="upload-step-label">{{ $t('settings.delete_steps.' + step.key, step.label) || step.label }}</span><span class="upload-step-percent">{{ step.percent }}%</span></div>
                   <div class="upload-step-bar"><div class="upload-step-fill" :style="{ width: step.percent + '%' }"></div></div>
                   <div v-if="step.message" class="upload-step-message">{{ step.message }}</div>
                 </div>
