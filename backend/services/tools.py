@@ -256,13 +256,26 @@ def search_knowledge_base(query: str) -> str:
         logger.info("知识库检索无结果: query='%s'", query[:100])
         return "No relevant documents found in the knowledge base."
 
-    # 格式化检索结果
+    # 格式化检索结果（含 Source 编号，供 Agent 引用）
     formatted = []
+    source_map = {}
     for i, result in enumerate(docs, 1):
         source = result.get("filename", "Unknown")
         page = result.get("page_number", "N/A")
+        chunk_id = result.get("chunk_id", "")
         text = result.get("text", "")
-        formatted.append(f"[{i}] {source} (Page {page}):\n{text}")
+        formatted.append(f"[Source {i}] {source} (Page {page}):\n{text}")
+        source_map[f"Source {i}"] = {
+            "filename": source,
+            "page": page,
+            "chunk_id": chunk_id,
+        }
+
+    # 保存 source_map 到 RAG 上下文，供后处理使用
+    _set_last_rag_context({
+        "rag_trace": rag_trace,
+        "source_map": source_map,
+    })
 
     logger.info("知识库检索完成: query='%s', 命中 %d 条", query[:100], len(docs))
     return "Retrieved Chunks:\n" + "\n\n---\n\n".join(formatted)

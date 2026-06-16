@@ -418,7 +418,12 @@ def create_agent_instance():
             "If the retrieved context is insufficient, answer honestly that you don't know instead of making up facts. "
             "If tool results include a Step-back Question/Answer, use that general principle to reason and answer, "
             "but do not reveal chain-of-thought. "
-            "If you don't know the answer, admit it honestly."
+            "If you don't know the answer, admit it honestly. "
+            "IMPORTANT: When you use information from retrieved documents, you MUST cite the source using the "
+            "format [Source N](source filename, page P) at the end of the relevant sentence or paragraph. "
+            "For example: 'The transformer architecture relies on self-attention mechanisms [Source 1](mypaper.pdf, page 3).' "
+            "Always use the exact source number [Source N] and filename from the Retrieved Chunks. "
+            "If multiple sources support the same claim, list them together: [Source 1][Source 2]."
         ),
     )
 
@@ -523,9 +528,10 @@ def chat_with_agent(
 
     messages.append(AIMessage(content=response_content))
 
-    # 获取 RAG 追踪信息
+    # 获取 RAG 追踪信息和来源映射
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
+    source_map = rag_context.get("source_map") if rag_context else None
 
     # 保存对话（含 RAG trace 关联在最后一条消息上）
     extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
@@ -534,6 +540,7 @@ def chat_with_agent(
     return {
         "response": response_content,
         "rag_trace": rag_trace,
+        "source_map": source_map,
     }
 
 
@@ -665,13 +672,17 @@ async def chat_with_agent_stream(
         if not agent_task.done():
             agent_task.cancel()
 
-    # 获取 RAG trace（检索追踪信息）
+    # 获取 RAG trace（检索追踪信息）和 source_map（来源映射）
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
+    source_map = rag_context.get("source_map") if rag_context else None
 
-    # 发送 RAG trace 信息
-    if rag_trace:
-        yield f"data: {json.dumps({'type': 'trace', 'rag_trace': rag_trace}, ensure_ascii=False)}\n\n"
+    # 发送 RAG trace + source_map 信息
+    trace_event = {"type": "trace", "rag_trace": rag_trace}
+    if source_map:
+        trace_event["source_map"] = source_map
+    if rag_trace or source_map:
+        yield f"data: {json.dumps(trace_event, ensure_ascii=False)}\n\n"
 
     # 发送结束信号
     yield "data: [DONE]\n\n"
