@@ -17,6 +17,7 @@ Pydantic 数据模型定义 —— API 请求/响应的 Schema。
   增量导入:   IncrementalIngestRequest, IncrementalIngestResponse
 """
 
+from datetime import datetime
 from typing import Optional, List
 
 from pydantic import BaseModel
@@ -166,6 +167,8 @@ class RagTrace(BaseModel):
         retrieved_chunks: 最终检索到的分块列表。
         initial_retrieved_chunks: 初始检索到的分块列表（扩展前）。
         expanded_retrieved_chunks: 扩展后的检索分块列表。
+        citations: 从 Agent 响应中提取的引用列表。
+            每个元素包含 index（检索结果序号）、filename、page、chunk_idx。
     """
     tool_used: bool
     tool_name: str
@@ -203,6 +206,7 @@ class RagTrace(BaseModel):
     retrieved_chunks: Optional[List[RetrievedChunk]] = None
     initial_retrieved_chunks: Optional[List[RetrievedChunk]] = None
     expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None
+    citations: Optional[List[dict]] = None
 
 
 class ChatResponse(BaseModel):
@@ -444,3 +448,86 @@ class IncrementalIngestResponse(BaseModel):
     files_modified: int = 0
     files_skipped: int = 0
     files_deleted: int = 0
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 工作空间相关 Schema
+# ═══════════════════════════════════════════════════════════════════
+
+
+class WorkspaceCreate(BaseModel):
+    """创建工作空间请求。
+
+    Fields:
+        name: 工作空间名称（必填，非空）。
+    """
+    name: str
+
+
+class WorkspaceResponse(BaseModel):
+    """工作空间信息响应。
+
+    Fields:
+        id: 工作空间 ID。
+        name: 工作空间名称。
+        owner_id: 所有者用户 ID。
+        created_at: 创建时间。
+        updated_at: 更新时间。
+    """
+    id: int
+    name: str
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkspaceMemberAdd(BaseModel):
+    """添加工作空间成员请求。
+
+    Fields:
+        user_id: 要添加的用户 ID。
+        role: 成员角色（默认 "member"）。
+    """
+    user_id: int
+    role: str = "member"
+
+
+class WorkspaceMemberResponse(BaseModel):
+    """工作空间成员信息响应。
+
+    Fields:
+        id: 成员记录 ID。
+        user_id: 用户 ID。
+        username: 用户名。
+        role: 成员角色。
+        created_at: 加入时间。
+    """
+    id: int
+    user_id: int
+    username: str
+    role: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkspaceListResponse(BaseModel):
+    """工作空间列表响应。
+
+    Fields:
+        workspaces: 工作空间列表。
+    """
+    workspaces: List[WorkspaceResponse]
+
+
+class WorkspaceMemberListResponse(BaseModel):
+    """工作空间成员列表响应。
+
+    Fields:
+        members: 成员列表。
+    """
+    members: List[WorkspaceMemberResponse]

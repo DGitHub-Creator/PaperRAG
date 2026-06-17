@@ -19,6 +19,7 @@
 
 import asyncio
 import json
+import re
 from datetime import datetime
 
 from langchain.chat_models import init_chat_model
@@ -41,6 +42,38 @@ from backend.services.tools import (
 from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
 
 logger = get_logger(__name__)
+
+
+def extract_citations(text: str, rag_trace: dict | None) -> list[dict]:
+    """从 Agent 响应文本中提取 [N] 引用标记，映射到检索分块元数据。
+
+    Args:
+        text: Agent 生成的响应文本。
+        rag_trace: RAG 检索追踪信息，包含 retrieved_chunks 列表。
+
+    Returns:
+        引用列表，每个元素为 {"index": N, "filename": "...", "page": ..., "chunk_idx": ...}。
+        无引用或无 rag_trace 时返回空列表。
+    """
+    if not text or not rag_trace:
+        return []
+
+    indices = {int(m) for m in re.findall(r"\[(\d+)\]", text)}
+    if not indices:
+        return []
+
+    chunks = rag_trace.get("retrieved_chunks") or []
+    citations = []
+    for idx in sorted(indices):
+        if 1 <= idx <= len(chunks):
+            chunk = chunks[idx - 1]
+            citations.append({
+                "index": idx,
+                "filename": chunk.get("filename", ""),
+                "page": chunk.get("page_number"),
+                "chunk_idx": chunk.get("child_idx"),
+            })
+    return citations
 
 
 class ConversationStorage:
@@ -419,7 +452,13 @@ def create_agent_instance():
             "If the retrieved context is insufficient, answer honestly that you don't know instead of making up facts. "
             "If tool results include a Step-back Question/Answer, use that general principle to reason and answer, "
             "but do not reveal chain-of-thought. "
-            "If you don't know the answer, admit it honestly."
+            "If you don't know the answer, admit it honestly. "
+            "CITATION RULE: Every factual claim derived from retrieved chunks MUST include a citation marker [N] "
+            "where N is the chunk index from the retrieval results (e.g., [1], [2]). "
+            "Format citations as: According to [N] filename (Page N), ... or Based on [N] ... "
+            "Place the [N] marker immediately after the factual statement. "
+            "You may cite multiple sources: [1][2]. "
+            "If a claim is general knowledge (not from retrieval), no citation is needed."
         ),
     )
 
@@ -524,6 +563,11 @@ def chat_with_agent(
     # 获取 RAG 追踪信息
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
+
+    # 提取引用并注入 rag_trace
+    citations = extract_citations(response_content, rag_trace)
+    if citations and rag_trace is not None:
+        rag_trace["citations"] = citations
 
     # 保存对话（含 RAG trace 关联在最后一条消息上）
     extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
@@ -670,6 +714,11 @@ async def chat_with_agent_stream(
     # 获取 RAG trace（检索追踪信息）
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
+
+    # 提取引用并注入 rag_trace
+    citations = extract_citations(full_response, rag_trace)
+    if citations and rag_trace is not None:
+        rag_trace["citations"] = citations
 
     # 发送 RAG trace 信息
     if rag_trace:

@@ -7,11 +7,15 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
@@ -19,6 +23,7 @@ from backend.api.ws import router as ws_router
 from backend.core.config import ALLOWED_ORIGINS
 from backend.core.database import init_db
 from backend.core.logging_config import setup_root_logger
+from backend.core.rate_limit import limiter
 
 # ── 初始化日志系统 ──────────────────────────────────────────────────
 # 在应用启动前配置根 logger，后续所有模块的 logger 自动继承 handler
@@ -43,6 +48,46 @@ def create_app() -> FastAPI:
         配置完成的 FastAPI 实例。
     """
     app = FastAPI(title="PaperRAG - 学术论文 RAG 知识库平台")
+
+    # ── 限流配置 ──────────────────────────────────────────────
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "请求过于频繁，请稍后重试"},
+        )
+
+    # ── 用量统计中间件 ────────────────────────────────────────
+    @app.middleware("http")
+    async def _usage_log(request: Request, call_next):
+        """记录 API 用量日志（仅记录 /auth 和 /chat 端点）。"""
+        start = time.time()
+        response = await call_next(request)
+        latency_ms = int((time.time() - start) * 1000)
+        path = request.url.path
+        if path.startswith("/auth") or path.startswith("/chat"):
+            try:
+                from backend.core.database import SessionLocal
+                from backend.core.models import UsageLog
+                db = SessionLocal()
+                try:
+                    user_id = getattr(request.state, "user_id", None)
+                    db.add(UsageLog(
+                        user_id=user_id or 0,
+                        endpoint=path,
+                        method=request.method,
+                        status_code=response.status_code,
+                        latency_ms=latency_ms,
+                    ))
+                    db.commit()
+                finally:
+                    db.close()
+            except Exception:
+                pass
+        return response
 
     # ── 启动事件: 数据库初始化 ──────────────────────────────────
     @app.on_event("startup")

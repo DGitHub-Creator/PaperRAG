@@ -241,6 +241,11 @@ class MilvusManager:
             schema.add_field("parent_chunk_id", DataType.VARCHAR, max_length=512)
             schema.add_field("root_chunk_id", DataType.VARCHAR, max_length=512)
             schema.add_field("chunk_level", DataType.INT64)
+            
+            # ── 公式相关字段 ──
+            schema.add_field("has_formula", DataType.BOOL, default=False)
+            schema.add_field("formula_text", DataType.VARCHAR, max_length=1000, default="")
+            schema.add_field("formula_embedding", DataType.FLOAT_VECTOR, dim=dense_dim)
 
             # 注: parent_idx, child_idx, num_children, has_theorem_in_parent,
             #      has_proof_in_parent 等字段通过 enable_dynamic_field 动态存储，
@@ -266,6 +271,14 @@ class MilvusManager:
                 index_type="SPARSE_INVERTED_INDEX",
                 metric_type="IP",
                 params={"drop_ratio_build": 0.2},
+            )
+            
+            # 公式向量索引: HNSW + COSINE (公式检索用余弦相似度)
+            index_params.add_index(
+                field_name="formula_embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 16, "efConstruction": 256},
             )
 
             # 创建集合（包含 Schema + 索引）

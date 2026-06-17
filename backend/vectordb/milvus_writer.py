@@ -20,7 +20,8 @@ Milvus 写入器 —— 文档向量化并批量写入 Milvus 向量库。
 """
 
 from backend.core.dependencies import get_embedding_service, get_milvus_manager
-from backend.rag.embedding import EmbeddingService
+from backend.rag.embedding import EmbeddingService, get_formula_embeddings
+from backend.rag.document_loader import extract_formulas
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -114,6 +115,36 @@ class MilvusWriter:
         all_texts = [doc["text"] for doc in documents]
         self.embedding_service.increment_add_documents(all_texts)
         logger.debug(f"已向 EmbeddingService 注册 {len(all_texts)} 条文本用于稀疏统计")
+        
+        # ── 步骤 2.5: 提取公式并生成公式嵌入 ──
+        # 检查每个 chunk 是否包含 LaTeX 公式，生成公式文本和嵌入
+        formula_texts = []
+        formula_indices = []
+        for i, doc in enumerate(documents):
+            text = doc.get("text", "")
+            formulas = extract_formulas(text)
+            if formulas:
+                # 合并所有公式文本
+                merged = " | ".join(f["normalized"] for f in formulas)
+                doc["has_formula"] = True
+                doc["formula_text"] = merged[:1000]  # 限制长度
+                formula_texts.append(merged)
+                formula_indices.append(i)
+            else:
+                doc["has_formula"] = False
+                doc["formula_text"] = ""
+        
+        # 批量生成公式嵌入
+        if formula_texts:
+            try:
+                formula_embeddings = get_formula_embeddings(formula_texts)
+                for idx, emb in zip(formula_indices, formula_embeddings):
+                    documents[idx]["formula_embedding"] = emb
+                logger.debug(f"已生成 {len(formula_texts)} 个公式的嵌入向量")
+            except Exception as e:
+                logger.warning(f"公式嵌入生成失败: {e}，使用零向量")
+                for idx in formula_indices:
+                    documents[idx]["formula_embedding"] = [0.0] * 1024
 
         # ── 步骤 3: 分批向量化并写入 ──
         for i in range(0, total, batch_size):
@@ -152,6 +183,10 @@ class MilvusWriter:
                     # 定理/证明标记（用于学术内容过滤和增强检索）
                     "has_theorem_in_parent": doc.get("has_theorem_in_parent", False),
                     "has_proof_in_parent": doc.get("has_proof_in_parent", False),
+                    # 公式相关字段
+                    "has_formula": doc.get("has_formula", False),
+                    "formula_text": doc.get("formula_text", ""),
+                    "formula_embedding": doc.get("formula_embedding", [0.0] * 1024),
                 }
                 for doc, dense_emb, sparse_emb in zip(
                     batch, dense_embeddings, sparse_embeddings

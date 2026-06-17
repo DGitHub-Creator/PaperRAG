@@ -41,7 +41,11 @@ from backend.core.config import (
     PARSE_MAX_WORKERS,
 )
 from backend.core.logging_config import get_logger
-from backend.rag.academic_cleaner import clean_paper_text
+from backend.rag.academic_cleaner import (
+    clean_paper_text,
+    clean_paper_text_with_layout,
+    analyze_page_layout,
+)
 from backend.rag.theorem_detector import detect_theorem_proof
 
 logger = get_logger(__name__)
@@ -143,7 +147,16 @@ def _try_pdfplumber(file_path: str) -> str | None:
         return None
     try:
         with pdfplumber.open(file_path) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
+            pages = []
+            for page in pdf.pages:
+                regions = analyze_page_layout(page)
+                if regions:
+                    page_text = clean_paper_text_with_layout(
+                        page.extract_text() or "", regions
+                    )
+                else:
+                    page_text = page.extract_text() or ""
+                pages.append(page_text)
         return "\n\n".join(pages) if pages else None
     except Exception:
         logger.debug("pdfplumber 解析异常: %s", traceback.format_exc())
@@ -672,3 +685,139 @@ class DocumentLoader:
             len(all_documents),
         )
         return all_documents
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LaTeX 公式提取与标准化
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 匹配 LaTeX 公式: $...$ (inline) 和 $$...$$ (display)
+_FORMULA_PATTERN = re.compile(r"\$\$(.+?)\$\$|\$(.+?)\$", re.DOTALL)
+
+# LaTeX 命令标准化映射
+_LATEX_NORMALIZE = {
+    r"\ ": " ",
+    r"\,": " ",
+    r"\;": " ",
+    r"\!": "",
+    r"\quad": " ",
+    r"\qquad": "  ",
+    r"\alpha": "α",
+    r"\beta": "β",
+    r"\gamma": "γ",
+    r"\delta": "δ",
+    r"\epsilon": "ε",
+    r"\theta": "θ",
+    r"\lambda": "λ",
+    r"\mu": "μ",
+    r"\pi": "π",
+    r"\sigma": "σ",
+    r"\phi": "φ",
+    r"\omega": "ω",
+    r"\infty": "∞",
+    r"\sum": "Σ",
+    r"\prod": "Π",
+    r"\int": "∫",
+    r"\partial": "∂",
+    r"\nabla": "∇",
+    r"\sqrt": "√",
+    r"\leq": "≤",
+    r"\geq": "≥",
+    r"\neq": "≠",
+    r"\approx": "≈",
+    r"\times": "×",
+    r"\cdot": "·",
+    r"\pm": "±",
+    r"\rightarrow": "→",
+    r"\leftarrow": "←",
+    r"\Rightarrow": "⇒",
+    r"\Leftarrow": "⇐",
+    r"\leftrightarrow": "↔",
+    r"\in": "∈",
+    r"\notin": "∉",
+    r"\subset": "⊂",
+    r"\supset": "⊃",
+    r"\cup": "∪",
+    r"\cap": "∩",
+    r"\forall": "∀",
+    r"\exists": "∃",
+    r"\neg": "¬",
+    r"\land": "∧",
+    r"\lor": "∨",
+}
+
+
+def extract_formulas(text: str) -> list[dict]:
+    """Extract LaTeX formulas from text.
+    
+    Args:
+        text: Text containing LaTeX formulas.
+        
+    Returns:
+        List of dicts with 'raw' (original LaTeX) and 'normalized' (plain text) fields.
+    """
+    formulas = []
+    for match in _FORMULA_PATTERN.finditer(text):
+        raw = match.group(1) or match.group(2)
+        if raw:
+            normalized = normalize_latex(raw)
+            formulas.append({
+                'raw': raw.strip(),
+                'normalized': normalized,
+                'start': match.start(),
+                'end': match.end(),
+            })
+    return formulas
+
+
+def normalize_latex(latex: str) -> str:
+    """Normalize LaTeX formula to plain text representation.
+    
+    Removes commands, replaces symbols with Unicode, normalizes whitespace.
+    
+    Args:
+        latex: Raw LaTeX formula string.
+        
+    Returns:
+        Normalized plain text representation.
+    """
+    text = latex
+    
+    # Apply symbol replacements
+    for cmd, replacement in _LATEX_NORMALIZE.items():
+        text = text.replace(cmd, replacement)
+    
+    # Remove remaining commands like \mathbb, \text, etc.
+    text = re.sub(r"\\[a-zA-Z]+\{([^}]*)\}", r"\1", text)
+    
+    # Remove remaining backslash commands
+    text = re.sub(r"\\[a-zA-Z]+", "", text)
+    
+    # Remove braces
+    text = text.replace("{", "").replace("}", "")
+    
+    # Normalize whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    
+    return text
+
+
+def extract_formulas_from_chunks(chunks: list[dict]) -> list[dict]:
+    """Extract formulas from all chunks and add as metadata.
+    
+    Args:
+        chunks: List of chunk dicts with 'text' field.
+        
+    Returns:
+        List of formula dicts with chunk reference info.
+    """
+    all_formulas = []
+    for i, chunk in enumerate(chunks):
+        text = chunk.get('text', '')
+        formulas = extract_formulas(text)
+        for formula in formulas:
+            formula['chunk_idx'] = i
+            formula['filename'] = chunk.get('filename', '')
+            formula['page_number'] = chunk.get('page_number', 0)
+        all_formulas.extend(formulas)
+    return all_formulas

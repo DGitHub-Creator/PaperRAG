@@ -26,12 +26,12 @@
             </div>
           </div>
         </div>
-        <div v-else class="message-content" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+        <div v-else class="message-content" v-html="msg.isUser ? escapeHtml(msg.text) : renderBotContent(msg.text)"></div>
         <div v-if="!msg.isUser && msg.ragTrace" class="message-meta">
           <details class="reasoning-details">
             <summary>{{ $t("chat.retrieval_process") }}</summary>
             <div class="reasoning-content">
-              <RagTracePanel :trace="msg.ragTrace" />
+              <RagTracePanel :trace="msg.ragTrace" :highlightedChunk="highlightedChunk" />
             </div>
           </details>
         </div>
@@ -75,6 +75,7 @@ defineProps({ activeNav: { type: String, default: "newChat" } })
 const userInput = ref("")
 const isComposing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const highlightedChunk = ref<number | null>(null)
 
 function handleKeyDown(e: KeyboardEvent): void {
   if (e.key === "Enter" && !e.shiftKey && !isComposing.value) {
@@ -95,4 +96,30 @@ function autoResize(e: Event): void {
   ta.style.height = "auto"
   ta.style.height = ta.scrollHeight + "px"
 }
+
+function renderBotContent(text: string): string {
+  const withCitations = text.replace(
+    /\[(\d+)\]/g,
+    '<span class="citation" data-index="$1" onclick="window.__citationClick && window.__citationClick($1)">[$1]</span>',
+  )
+  return parseMarkdown(withCitations)
+}
+
+function onCitationClick(index: number): void {
+  highlightedChunk.value = index
+  const details = document.querySelector(".reasoning-details")
+  if (details && !details.open) {
+    details.open = true
+  }
+  setTimeout(() => {
+    const el = document.querySelector(`.trace-item[data-index="${index}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      el.classList.add("trace-item--highlighted")
+      setTimeout(() => el.classList.remove("trace-item--highlighted"), 2000)
+    }
+  }, 100)
+}
+
+window.__citationClick = onCitationClick
 </script>

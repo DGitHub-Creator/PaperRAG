@@ -44,6 +44,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.core.auth import (
@@ -53,11 +54,14 @@ from backend.core.auth import (
     get_db,
     get_password_hash,
     require_admin,
+    require_workspace_access,
+    require_workspace_admin,
     resolve_role,
 )
 from backend.core.config import UPLOAD_DIR, INGESTED_STATE_PATH, DATA_DIR, MIN_PASSWORD_LENGTH
 from backend.core.logging_config import get_logger
-from backend.core.models import User
+from backend.core.models import User, UsageLog
+from backend.core.rate_limit import limiter
 from backend.core.dependencies import (
     get_embedding_service,
     get_milvus_manager,
@@ -86,6 +90,12 @@ from backend.schemas.schemas import (
     SessionInfo,
     SessionListResponse,
     SessionMessagesResponse,
+    WorkspaceCreate,
+    WorkspaceMemberAdd,
+    WorkspaceMemberListResponse,
+    WorkspaceMemberResponse,
+    WorkspaceResponse,
+    WorkspaceListResponse,
 )
 from backend.services.agent import chat_with_agent, chat_with_agent_stream, storage
 from backend.services.cache import cache as redis_cache
@@ -219,6 +229,7 @@ def _compute_file_hash(file_path: Path) -> str:
 
 
 @router.post("/auth/register", response_model=AuthResponse)
+@limiter.limit("10/minute")
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """用户注册端点。
 
@@ -274,6 +285,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=AuthResponse)
+@limiter.limit("10/minute")
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
     """用户登录端点。
 
@@ -408,6 +420,7 @@ async def delete_session(
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limiter.limit("30/minute")
 async def chat_endpoint(
     request: ChatRequest, current_user: User = Depends(get_current_user)
 ):
@@ -458,6 +471,7 @@ async def chat_endpoint(
 
 
 @router.post("/chat/stream")
+@limiter.limit("30/minute")
 async def chat_stream_endpoint(
     request: ChatRequest, current_user: User = Depends(get_current_user)
 ):
@@ -1348,3 +1362,273 @@ async def clear_cache(_: User = Depends(require_admin)):
     except Exception as e:
         logger.exception("清空缓存失败")
         raise HTTPException(status_code=500, detail=f"清空缓存失败: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 工作空间端点
+# ═══════════════════════════════════════════════════════════════════
+
+
+@router.post("/workspaces", response_model=WorkspaceResponse)
+async def create_workspace(
+    request: WorkspaceCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """创建工作空间。
+
+    创建者自动成为工作空间所有者。
+
+    Args:
+        request: 工作空间创建请求（name）。
+        current_user: 当前用户。
+        db: 数据库会话。
+
+    Returns:
+        WorkspaceResponse: 新创建的工作空间信息。
+    """
+    workspace = Workspace(name=request.name, owner_id=current_user.id)
+    db.add(workspace)
+    db.flush()
+
+    # 创建者自动成为 owner
+    member = WorkspaceMember(
+        workspace_id=workspace.id,
+        user_id=current_user.id,
+        role="owner",
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(workspace)
+
+    logger.info("工作空间已创建: id=%s, name=%s, owner=%s", workspace.id, workspace.name, current_user.username)
+    return workspace
+
+
+@router.get("/workspaces", response_model=WorkspaceListResponse)
+async def list_workspaces(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """列出当前用户所属的所有工作空间。
+
+    Args:
+        current_user: 当前用户。
+        db: 数据库会话。
+
+    Returns:
+        WorkspaceListResponse: 工作空间列表。
+    """
+    memberships = (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.user_id == current_user.id)
+        .all()
+    )
+    workspace_ids = [m.workspace_id for m in memberships]
+    workspaces = (
+        db.query(Workspace).filter(Workspace.id.in_(workspace_ids)).all()
+    )
+    return WorkspaceListResponse(workspaces=workspaces)
+
+
+@router.post("/workspaces/{workspace_id}/members", response_model=WorkspaceMemberResponse)
+async def add_workspace_member(
+    workspace_id: int,
+    request: WorkspaceMemberAdd,
+    current_user: User = Depends(require_workspace_admin),
+    db: Session = Depends(get_db),
+):
+    """添加工作空间成员（仅管理员或所有者可操作）。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        request: 添加成员请求（user_id, role）。
+        current_user: 当前用户（已验证管理员权限）。
+        db: 数据库会话。
+
+    Returns:
+        WorkspaceMemberResponse: 新成员信息。
+
+    Raises:
+        HTTPException 404: 用户不存在。
+        HTTPException 409: 用户已是成员。
+    """
+    # 检查目标用户是否存在
+    target_user = db.query(User).filter(User.id == request.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 检查是否已是成员
+    existing = db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == request.user_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="用户已是工作空间成员")
+
+    member = WorkspaceMember(
+        workspace_id=workspace_id,
+        user_id=request.user_id,
+        role=request.role,
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+
+    logger.info(
+        "成员已添加: workspace=%d, user=%s, role=%s",
+        workspace_id, target_user.username, request.role,
+    )
+    return WorkspaceMemberResponse(
+        id=member.id,
+        user_id=member.user_id,
+        username=target_user.username,
+        role=member.role,
+        created_at=member.created_at,
+    )
+
+
+@router.get("/workspaces/{workspace_id}/members", response_model=WorkspaceMemberListResponse)
+async def list_workspace_members(
+    workspace_id: int,
+    current_user: User = Depends(require_workspace_access),
+    db: Session = Depends(get_db),
+):
+    """列出工作空间的所有成员。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        current_user: 当前用户（已验证访问权限）。
+        db: 数据库会话。
+
+    Returns:
+        WorkspaceMemberListResponse: 成员列表。
+    """
+    members = (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == workspace_id)
+        .all()
+    )
+
+    result = []
+    for member in members:
+        user = db.query(User).filter(User.id == member.user_id).first()
+        result.append(WorkspaceMemberResponse(
+            id=member.id,
+            user_id=member.user_id,
+            username=user.username if user else "unknown",
+            role=member.role,
+            created_at=member.created_at,
+        ))
+
+    return WorkspaceMemberListResponse(members=result)
+
+
+@router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
+async def get_workspace(
+    workspace_id: int,
+    current_user: User = Depends(require_workspace_access),
+    db: Session = Depends(get_db),
+):
+    """获取指定工作空间的详细信息。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        current_user: 当前用户（已验证访问权限）。
+        db: 数据库会话。
+
+    Returns:
+        WorkspaceResponse: 工作空间信息。
+
+    Raises:
+        HTTPException 404: 工作空间不存在。
+    """
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="工作空间不存在")
+    return workspace
+
+
+@router.delete("/workspaces/{workspace_id}")
+async def delete_workspace(
+    workspace_id: int,
+    current_user: User = Depends(require_workspace_admin),
+    db: Session = Depends(get_db),
+):
+    """删除工作空间（仅所有者可操作）。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        current_user: 当前用户（已验证管理员权限）。
+        db: 数据库会话。
+
+    Returns:
+        dict: 操作结果。
+
+    Raises:
+        HTTPException 403: 不是所有者。
+        HTTPException 404: 工作空间不存在。
+    """
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="工作空间不存在")
+
+    # 仅所有者可删除
+    if workspace.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="仅所有者可删除工作空间")
+
+    # 删除所有成员记录
+    db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id
+    ).delete()
+    db.delete(workspace)
+    db.commit()
+
+    logger.info("工作空间已删除: id=%d, name=%s", workspace_id, workspace.name)
+    return {"message": f"工作空间 '{workspace.name}' 已删除"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 用量统计端点
+# ═══════════════════════════════════════════════════════════════════
+
+
+@router.get("/stats/usage")
+async def get_usage_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的 API 用量统计（最近 7 天）。
+
+    Args:
+        current_user: 当前用户。
+        db: 数据库会话。
+
+    Returns:
+        dict: 包含 daily 列表，每项有 date、count、tokens 字段。
+    """
+    from datetime import datetime, timedelta
+
+    today = datetime.utcnow().date()
+    week_ago = today - timedelta(days=7)
+
+    daily_stats = (
+        db.query(
+            func.date(UsageLog.created_at).label("date"),
+            func.count().label("count"),
+            func.sum(UsageLog.tokens_used).label("tokens"),
+        )
+        .filter(
+            UsageLog.user_id == current_user.id,
+            UsageLog.created_at >= week_ago,
+        )
+        .group_by(func.date(UsageLog.created_at))
+        .all()
+    )
+
+    return {
+        "daily": [
+            {"date": str(s.date), "count": s.count, "tokens": s.tokens or 0}
+            for s in daily_stats
+        ]
+    }
