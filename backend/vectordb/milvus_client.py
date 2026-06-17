@@ -201,7 +201,46 @@ class MilvusManager:
         def _init(client: MilvusClient) -> None:
             """集合创建的具体实现（作为回调传入 _run_with_reconnect）。"""
             if client.has_collection(self.collection_name):
-                logger.info(f"集合 '{self.collection_name}' 已存在，跳过创建")
+                # 检查并补充缺失的公式字段（向后兼容）
+                try:
+                    schema = client.describe_collection(self.collection_name)
+                    field_names = [f.name for f in schema.get("fields", [])]
+                    if "formula_embedding" not in field_names:
+                        logger.info("向已有集合添加公式字段...")
+                        client.add_collection_field(
+                            collection_name=self.collection_name,
+                            field_name="has_formula",
+                            data_type=DataType.BOOL,
+                            default_value=False,
+                        )
+                        client.add_collection_field(
+                            collection_name=self.collection_name,
+                            field_name="formula_text",
+                            data_type=DataType.VARCHAR,
+                            max_length=1000,
+                            default_value="",
+                        )
+                        client.add_collection_field(
+                            collection_name=self.collection_name,
+                            field_name="formula_embedding",
+                            data_type=DataType.FLOAT_VECTOR,
+                            dim=dense_dim,
+                        )
+                        # 添加公式向量索引
+                        index_params = client.prepare_index_params()
+                        index_params.add_index(
+                            field_name="formula_embedding",
+                            index_type="HNSW",
+                            metric_type="COSINE",
+                            params={"M": 16, "efConstruction": 256},
+                        )
+                        client.create_index(
+                            collection_name=self.collection_name,
+                            index_params=index_params,
+                        )
+                        logger.info("公式字段已添加到已有集合")
+                except Exception as e:
+                    logger.warning("添加公式字段失败（可能已存在）: %s", e)
                 return
 
             # 创建 Schema: auto_id=True 表示主键自动生成, enable_dynamic_field=True 允许动态字段
