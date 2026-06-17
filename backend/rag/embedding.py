@@ -377,3 +377,96 @@ class EmbeddingService:
         dense_embeddings = self.get_embeddings(texts)
         sparse_embeddings = self.get_sparse_embeddings(texts)
         return dense_embeddings, sparse_embeddings
+
+
+# ── CLIP 图像 Embedding ──────────────────────────────────────────────
+
+_clip_model = None
+_clip_processor = None
+
+
+def _get_clip_model():
+    """Lazy load CLIP model for image embeddings."""
+    global _clip_model, _clip_processor
+    if _clip_model is None:
+        try:
+            from transformers import CLIPModel, CLIPProcessor
+            model_name = "openai/clip-vit-base-patch32"
+            device = EMBEDDING_DEVICE or "cpu"
+            _clip_processor = CLIPProcessor.from_pretrained(model_name)
+            _clip_model = CLIPModel.from_pretrained(model_name).to(device)
+            _clip_model.eval()
+            logger.info("CLIP 模型已加载: %s", model_name)
+        except ImportError:
+            logger.warning("transformers 未安装，CLIP 图像嵌入不可用")
+            return None, None
+    return _clip_model, _clip_processor
+
+
+def get_image_embeddings(images: list) -> list[list[float]]:
+    """Generate embeddings for images using CLIP.
+    
+    Args:
+        images: List of PIL Image objects.
+        
+    Returns:
+        List of 512-dim float vectors.
+    """
+    model, processor = _get_clip_model()
+    if model is None:
+        raise RuntimeError("CLIP 模型未加载，请安装 transformers: pip install transformers")
+    
+    import torch
+    device = next(model.parameters()).device
+    
+    with torch.no_grad():
+        inputs = processor(images=images, return_tensors="pt").to(device)
+        embeddings = model.get_image_features(**inputs)
+        embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+    
+    return embeddings.cpu().tolist()
+
+
+def get_image_embedding(image) -> list[float]:
+    """Generate embedding for a single image.
+    
+    Args:
+        image: PIL Image object.
+        
+    Returns:
+        512-dim float vector.
+    """
+    return get_image_embeddings([image])[0]
+
+
+# ── 公式文本 Embedding ──────────────────────────────────────────────
+
+def get_formula_embeddings(texts: list[str]) -> list[list[float]]:
+    """Generate embeddings for formula texts using the dense embedder.
+    
+    Args:
+        texts: List of formula text strings (LaTeX or plain text).
+        
+    Returns:
+        List of float vectors (same dimension as text embeddings).
+    """
+    return get_embeddings_static(texts)
+
+
+def get_formula_embedding(text: str) -> list[float]:
+    """Generate embedding for a single formula text.
+    
+    Args:
+        text: Formula text string.
+        
+    Returns:
+        Float vector.
+    """
+    return get_formula_embeddings([text])[0]
+
+
+def get_embeddings_static(texts: list[str]) -> list[list[float]]:
+    """Static wrapper for get_embeddings (for module-level usage)."""
+    from backend.core.dependencies import get_embedding_service
+    service = get_embedding_service()
+    return service.get_embeddings(texts)

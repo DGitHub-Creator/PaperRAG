@@ -42,7 +42,7 @@ from backend.core.config import (
 # 数据库会话（get_db 统一在 database.py 中维护，各模块共用）
 from backend.core.database import get_db
 # ORM 模型
-from backend.core.models import User
+from backend.core.models import User, WorkspaceMember
 # 标准化日志
 from backend.core.logging_config import get_logger
 
@@ -321,3 +321,95 @@ def resolve_role(requested_role: str | None, admin_code: str | None) -> str:
 
     logger.warning(f"管理员邀请码验证失败: 收到 '{admin_code}'")
     raise HTTPException(status_code=403, detail="管理员邀请码错误")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 工作空间访问控制
+# ══════════════════════════════════════════════════════════════════════
+
+def _check_workspace_access(
+    db: Session,
+    workspace_id: int,
+    user_id: int,
+    username: str,
+    required_roles: list[str] | None = None,
+) -> WorkspaceMember:
+    """检查用户是否有权访问指定工作空间。
+
+    Args:
+        db: 数据库会话。
+        workspace_id: 工作空间 ID。
+        user_id: 用户 ID。
+        username: 用户名（用于日志）。
+        required_roles: 允许的角色列表，None 表示任何成员都可访问。
+
+    Returns:
+        WorkspaceMember 实例。
+
+    Raises:
+        HTTPException(403): 无访问权限。
+    """
+    member = db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == user_id,
+    ).first()
+    if not member:
+        logger.warning(
+            "权限拒绝: 用户 '%s' 尝试访问工作空间 %d",
+            username, workspace_id,
+        )
+        raise HTTPException(status_code=403, detail="无权访问此工作空间")
+    if required_roles and member.role not in required_roles:
+        logger.warning(
+            "权限拒绝: 用户 '%s' (角色: %s) 尝试以管理员身份访问工作空间 %d",
+            username, member.role, workspace_id,
+        )
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return member
+
+
+def require_workspace_access(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkspaceMember:
+    """FastAPI 依赖注入: 检查用户是否有权访问指定工作空间。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        db: 数据库会话。
+        current_user: 当前用户（由 get_current_user 注入）。
+
+    Returns:
+        WorkspaceMember 实例，包含成员角色信息。
+
+    Raises:
+        HTTPException(403): 用户不是该工作空间的成员。
+    """
+    return _check_workspace_access(
+        db, workspace_id, current_user.id, current_user.username
+    )
+
+
+def require_workspace_admin(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkspaceMember:
+    """FastAPI 依赖注入: 检查用户是否为工作空间管理员或所有者。
+
+    Args:
+        workspace_id: 工作空间 ID。
+        db: 数据库会话。
+        current_user: 当前用户。
+
+    Returns:
+        WorkspaceMember 实例。
+
+    Raises:
+        HTTPException(403): 用户不是管理员或所有者。
+    """
+    return _check_workspace_access(
+        db, workspace_id, current_user.id, current_user.username,
+        required_roles=["owner", "admin"],
+    )
