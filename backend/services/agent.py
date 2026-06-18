@@ -39,6 +39,8 @@ from backend.services.tools import (
     set_rag_step_queue,
 )
 from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
+from backend.agent.core import build_agent
+from backend.agent.verify import extract_outcome
 
 logger = get_logger(__name__)
 
@@ -432,6 +434,12 @@ def create_agent_instance():
     return agent, model
 
 
+def get_new_agent():
+    """获取新的 Agent 实例（使用 citelocal-agent 架构）"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    return build_agent(checkpointer=InMemorySaver())
+
+
 def summarize_old_messages(model, messages: list) -> str:
     """将旧消息列表总结为一段简要摘要。
 
@@ -695,3 +703,108 @@ async def chat_with_agent_stream(
     storage.save(user_id, session_id, messages, extra_message_data=extra_message_data)
 
     logger.info("流式对话完成: user=%s, session=%s, response_len=%d", user_id, session_id, len(full_response))
+
+
+async def chat_with_new_agent_stream(
+    user_text: str, user_id: str = "default_user", session_id: str = "default_session"
+):
+    """使用新 Agent 架构处理用户消息并流式返回响应"""
+    storage = get_conversation_storage()
+    agent = get_new_agent()
+
+    messages = storage.load(user_id, session_id)
+
+    output_queue: asyncio.Queue = asyncio.Queue()
+
+    class _RagStepProxy:
+        def put_nowait(self, step: dict) -> None:
+            output_queue.put_nowait({"type": "rag_step", "step": step})
+
+    set_rag_step_queue(_RagStepProxy())
+
+    if len(messages) > 50:
+        summary = summarize_old_messages(get_agent_model(), messages[:40])
+        messages = [
+            SystemMessage(content=f"之前的对话摘要：\n{summary}")
+        ] + messages[40:]
+
+    messages.append(HumanMessage(content=user_text))
+
+    full_response = ""
+    retrieved_locators = []
+    evidence = []
+    result = {}
+
+    async def _agent_worker():
+        nonlocal full_response, retrieved_locators, evidence, result
+        try:
+            result = await agent.ainvoke(
+                {
+                    "question_input": {"question": user_text},
+                    "messages": messages,
+                    "classification_decision": None,
+                    "trace": [],
+                    "retrieved_locators": [],
+                    "evidence": [],
+                },
+                config={"configurable": {"thread_id": session_id}},
+            )
+
+            # Extract response from result
+            if isinstance(result, dict):
+                msgs = result.get("messages", [])
+                for msg in reversed(msgs):
+                    content = getattr(msg, "content", "")
+                    if content:
+                        full_response = content
+                        break
+
+                retrieved_locators = result.get("retrieved_locators", [])
+                evidence = result.get("evidence", [])
+
+            await output_queue.put({"type": "content", "content": full_response})
+        except Exception as e:
+            logger.exception("New Agent worker exception")
+            await output_queue.put({"type": "error", "content": str(e)})
+        finally:
+            await output_queue.put(None)
+
+    agent_task = asyncio.create_task(_agent_worker())
+
+    try:
+        while True:
+            event = await output_queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    except GeneratorExit:
+        agent_task.cancel()
+        try:
+            await agent_task
+        except asyncio.CancelledError:
+            pass
+        raise
+    finally:
+        set_rag_step_queue(None)
+        if not agent_task.done():
+            agent_task.cancel()
+
+    # Verify citations
+    outcome = extract_outcome(
+        result.get("messages", []) if isinstance(result, dict) else [],
+        retrieved_locators,
+        evidence
+    )
+
+    # Send citation verification results
+    citation_event = {
+        "type": "citations",
+        "citations": outcome.get("citations", []),
+        "unsupported": outcome.get("unsupported", []),
+    }
+    yield f"data: {json.dumps(citation_event, ensure_ascii=False)}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+    messages.append(AIMessage(content=full_response))
+    storage.save(user_id, session_id, messages)
