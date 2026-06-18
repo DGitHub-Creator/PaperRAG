@@ -1,1 +1,4 @@
+# Ignore large model files for LFS
+models/**/*.bin filter=!git-lfs diff=!git-lfs merge=!git-lfs -text
+models/**/*.safetensors filter=!git-lfs diff=!git-lfs merge=!git-lfs -text
 models/** filter=lfs diff=lfs merge=lfs -text
