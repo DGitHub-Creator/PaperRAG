@@ -35,8 +35,10 @@ from backend.core.config import (
 )
 from backend.core.dependencies import (
     get_embedding_service,
+    get_local_reranker,
     get_milvus_manager,
     get_parent_chunk_store,
+    get_stepback_model,
 )
 from backend.core.logging_config import get_logger
 from backend.rag.formula_normalizer import extract_formulas, normalize_formula
@@ -46,27 +48,8 @@ from backend.rag.citation_extractor import extract_citations, extract_citation_r
 load_dotenv()
 logger = get_logger(__name__)
 
-# 模型懒加载单例
-_stepback_model = None
-_local_reranker = None
-
 
 # ── Rerank 基础设施 ──────────────────────────────────────────────
-
-def _get_local_reranker():
-    """懒加载本地 BGE-Reranker-v2-M3 Cross-Encoder 模型。
-
-    Cross-Encoder 同时接收 query 和 document 作为输入对，
-    输出相关性分数（0~1），精度高于 Bi-Encoder 但计算成本更高。
-    适合候选集精排场景（candidate ~ 30-60 docs）。
-    """
-    global _local_reranker
-    if _local_reranker is None:
-        from sentence_transformers import CrossEncoder
-        model_name = RERANK_MODEL or "BAAI/bge-reranker-v2-m3"
-        logger.info("加载本地 Reranker 模型: %s (cache=%s)", model_name, HF_HOME)
-        _local_reranker = CrossEncoder(model_name, cache_folder=HF_HOME)
-    return _local_reranker
 
 
 def _get_rerank_endpoint() -> str:
@@ -252,7 +235,7 @@ def _rerank_documents(
     if LOCAL_RERANKER:
         try:
             meta["rerank_applied"] = True
-            model = _get_local_reranker()
+            model = get_local_reranker()
             pairs = [[query, doc.get("text", "")] for doc in docs_with_rank]
             scores = model.predict(pairs, show_progress_bar=False)
             # 按分数降序排列
@@ -465,14 +448,6 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
 
 # ── 查询重写模型 ─────────────────────────────────────────────────
 
-def _get_stepback_model():
-    """懒加载查询重写 LLM（温度 0.2，用于生成退步问题/HyDE 文档）。"""
-    global _stepback_model
-    if _stepback_model is None:
-        from backend.core.llm import get_chat_model
-        _stepback_model = get_chat_model(role="stepback")
-    return _stepback_model
-
 
 def _generate_step_back_question(query: str) -> str:
     """生成抽象的'退步问题'——从具体问题中提炼通用原理。
@@ -487,7 +462,7 @@ def _generate_step_back_question(query: str) -> str:
     Returns:
         退步问题文本，或空字符串（模型不可用时）。
     """
-    model = _get_stepback_model()
+    model = get_stepback_model()
     if not model:
         return ""
     prompt = (
@@ -511,7 +486,7 @@ def _answer_step_back_question(step_back_question: str) -> str:
     Returns:
         简短答案文本。
     """
-    model = _get_stepback_model()
+    model = get_stepback_model()
     if not model or not step_back_question:
         return ""
     prompt = (
@@ -539,7 +514,7 @@ def generate_hypothetical_document(query: str) -> str:
     Returns:
         假设性文档文本，或空字符串（模型不可用时）。
     """
-    model = _get_stepback_model()
+    model = get_stepback_model()
     if not model:
         return ""
     prompt = (

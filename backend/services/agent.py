@@ -38,6 +38,7 @@ from backend.services.tools import (
     reset_tool_call_guards,
     set_rag_step_queue,
 )
+from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
 
 logger = get_logger(__name__)
 
@@ -431,13 +432,6 @@ def create_agent_instance():
     return agent, model
 
 
-# 模块级 Agent 和模型实例（进程内单例）
-agent, model = create_agent_instance()
-
-# 模块级对话存储实例
-storage = ConversationStorage()
-
-
 def summarize_old_messages(model, messages: list) -> str:
     """将旧消息列表总结为一段简要摘要。
 
@@ -489,6 +483,10 @@ def chat_with_agent(
           - response (str): Agent 的文本响应。
           - rag_trace (dict | None): RAG 检索追踪信息（如有）。
     """
+    storage = get_conversation_storage()
+    agent = get_agent_instance()
+    llm_model = get_agent_model()
+
     messages = storage.load(user_id, session_id)
 
     # 清理可能残留的 RAG 上下文，避免跨请求污染
@@ -497,7 +495,7 @@ def chat_with_agent(
 
     # 长对话摘要压缩
     if len(messages) > 50:
-        summary = summarize_old_messages(model, messages[:40])
+        summary = summarize_old_messages(llm_model, messages[:40])
         messages = [
             SystemMessage(content=f"之前的对话摘要：\n{summary}")
         ] + messages[40:]
@@ -573,6 +571,10 @@ async def chat_with_agent_stream(
     Yields:
         SSE 格式的字符串，如 "data: {...}\n\n"。
     """
+    storage = get_conversation_storage()
+    agent = get_agent_instance()
+    llm_model = get_agent_model()
+
     messages = storage.load(user_id, session_id)
 
     # 清理可能残留的 RAG 上下文
@@ -597,7 +599,7 @@ async def chat_with_agent_stream(
 
     # 长对话摘要压缩
     if len(messages) > 50:
-        summary = summarize_old_messages(model, messages[:40])
+        summary = summarize_old_messages(llm_model, messages[:40])
         messages = [
             SystemMessage(content=f"之前的对话摘要：\n{summary}")
         ] + messages[40:]

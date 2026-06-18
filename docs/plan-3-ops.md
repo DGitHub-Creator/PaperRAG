@@ -1,6 +1,8 @@
 # Plan 3 — 运维与安全（✅ 已完成）
 
 > 目标：CI/CD、限流、JWT Refresh Token、结构化日志。
+>
+> **归档说明**：3.2 结构化日志已完成，详见 `archive/completed-items.md`。
 
 ---
 

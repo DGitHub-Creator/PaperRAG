@@ -17,10 +17,13 @@ volumes/
 .DS_Store
 data/
 
-# Test (only exclude compiled/cache files within tests)
+# Test artifacts
 tests/__pycache__/
 tests/**/__pycache__/
 .pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
 
 # Study
 langchain-study/
