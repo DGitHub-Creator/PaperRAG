@@ -27,6 +27,11 @@
           </div>
         </div>
         <div v-else class="message-content" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+        <CitationChips 
+          v-if="!msg.isUser && (msg.citations?.length || msg.unsupported?.length)"
+          :citations="msg.citations"
+          :unsupported="msg.unsupported"
+        />
         <div v-if="!msg.isUser && msg.ragTrace" class="message-meta">
           <details class="reasoning-details">
             <summary>{{ $t("chat.retrieval_process") }}</summary>
@@ -66,6 +71,7 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import RagTracePanel from "./RagTracePanel.vue"
+import CitationChips from "./CitationChips.vue"
 import { useChat } from "../composables/useChat"
 import { parseMarkdown, escapeHtml } from "../utils/markdown"
 
