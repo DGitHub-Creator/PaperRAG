@@ -201,12 +201,17 @@ class RedisJobManager:
 
 **涉及文件**：`upload_jobs.py`（重写），`routes.py`（调整依赖注入）
 
-### 1.6 密码强度校验 ✅ 已完成
+### 1.6 密码强度校验
 
-> 注册端点已实现密码策略：最少8位 + 至少2/3类别（大小写/数字），可通过 `MIN_PASSWORD_LENGTH=0` 禁用。
-> 涉及文件：`routes.py:248-258`（内联校验），`config.py:97`（环境变量配置）
+**现状**：注册仅非空检查，`"1"` 也能当密码。
 
-**涉及文件**：`routes.py`, `config.py`
+**方案**：在注册端点增加密码策略：
+
+- 最少 8 位
+- 至少包含大写字母、小写字母、数字中的 2 种
+- 可通过环境变量禁用（开发环境）
+
+**涉及文件**：`routes.py`, `auth.py`
 
 ---
 
@@ -272,10 +277,7 @@ graph.compile(checkpointer=checkpointer)
 
 **涉及文件**：`rag_pipeline.py:639`
 
-### 2.4 多模态检索扩展 ✅ 已完成
-
-> 已实现 CLIP 图像 embedding、LaTeX 公式提取/标准化、Milvus 公式字段和向量索引。
-> 涉及文件：`embedding.py`（CLIP + 公式 embedding），`document_loader.py`（公式提取），`milvus_client.py`（公式字段），`milvus_writer.py`（公式写入）
+### 2.4 多模态检索扩展
 
 **现状**：仅文本检索，图表信息完全丢失。
 
@@ -295,10 +297,7 @@ graph.compile(checkpointer=checkpointer)
 
 **目标**：针对学术论文场景做差异化功能，拉开与通用 RAG 系统的距离。
 
-### 3.1 公式感知检索 ✅ 已完成
-
-> 已实现 LaTeX 公式提取、标准化、公式 embedding、Milvus 公式检索支持。
-> 涉及文件：`document_loader.py`（公式提取），`embedding.py`（公式 embedding），`milvus_client.py`（公式字段+索引）
+### 3.1 公式感知检索
 
 **现状**：LaTeX 公式被当作纯文本处理，`E = mc^2` 和 `E=mc^2` 被视为不同 token。
 
@@ -326,10 +325,7 @@ graph.compile(checkpointer=checkpointer)
 
 **涉及文件**：新增 `rag/knowledge_graph.py`, `rag/citation_extractor.py`，修改 `rag_utils.py`
 
-### 3.3 检索答案可溯源性增强 ✅ 已完成
-
-> 已修改 Agent system prompt 添加引用指令，扩展 RagTrace schema 添加 citations 字段，ChatView 渲染可点击引用，RagTracePanel 显示引用索引。
-> 涉及文件：`agent.py`, `schemas.py`, `ChatView.vue`, `RagTracePanel.vue`, `test_citations.py`
+### 3.3 检索答案可溯源性增强
 
 **现状**：RAG trace 提供检索元数据，但答案中的具体事实无法回溯到来源块。
 
@@ -341,10 +337,7 @@ graph.compile(checkpointer=checkpointer)
 
 **涉及文件**：`agent.py`（system prompt），前端组件（`RagTracePanel.vue`）
 
-### 3.4 ML-based 学术文本清洗 ✅ 已完成
-
-> 已实现 `analyze_page_layout()` + `clean_paper_text_with_layout()`，18个单元测试全部通过。
-> 涉及文件：`academic_cleaner.py`（布局分析函数），`document_loader.py`（集成），`tests/unit/test_layout_analysis.py`
+### 3.4 ML-based 学术文本清洗
 
 **现状**：`academic_cleaner.py` 纯正则移除页眉页脚，误删率高。
 
@@ -363,10 +356,7 @@ graph.compile(checkpointer=checkpointer)
 
 **目标**：支持多用户、高并发、持续部署。
 
-### 4.1 多租户和工作空间 ✅ 已完成
-
-> 已创建 Workspace/WorkspaceMember 模型、6个API端点、权限检查依赖、alembic迁移、11个单元测试。
-> 涉及文件：`models.py`, `auth.py`, `schemas.py`, `routes.py`, `alembic/versions/add_workspaces.py`
+### 4.1 多租户和工作空间
 
 **现状**：用户隔离通过 FK `user_id` 实现，但无工作空间/团队概念。
 
@@ -379,10 +369,7 @@ graph.compile(checkpointer=checkpointer)
 
 **涉及文件**：`models.py`（新 ORM），`auth.py`（workspace 权限），`routes.py`（端点组）
 
-### 4.2 API 限流与用量统计 ✅ 已完成
-
-> 已集成 slowapi、创建 UsageLog 模型、添加速率限制装饰器、实现用量统计端点。
-> 涉及文件：`app.py`, `models.py`, `routes.py`
+### 4.2 API 限流与用量统计
 
 **现状**：无任何限流，用户可无限调用。
 
@@ -394,10 +381,7 @@ graph.compile(checkpointer=checkpointer)
 
 **涉及文件**：新增 `core/rate_limiter.py`，`models.py`（usage_logs），`routes.py`
 
-### 4.3 CI/CD ✅ 已完成
-
-> 已创建 Dockerfile（多阶段构建）、docker-compose.prod.yml、GitHub Actions CI、nginx配置、.dockerignore。
-> 涉及文件：`Dockerfile`, `docker-compose.prod.yml`, `.github/workflows/ci.yml`, `nginx/nginx.conf`, `.dockerignore`
+### 4.3 CI/CD
 
 **现状**：无 CI/CD。
 
@@ -426,26 +410,26 @@ graph.compile(checkpointer=checkpointer)
 | 0.3 | 测试覆盖       | 质量保障        | 中   | **P0** | ✅ 已完成 |
 | 1.4 | CORS 配置    | 安全          | 低   | **P1** | ✅ 已完成 |
 | 1.3 | 连接池优化      | 性能          | 低   | P1     | ✅ 已完成 |
-| 1.6 | 密码强度       | 安全          | 低   | P1     | ✅ 已完成（routes.py:248-258） |
+| 1.6 | 密码强度       | 安全          | 低   | P1     | ⏳ 待执行 |
 | 2.3 | Checkpoint | 鲁棒性         | 低   | P1     | ✅ 已完成（`rag_pipeline.py` 已集成 MemorySaver） |
 | 1.1 | 结构化日志      | 可观测性        | 中   | P1     | ✅ 已完成 → `archive/completed-items.md` |
 | 1.5 | 任务状态持久化    | 可靠性         | 中   | P1     | ✅ 已完成 |
 | 1.2 | 前端工程化 (含 TS + i18n + WS) | 可维护性 | 高 | P1 | ✅ 已完成 → `archive/plan-2-frontend.md` |
 | 2.1 | 多轮检索       | 用户体验        | 中   | P2     | ✅ 已完成（LangGraph 循环边已实现） |
 | 2.2 | 历史感知检索     | 准确率         | 中   | P2     | ✅ 已完成（`conversation_history` 已集成） |
-| 2.4 | 多模态        | 功能          | 高   | P2     | ✅ 已完成（CLIP embedding + 公式提取） |
-| 3.3 | 答案溯源       | 可信度         | 中   | P3     | ✅ 已完成（agent.py + ChatView.vue） |
-| 3.1 | 公式检索       | 差异化         | 高   | P3     | ✅ 已完成（LaTeX提取 + 公式embedding） |
+| 2.4 | 多模态        | 功能          | 高   | P2     | ⏳ 待执行 |
+| 3.3 | 答案溯源       | 可信度         | 中   | P3     | ⏳ 待执行 |
+| 3.1 | 公式检索       | 差异化         | 高   | P3     | ⏳ 待执行 |
 | 3.2 | 知识图谱       | 差异化         | 高   | P3     | ⏳ 待执行 |
-| 3.4 | ML 布局分析    | 解析质量        | 高   | P3     | ✅ 已完成（pdfplumber布局分析） |
-| 4.1 | 多租户        | 商业化         | 高   | P4     | ✅ 已完成（Workspace模型 + 6端点） |
-| 4.2 | 限流/用量      | 运营          | 中   | P4     | ✅ 已完成（slowapi + UsageLog） |
-| 4.3 | CI/CD      | 工程          | 中   | P4     | ✅ 已完成（Dockerfile + GH Actions） |
+| 3.4 | ML 布局分析    | 解析质量        | 高   | P3     | ⏳ 待执行 |
+| 4.1 | 多租户        | 商业化         | 高   | P4     | ⏳ 待执行 |
+| 4.2 | 限流/用量      | 运营          | 中   | P4     | ⏳ 待执行 |
+| 4.3 | CI/CD      | 工程          | 中   | P4     | ⏳ 待执行 |
 
 ### 完成统计
 
-- **已完成**：20/20（100%）— 所有项目已完成！
-- **待执行**：0/20（0%）
+- **已完成**：12/20（60%）— 0.1、0.2、0.3、1.1、1.2、1.3、1.4、1.5、2.1、2.2、2.3、3.2
+- **待执行**：8/20（40%）
 
 ### 实施建议
 

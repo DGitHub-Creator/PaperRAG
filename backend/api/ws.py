@@ -8,13 +8,12 @@
 因为 WebSocket 协议不支持自定义 HTTP 请求头。
 """
 
-import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
 
-from backend.core.config import JWT_SECRET_KEY, JWT_ALGORITHM
+from backend.core.config import JWT_ALGORITHM, JWT_SECRET_KEY
 from backend.core.logging_config import get_logger
 from backend.services.agent import chat_with_agent_stream
 

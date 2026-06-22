@@ -23,6 +23,8 @@ export interface Message {
   isThinking?: boolean
   ragTrace?: RAGTraceEntry[] | null
   ragSteps?: RAGStep[]
+  citations?: string[]
+  unsupported?: string[]
 }
 
 export function useChat() {
@@ -78,6 +80,9 @@ export function useChat() {
       msg.ragTrace = ev.rag_trace
     } else if (ev.type === "rag_step") {
       msg.ragSteps!.push(ev.step)
+    } else if (ev.type === "citations") {
+      msg.citations = ev.citations
+      msg.unsupported = ev.unsupported
     } else if (ev.type === "error") {
       msg.isThinking = false
       msg.text += `\n[Error: ${ev.content}]`
@@ -107,7 +112,7 @@ export function useChat() {
 
     isLoading.value = true
     const botIdx = messages.value.push({
-      text: "", isUser: false, isThinking: true, ragTrace: null, ragSteps: [],
+      text: "", isUser: false, isThinking: true, ragTrace: null, ragSteps: [], citations: [], unsupported: [],
     }) - 1
 
     if (ws.isConnected.value) {

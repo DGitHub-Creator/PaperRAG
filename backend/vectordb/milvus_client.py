@@ -29,15 +29,16 @@ Milvus 客户端 —— 连接管理、集合初始化与混合检索。
 """
 
 import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
-from pymilvus import MilvusClient, DataType, AnnSearchRequest, RRFRanker
+from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker
 
 from backend.core.config import (
+    DENSE_EMBEDDING_DIM,
+    MILVUS_COLLECTION,
     MILVUS_HOST,
     MILVUS_PORT,
-    MILVUS_COLLECTION,
-    DENSE_EMBEDDING_DIM,
 )
 from backend.core.logging_config import get_logger
 
@@ -201,46 +202,7 @@ class MilvusManager:
         def _init(client: MilvusClient) -> None:
             """集合创建的具体实现（作为回调传入 _run_with_reconnect）。"""
             if client.has_collection(self.collection_name):
-                # 检查并补充缺失的公式字段（向后兼容）
-                try:
-                    schema = client.describe_collection(self.collection_name)
-                    field_names = [f.name for f in schema.get("fields", [])]
-                    if "formula_embedding" not in field_names:
-                        logger.info("向已有集合添加公式字段...")
-                        client.add_collection_field(
-                            collection_name=self.collection_name,
-                            field_name="has_formula",
-                            data_type=DataType.BOOL,
-                            default_value=False,
-                        )
-                        client.add_collection_field(
-                            collection_name=self.collection_name,
-                            field_name="formula_text",
-                            data_type=DataType.VARCHAR,
-                            max_length=1000,
-                            default_value="",
-                        )
-                        client.add_collection_field(
-                            collection_name=self.collection_name,
-                            field_name="formula_embedding",
-                            data_type=DataType.FLOAT_VECTOR,
-                            dim=dense_dim,
-                        )
-                        # 添加公式向量索引
-                        index_params = client.prepare_index_params()
-                        index_params.add_index(
-                            field_name="formula_embedding",
-                            index_type="HNSW",
-                            metric_type="COSINE",
-                            params={"M": 16, "efConstruction": 256},
-                        )
-                        client.create_index(
-                            collection_name=self.collection_name,
-                            index_params=index_params,
-                        )
-                        logger.info("公式字段已添加到已有集合")
-                except Exception as e:
-                    logger.warning("添加公式字段失败（可能已存在）: %s", e)
+                logger.info(f"集合 '{self.collection_name}' 已存在，跳过创建")
                 return
 
             # 创建 Schema: auto_id=True 表示主键自动生成, enable_dynamic_field=True 允许动态字段
@@ -280,11 +242,6 @@ class MilvusManager:
             schema.add_field("parent_chunk_id", DataType.VARCHAR, max_length=512)
             schema.add_field("root_chunk_id", DataType.VARCHAR, max_length=512)
             schema.add_field("chunk_level", DataType.INT64)
-            
-            # ── 公式相关字段 ──
-            schema.add_field("has_formula", DataType.BOOL, default=False)
-            schema.add_field("formula_text", DataType.VARCHAR, max_length=1000, default="")
-            schema.add_field("formula_embedding", DataType.FLOAT_VECTOR, dim=dense_dim)
 
             # 注: parent_idx, child_idx, num_children, has_theorem_in_parent,
             #      has_proof_in_parent 等字段通过 enable_dynamic_field 动态存储，
@@ -310,14 +267,6 @@ class MilvusManager:
                 index_type="SPARSE_INVERTED_INDEX",
                 metric_type="IP",
                 params={"drop_ratio_build": 0.2},
-            )
-            
-            # 公式向量索引: HNSW + COSINE (公式检索用余弦相似度)
-            index_params.add_index(
-                field_name="formula_embedding",
-                index_type="HNSW",
-                metric_type="COSINE",
-                params={"M": 16, "efConstruction": 256},
             )
 
             # 创建集合（包含 Schema + 索引）

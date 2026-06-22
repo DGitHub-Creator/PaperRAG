@@ -20,18 +20,18 @@ import json
 import re
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 import redis
 
 from backend.core.config import (
-    REDIS_URL,
-    REDIS_KEY_PREFIX,
-    REDIS_CACHE_TTL,
-    ENABLE_CACHE,
     CACHE_MAX_SIZE,
-    CACHE_TTL_SECONDS,
     CACHE_SIM_THRESHOLD,
+    CACHE_TTL_SECONDS,
+    ENABLE_CACHE,
+    REDIS_CACHE_TTL,
+    REDIS_KEY_PREFIX,
+    REDIS_URL,
 )
 from backend.core.logging_config import get_logger
 
@@ -250,8 +250,8 @@ class RedisCache:
         self.redis_url = REDIS_URL
         self.key_prefix = REDIS_KEY_PREFIX
         self.default_ttl = REDIS_CACHE_TTL
-        self._client: Optional[redis.Redis] = None
-        self._semantic: Optional[SemanticCache] = None
+        self._client: redis.Redis | None = None
+        self._semantic: SemanticCache | None = None
 
     def _get_client(self) -> redis.Redis:
         """获取 Redis 客户端连接（懒加载模式）。
@@ -277,7 +277,7 @@ class RedisCache:
         """
         return f"{self.key_prefix}:{key}"
 
-    def get_json(self, key: str) -> Optional[Any]:
+    def get_json(self, key: str) -> Any | None:
         """从 Redis 读取 JSON 值并反序列化。
 
         Args:
@@ -295,7 +295,7 @@ class RedisCache:
             logger.debug("Redis 读取失败: key=%s", key, exc_info=True)
             return None
 
-    def set_json(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
         """将 Python 对象序列化为 JSON 并写入 Redis，设置 TTL。
 
         Args:

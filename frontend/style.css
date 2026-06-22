@@ -1312,19 +1312,3 @@ textarea {
     background-color: #ee5a5a !important;
     transform: scale(1.1) !important;
 }
-
-/* Citation markers */
-.citation {
-    display: inline;
-    font-weight: 700;
-    color: var(--primary-color, #ff9e99);
-    cursor: pointer;
-    padding: 0 2px;
-    border-radius: 3px;
-    transition: background-color 0.2s;
-}
-
-.citation:hover {
-    background-color: rgba(255, 158, 153, 0.2);
-    text-decoration: underline;
-}

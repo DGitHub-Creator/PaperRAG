@@ -19,61 +19,29 @@
 
 import asyncio
 import json
-import re
 from datetime import datetime
 
-from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
-from backend.core.config import ARK_API_KEY, MODEL, BASE_URL
+from backend.agent.core import build_agent
+from backend.agent.verify import extract_outcome
+from backend.core.config import BASE_URL, MODEL
 from backend.core.database import SessionLocal
+from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
 from backend.core.llm import get_chat_model
 from backend.core.logging_config import get_logger
-from backend.core.models import User, ChatSession, ChatMessage
+from backend.core.models import ChatMessage, ChatSession, User
 from backend.services.cache import cache
 from backend.services.tools import (
     get_current_weather,
-    search_knowledge_base,
     get_last_rag_context,
     reset_tool_call_guards,
+    search_knowledge_base,
     set_rag_step_queue,
 )
-from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
 
 logger = get_logger(__name__)
-
-
-def extract_citations(text: str, rag_trace: dict | None) -> list[dict]:
-    """从 Agent 响应文本中提取 [N] 引用标记，映射到检索分块元数据。
-
-    Args:
-        text: Agent 生成的响应文本。
-        rag_trace: RAG 检索追踪信息，包含 retrieved_chunks 列表。
-
-    Returns:
-        引用列表，每个元素为 {"index": N, "filename": "...", "page": ..., "chunk_idx": ...}。
-        无引用或无 rag_trace 时返回空列表。
-    """
-    if not text or not rag_trace:
-        return []
-
-    indices = {int(m) for m in re.findall(r"\[(\d+)\]", text)}
-    if not indices:
-        return []
-
-    chunks = rag_trace.get("retrieved_chunks") or []
-    citations = []
-    for idx in sorted(indices):
-        if 1 <= idx <= len(chunks):
-            chunk = chunks[idx - 1]
-            citations.append({
-                "index": idx,
-                "filename": chunk.get("filename", ""),
-                "page": chunk.get("page_number"),
-                "chunk_idx": chunk.get("child_idx"),
-            })
-    return citations
 
 
 class ConversationStorage:
@@ -453,17 +421,22 @@ def create_agent_instance():
             "If tool results include a Step-back Question/Answer, use that general principle to reason and answer, "
             "but do not reveal chain-of-thought. "
             "If you don't know the answer, admit it honestly. "
-            "CITATION RULE: Every factual claim derived from retrieved chunks MUST include a citation marker [N] "
-            "where N is the chunk index from the retrieval results (e.g., [1], [2]). "
-            "Format citations as: According to [N] filename (Page N), ... or Based on [N] ... "
-            "Place the [N] marker immediately after the factual statement. "
-            "You may cite multiple sources: [1][2]. "
-            "If a claim is general knowledge (not from retrieval), no citation is needed."
+            "IMPORTANT: When you use information from retrieved documents, you MUST cite the source using the "
+            "format [Source N](source filename, page P) at the end of the relevant sentence or paragraph. "
+            "For example: 'The transformer architecture relies on self-attention mechanisms [Source 1](mypaper.pdf, page 3).' "
+            "Always use the exact source number [Source N] and filename from the Retrieved Chunks. "
+            "If multiple sources support the same claim, list them together: [Source 1][Source 2]."
         ),
     )
 
     logger.info("Agent 实例已创建: model=%s, base_url=%s", MODEL, BASE_URL)
     return agent, model
+
+
+def get_new_agent():
+    """获取新的 Agent 实例（使用 citelocal-agent 架构）"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    return build_agent(checkpointer=InMemorySaver())
 
 
 def summarize_old_messages(model, messages: list) -> str:
@@ -560,14 +533,10 @@ def chat_with_agent(
 
     messages.append(AIMessage(content=response_content))
 
-    # 获取 RAG 追踪信息
+    # 获取 RAG 追踪信息和来源映射
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
-
-    # 提取引用并注入 rag_trace
-    citations = extract_citations(response_content, rag_trace)
-    if citations and rag_trace is not None:
-        rag_trace["citations"] = citations
+    source_map = rag_context.get("source_map") if rag_context else None
 
     # 保存对话（含 RAG trace 关联在最后一条消息上）
     extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
@@ -576,6 +545,7 @@ def chat_with_agent(
     return {
         "response": response_content,
         "rag_trace": rag_trace,
+        "source_map": source_map,
     }
 
 
@@ -711,18 +681,17 @@ async def chat_with_agent_stream(
         if not agent_task.done():
             agent_task.cancel()
 
-    # 获取 RAG trace（检索追踪信息）
+    # 获取 RAG trace（检索追踪信息）和 source_map（来源映射）
     rag_context = get_last_rag_context(clear=True)
     rag_trace = rag_context.get("rag_trace") if rag_context else None
+    source_map = rag_context.get("source_map") if rag_context else None
 
-    # 提取引用并注入 rag_trace
-    citations = extract_citations(full_response, rag_trace)
-    if citations and rag_trace is not None:
-        rag_trace["citations"] = citations
-
-    # 发送 RAG trace 信息
-    if rag_trace:
-        yield f"data: {json.dumps({'type': 'trace', 'rag_trace': rag_trace}, ensure_ascii=False)}\n\n"
+    # 发送 RAG trace + source_map 信息
+    trace_event = {"type": "trace", "rag_trace": rag_trace}
+    if source_map:
+        trace_event["source_map"] = source_map
+    if rag_trace or source_map:
+        yield f"data: {json.dumps(trace_event, ensure_ascii=False)}\n\n"
 
     # 发送结束信号
     yield "data: [DONE]\n\n"
@@ -733,3 +702,108 @@ async def chat_with_agent_stream(
     storage.save(user_id, session_id, messages, extra_message_data=extra_message_data)
 
     logger.info("流式对话完成: user=%s, session=%s, response_len=%d", user_id, session_id, len(full_response))
+
+
+async def chat_with_new_agent_stream(
+    user_text: str, user_id: str = "default_user", session_id: str = "default_session"
+):
+    """使用新 Agent 架构处理用户消息并流式返回响应"""
+    storage = get_conversation_storage()
+    agent = get_new_agent()
+
+    messages = storage.load(user_id, session_id)
+
+    output_queue: asyncio.Queue = asyncio.Queue()
+
+    class _RagStepProxy:
+        def put_nowait(self, step: dict) -> None:
+            output_queue.put_nowait({"type": "rag_step", "step": step})
+
+    set_rag_step_queue(_RagStepProxy())
+
+    if len(messages) > 50:
+        summary = summarize_old_messages(get_agent_model(), messages[:40])
+        messages = [
+            SystemMessage(content=f"之前的对话摘要：\n{summary}")
+        ] + messages[40:]
+
+    messages.append(HumanMessage(content=user_text))
+
+    full_response = ""
+    retrieved_locators = []
+    evidence = []
+    result = {}
+
+    async def _agent_worker():
+        nonlocal full_response, retrieved_locators, evidence, result
+        try:
+            result = await agent.ainvoke(
+                {
+                    "question_input": {"question": user_text},
+                    "messages": messages,
+                    "classification_decision": None,
+                    "trace": [],
+                    "retrieved_locators": [],
+                    "evidence": [],
+                },
+                config={"configurable": {"thread_id": session_id}},
+            )
+
+            # Extract response from result
+            if isinstance(result, dict):
+                msgs = result.get("messages", [])
+                for msg in reversed(msgs):
+                    content = getattr(msg, "content", "")
+                    if content:
+                        full_response = content
+                        break
+
+                retrieved_locators = result.get("retrieved_locators", [])
+                evidence = result.get("evidence", [])
+
+            await output_queue.put({"type": "content", "content": full_response})
+        except Exception as e:
+            logger.exception("New Agent worker exception")
+            await output_queue.put({"type": "error", "content": str(e)})
+        finally:
+            await output_queue.put(None)
+
+    agent_task = asyncio.create_task(_agent_worker())
+
+    try:
+        while True:
+            event = await output_queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+    except GeneratorExit:
+        agent_task.cancel()
+        try:
+            await agent_task
+        except asyncio.CancelledError:
+            pass
+        raise
+    finally:
+        set_rag_step_queue(None)
+        if not agent_task.done():
+            agent_task.cancel()
+
+    # Verify citations
+    outcome = extract_outcome(
+        result.get("messages", []) if isinstance(result, dict) else [],
+        retrieved_locators,
+        evidence
+    )
+
+    # Send citation verification results
+    citation_event = {
+        "type": "citations",
+        "citations": outcome.get("citations", []),
+        "unsupported": outcome.get("unsupported", []),
+    }
+    yield f"data: {json.dumps(citation_event, ensure_ascii=False)}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+    messages.append(AIMessage(content=full_response))
+    storage.save(user_id, session_id, messages)

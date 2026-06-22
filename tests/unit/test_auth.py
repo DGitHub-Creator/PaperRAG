@@ -1,123 +1,209 @@
-"""Tests for backend.core.auth — password hashing, JWT, and role resolution."""
+"""认证模块单元测试 —— 密码哈希、JWT 令牌、用户验证、权限校验。"""
 
-import time
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from jose import jwt
 
 from backend.core.auth import (
-    get_password_hash,
-    verify_password,
+    authenticate_user,
     create_access_token,
+    create_refresh_token,
+    get_current_user,
+    get_password_hash,
+    require_admin,
     resolve_role,
+    verify_password,
 )
+
+TEST_SECRET = "test-secret-for-testing"
+
+
+def _patch_auth():
+    """Apply common monkeypatches for JWT token tests."""
+    return patch.multiple(
+        "backend.core.auth",
+        JWT_SECRET_KEY=TEST_SECRET,
+        JWT_ALGORITHM="HS256",
+        JWT_EXPIRE_MINUTES=1440,
+        JWT_REFRESH_EXPIRE_DAYS=30,
+    )
+
+
+# ── 密码哈希 ──────────────────────────────────────────────────────────
 
 
 class TestPasswordHashing:
-    """Tests for PBKDF2-SHA256 password hashing."""
-
     def test_hash_and_verify(self):
-        """Hash a password and verify it matches."""
-        password = "SecurePass123!"
-        hash_str = get_password_hash(password)
-        assert verify_password(password, hash_str) is True
-
-    def test_wrong_password_fails(self):
-        """Wrong password should not verify."""
-        hash_str = get_password_hash("correct_password")
-        assert verify_password("wrong_password", hash_str) is False
+        pw = "MySecureP@ss123"
+        h = get_password_hash(pw)
+        assert h.startswith("pbkdf2_sha256$")
+        assert verify_password(pw, h)
+        assert not verify_password("wrong-password", h)
 
     def test_empty_password_raises(self):
-        """Empty password should raise ValueError."""
-        with pytest.raises(ValueError, match="密码不能为空"):
+        with pytest.raises(ValueError):
             get_password_hash("")
 
-    def test_empty_plaintext_returns_false(self):
-        """Empty plaintext should return False, not raise."""
-        hash_str = get_password_hash("test")
-        assert verify_password("", hash_str) is False
+    def test_verify_rejects_empty(self):
+        assert not verify_password("", "pbkdf2_sha256$1$a$b")
+        assert not verify_password("pw", "")
+        assert not verify_password("", "")
 
-    def test_empty_hash_returns_false(self):
-        """Empty hash should return False."""
-        assert verify_password("test", "") is False
+    def test_verify_unknown_format(self):
+        assert not verify_password("pw", "unknown$format")
+        assert not verify_password("pw", "$2abc")  # bcrypt-ish but short/corrupt
 
-    def test_hash_format(self):
-        """Hash should start with pbkdf2_sha256$."""
-        hash_str = get_password_hash("test")
-        assert hash_str.startswith("pbkdf2_sha256$")
-
-    def test_different_hashes_for_same_password(self):
-        """Each hash should be unique (random salt)."""
-        h1 = get_password_hash("same_password")
-        h2 = get_password_hash("same_password")
-        assert h1 != h2
-        # But both should verify
-        assert verify_password("same_password", h1)
-        assert verify_password("same_password", h2)
-
-    def test_unicode_password(self):
-        """Unicode passwords should work."""
-        password = "密码测试🔑"
-        hash_str = get_password_hash(password)
-        assert verify_password(password, hash_str) is True
+    def test_verify_corrupt_pbkdf2(self):
+        assert not verify_password("pw", "pbkdf2_sha256$bad")
+        assert not verify_password("pw", "pbkdf2_sha256$a$b$c$d")
 
 
-class TestJWT:
-    """Tests for JWT token creation and decoding."""
+# ── JWT 令牌 ─────────────────────────────────────────────────────────
 
-    def test_create_token_contains_claims(self):
-        """Token should contain sub and role claims."""
-        from jose import jwt
-        from backend.core.config import JWT_SECRET_KEY, JWT_ALGORITHM
 
-        token = create_access_token("testuser", "admin")
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        assert payload["sub"] == "testuser"
-        assert payload["role"] == "admin"
+class TestJWTTokens:
+    def test_create_access_token(self):
+        with _patch_auth():
+            token = create_access_token("alice", "user")
+            payload = jwt.decode(token, TEST_SECRET, algorithms=["HS256"])
+            assert payload["sub"] == "alice"
+            assert payload["role"] == "user"
+            assert "exp" in payload
+            assert payload.get("type") is None
 
-    def test_token_has_expiry(self):
-        """Token should have an exp claim in the future."""
-        from jose import jwt
-        from backend.core.config import JWT_SECRET_KEY, JWT_ALGORITHM
+    def test_create_refresh_token(self):
+        with _patch_auth():
+            token = create_refresh_token("alice", "user")
+            payload = jwt.decode(token, TEST_SECRET, algorithms=["HS256"])
+            assert payload["sub"] == "alice"
+            assert payload["role"] == "user"
+            assert payload["type"] == "refresh"
+            assert "exp" in payload
 
-        token = create_access_token("user1", "user")
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        assert "exp" in payload
-        assert payload["exp"] > time.time()
+    def test_access_vs_refresh_different(self):
+        with _patch_auth():
+            access = create_access_token("alice", "user")
+            refresh = create_refresh_token("alice", "user")
+            assert access != refresh
+            a_payload = jwt.decode(access, TEST_SECRET, algorithms=["HS256"])
+            r_payload = jwt.decode(refresh, TEST_SECRET, algorithms=["HS256"])
+            assert a_payload.get("type") is None
+            assert r_payload.get("type") == "refresh"
+
+    def test_admin_token_has_admin_role(self):
+        with _patch_auth():
+            token = create_access_token("admin1", "admin")
+            payload = jwt.decode(token, TEST_SECRET, algorithms=["HS256"])
+            assert payload["role"] == "admin"
+
+
+# ── 用户验证 ─────────────────────────────────────────────────────────
+
+
+class TestAuthenticateUser:
+    def test_user_not_found(self):
+        db = MagicMock()
+        db.query().filter().first.return_value = None
+        result = authenticate_user(db, "nobody", "pw")
+        assert result is None
+
+    def test_wrong_password(self):
+        user = MagicMock()
+        user.username = "alice"
+        with patch("backend.core.auth.verify_password", return_value=False):
+            db = MagicMock()
+            db.query().filter().first.return_value = user
+            result = authenticate_user(db, "alice", "wrong")
+            assert result is None
+
+    def test_success(self):
+        user = MagicMock()
+        user.username = "alice"
+        with patch("backend.core.auth.verify_password", return_value=True):
+            db = MagicMock()
+            db.query().filter().first.return_value = user
+            result = authenticate_user(db, "alice", "correct")
+            assert result is user
+
+
+# ── 当前用户依赖注入 ────────────────────────────────────────────────
+
+
+class TestGetCurrentUser:
+    def test_valid_token(self):
+        with _patch_auth():
+            token = create_access_token("alice", "user")
+            db = MagicMock()
+            user = MagicMock()
+            user.username = "alice"
+            db.query().filter().first.return_value = user
+            result = get_current_user(token=token, db=db)
+            assert result is user
 
     def test_invalid_token_raises(self):
-        """Decoding an invalid token should raise JWTError."""
-        from jose import jwt, JWTError
-        from backend.core.config import JWT_SECRET_KEY, JWT_ALGORITHM
+        with _patch_auth():
+            with pytest.raises(HTTPException) as exc:
+                get_current_user(token="invalid-token", db=MagicMock())
+            assert exc.value.status_code == 401
 
-        with pytest.raises(JWTError):
-            jwt.decode("invalid.token.here", JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+    def test_expired_token_raises(self):
+        with patch.multiple(
+            "backend.core.auth",
+            JWT_SECRET_KEY=TEST_SECRET,
+            JWT_ALGORITHM="HS256",
+            JWT_EXPIRE_MINUTES=-1,
+        ):
+            token = create_access_token("alice", "user")
+            with pytest.raises(HTTPException) as exc:
+                get_current_user(token=token, db=MagicMock())
+            assert exc.value.status_code == 401
+
+    def test_user_deleted_after_token_issued(self):
+        with _patch_auth():
+            token = create_access_token("alice", "user")
+            db = MagicMock()
+            db.query().filter().first.return_value = None
+            with pytest.raises(HTTPException) as exc:
+                get_current_user(token=token, db=db)
+            assert exc.value.status_code == 401
+
+
+# ── 管理员权限校验 ───────────────────────────────────────────────────
+
+
+class TestRequireAdmin:
+    def test_admin_user_passes(self):
+        user = MagicMock()
+        user.role = "admin"
+        result = require_admin(user)
+        assert result is user
+
+    def test_non_admin_raises(self):
+        user = MagicMock()
+        user.role = "user"
+        with pytest.raises(HTTPException) as exc:
+            require_admin(user)
+        assert exc.value.status_code == 403
+
+
+# ── 角色解析 ─────────────────────────────────────────────────────────
 
 
 class TestResolveRole:
-    """Tests for role resolution logic."""
-
-    def test_default_role_is_user(self):
-        """No role specified should default to 'user'."""
+    def test_default_user(self):
         assert resolve_role(None, None) == "user"
-
-    def test_user_role(self):
-        """Explicit 'user' role should return 'user'."""
+        assert resolve_role("", None) == "user"
         assert resolve_role("user", None) == "user"
 
     def test_admin_with_valid_code(self):
-        """Admin role with correct invite code should return 'admin'."""
-        from backend.core.config import ADMIN_INVITE_CODE
-        assert resolve_role("admin", ADMIN_INVITE_CODE) == "admin"
+        with patch("backend.core.auth.ADMIN_INVITE_CODE", "secret"):
+            assert resolve_role("admin", "secret") == "admin"
 
-    def test_admin_with_wrong_code_raises(self):
-        """Admin role with wrong invite code should raise 403."""
-        with pytest.raises(HTTPException) as exc_info:
-            resolve_role("admin", "wrong_code")
-        assert exc_info.value.status_code == 403
-
-    def test_admin_without_code_raises(self):
-        """Admin role without invite code should raise 403."""
-        with pytest.raises(HTTPException) as exc_info:
-            resolve_role("admin", None)
-        assert exc_info.value.status_code == 403
+    def test_admin_with_wrong_code(self):
+        with patch("backend.core.auth.ADMIN_INVITE_CODE", "secret"):
+            with pytest.raises(HTTPException) as exc:
+                resolve_role("admin", "wrong")
+            assert exc.value.status_code == 403

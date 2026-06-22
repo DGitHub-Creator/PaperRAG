@@ -24,9 +24,9 @@
 """
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from backend.core.config import DATABASE_URL, DB_POOL_SIZE, DB_MAX_OVERFLOW
+from backend.core.config import DATABASE_URL, DB_MAX_OVERFLOW, DB_POOL_SIZE
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)

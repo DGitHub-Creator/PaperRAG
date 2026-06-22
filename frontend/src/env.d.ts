@@ -17,7 +17,3 @@ declare module "marked" {
   export function setOptions(options: MarkedOptions): void
   export const marked: { parse: typeof parse; setOptions: typeof setOptions }
 }
-
-interface Window {
-  __citationClick?: (index: number) => void
-}

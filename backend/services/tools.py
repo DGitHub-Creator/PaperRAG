@@ -14,19 +14,18 @@
 
 import asyncio
 import contextvars
-from typing import Optional
 
 import requests
 from langchain_core.tools import tool
 
-from backend.core.config import AMAP_WEATHER_API, AMAP_API_KEY
+from backend.core.config import AMAP_API_KEY, AMAP_WEATHER_API
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # ── contextvars 上下文变量（替代进程级全局变量） ────────────────────
 
-_rag_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+_rag_context_var: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "_rag_context_var", default=None
 )
 """最近一次 RAG 检索的上下文（包含 rag_trace 等追踪信息），按请求隔离。"""
@@ -56,7 +55,7 @@ def _set_last_rag_context(context: dict) -> None:
     _rag_context_var.set(context)
 
 
-def get_last_rag_context(clear: bool = True) -> Optional[dict]:
+def get_last_rag_context(clear: bool = True) -> dict | None:
     """获取最近一次 RAG 检索上下文，默认读取后清空。
 
     设计为读取即清空，防止跨请求污染。
@@ -127,7 +126,7 @@ def emit_rag_step(icon: str, label: str, detail: str = "") -> None:
 # ── Agent 工具函数 ──────────────────────────────────────────────────
 
 
-def get_current_weather(location: str, extensions: Optional[str] = "base") -> str:
+def get_current_weather(location: str, extensions: str | None = "base") -> str:
     """获取指定城市的天气信息（高德地图 API）。
 
     支持两种查询模式：
@@ -256,13 +255,26 @@ def search_knowledge_base(query: str) -> str:
         logger.info("知识库检索无结果: query='%s'", query[:100])
         return "No relevant documents found in the knowledge base."
 
-    # 格式化检索结果
+    # 格式化检索结果（含 Source 编号，供 Agent 引用）
     formatted = []
+    source_map = {}
     for i, result in enumerate(docs, 1):
         source = result.get("filename", "Unknown")
         page = result.get("page_number", "N/A")
+        chunk_id = result.get("chunk_id", "")
         text = result.get("text", "")
-        formatted.append(f"[{i}] {source} (Page {page}):\n{text}")
+        formatted.append(f"[Source {i}] {source} (Page {page}):\n{text}")
+        source_map[f"Source {i}"] = {
+            "filename": source,
+            "page": page,
+            "chunk_id": chunk_id,
+        }
+
+    # 保存 source_map 到 RAG 上下文，供后处理使用
+    _set_last_rag_context({
+        "rag_trace": rag_trace,
+        "source_map": source_map,
+    })
 
     logger.info("知识库检索完成: query='%s', 命中 %d 条", query[:100], len(docs))
     return "Retrieved Chunks:\n" + "\n\n---\n\n".join(formatted)
