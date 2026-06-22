@@ -2,11 +2,11 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
-from backend.core.models import User, Workspace, WorkspaceMember
+from backend.core.models import Workspace, WorkspaceMember
 from backend.core.auth import _check_workspace_access
 
 

@@ -50,10 +50,7 @@ from fastapi import (
     UploadFile,
 )
 
-from backend.core.auth import (
-    get_current_user,
-    require_admin,
-)
+from backend.core.auth import require_admin
 from backend.core.config import (
     DATA_DIR,
     INGESTED_STATE_PATH,

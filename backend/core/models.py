@@ -115,6 +115,12 @@ class ChatSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
+    # 可选所属工作区（多租户），删除工作区时置 NULL
+    workspace_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # 会话创建时间
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
@@ -255,6 +261,57 @@ class ParentChunk(Base):
             f"<ParentChunk(chunk_id='{self.chunk_id[:16]}...', "
             f"filename='{self.filename}', level={self.chunk_level}, idx={self.chunk_idx})>"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Workspace —— 工作区/多租户模型
+# ══════════════════════════════════════════════════════════════════════
+
+
+class Workspace(Base):
+    """工作区模型 —— 用于隔离文档和会话的多租户分组。"""
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<Workspace(id={self.id}, name='{self.name}', owner_id={self.owner_id})>"
+
+
+class WorkspaceMember(Base):
+    """工作区成员模型 —— 用户与工作区的关联关系。"""
+
+    __tablename__ = "workspace_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<WorkspaceMember(id={self.id}, workspace_id={self.workspace_id}, user_id={self.user_id}, role='{self.role}')>"
 
 
 # ══════════════════════════════════════════════════════════════════════
