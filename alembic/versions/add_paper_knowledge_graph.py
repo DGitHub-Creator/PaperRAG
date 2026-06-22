@@ -29,10 +29,8 @@ def upgrade() -> None:
         sa.Column("citation_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("filename"),
     )
-    op.create_index("ix_paper_nodes_id", "paper_nodes", ["id"])
-    op.create_index("ix_paper_nodes_filename", "paper_nodes", ["filename"])
+    op.create_index("ix_paper_nodes_filename", "paper_nodes", ["filename"], unique=True)
 
     op.create_table(
         "citation_edges",
