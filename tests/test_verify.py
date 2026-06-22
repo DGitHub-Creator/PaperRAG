@@ -1,7 +1,6 @@
 """Tests for the citation verification module."""
 
-import pytest
-from backend.agent.verify import extract_citations, verify_citations, _locator_matches
+from backend.agent.verify import _locator_matches, extract_citations, verify_citations
 
 
 class TestExtractCitations:

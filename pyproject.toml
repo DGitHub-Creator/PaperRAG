@@ -83,10 +83,10 @@ show_missing = true
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 200
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
-ignore = ["E402", "E501", "W291"]
+ignore = ["E402", "W291"]
 
 

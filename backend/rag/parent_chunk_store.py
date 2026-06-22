@@ -16,14 +16,12 @@
     >>> store.upsert_documents(parent_docs)
 """
 
-import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 from backend.core.database import SessionLocal
+from backend.core.logging_config import get_logger
 from backend.core.models import ParentChunk
 from backend.services.cache import cache
-from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -57,7 +55,7 @@ class ParentChunkStore:
         """生成 Redis 缓存键。"""
         return f"parent_chunk:{chunk_id}"
 
-    def upsert_documents(self, docs: List[dict]) -> int:
+    def upsert_documents(self, docs: list[dict]) -> int:
         """写入或更新父级分块（存在则更新，不存在则插入）。
 
         每条记录同时写入 PostgreSQL 和 Redis 缓存。
@@ -94,7 +92,7 @@ class ParentChunkStore:
                     "root_chunk_id": doc.get("root_chunk_id", ""),
                     "chunk_level": int(doc.get("chunk_level", 0) or 0),
                     "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
                 cache_payload = {
                     "chunk_id": chunk_id,
@@ -131,7 +129,7 @@ class ParentChunkStore:
 
         return upserted
 
-    def get_documents_by_ids(self, chunk_ids: List[str]) -> List[dict]:
+    def get_documents_by_ids(self, chunk_ids: list[str]) -> list[dict]:
         """根据 chunk_id 列表批量查询父块。
 
         缓存旁路: Redis 先查 → 缺失的从 PostgreSQL 补查 → 回填 Redis。

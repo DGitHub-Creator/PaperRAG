@@ -3,8 +3,6 @@
 import time
 from unittest.mock import patch
 
-import pytest
-
 from backend.services.cache import SemanticCache
 
 

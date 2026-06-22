@@ -20,8 +20,8 @@ Milvus 写入器 —— 文档向量化并批量写入 Milvus 向量库。
 """
 
 from backend.core.dependencies import get_embedding_service, get_milvus_manager
-from backend.rag.embedding import EmbeddingService
 from backend.core.logging_config import get_logger
+from backend.rag.embedding import EmbeddingService
 
 logger = get_logger(__name__)
 

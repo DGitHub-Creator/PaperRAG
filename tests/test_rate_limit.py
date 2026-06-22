@@ -7,6 +7,5 @@ def test_limiter_created():
 
 
 def test_limiter_storage():
-    from slowapi.util import get_remote_address
     storage = limiter._storage
     assert storage is not None

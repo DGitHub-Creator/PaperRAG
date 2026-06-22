@@ -1,11 +1,11 @@
 """认证模块单元测试 —— 密码哈希、JWT 令牌、用户验证、权限校验。"""
 
-import os
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 from jose import jwt
-from unittest.mock import MagicMock, patch
 
 from backend.core.auth import (
     authenticate_user,

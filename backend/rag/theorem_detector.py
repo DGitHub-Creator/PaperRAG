@@ -11,7 +11,6 @@
     >>> has_theorem, has_proof = detect_theorem_proof(parent_text)
 """
 
-import logging
 import re
 
 from backend.core.logging_config import get_logger

@@ -1,6 +1,6 @@
 """文档加载模块单元测试 —— PDF 多解析器降级链。"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestParsePdfWithFallback:
@@ -48,8 +48,9 @@ class TestParsePdfWithFallback:
                 ("parser_b", lambda p: ""),
             ]),
         ):
-            from backend.rag.document_loader import parse_pdf_with_fallback
             import pytest
+
+            from backend.rag.document_loader import parse_pdf_with_fallback
             with pytest.raises(RuntimeError):
                 parse_pdf_with_fallback("/path/to/test.pdf")
 
@@ -66,7 +67,8 @@ class TestDocumentLoader:
             assert loader._max_workers == 4
 
     def test_load_empty_path(self):
-        from backend.rag.document_loader import DocumentLoader
         import pytest
+
+        from backend.rag.document_loader import DocumentLoader
         with pytest.raises(Exception):
             DocumentLoader().load_document("/nonexistent/file.pdf", "test.pdf")

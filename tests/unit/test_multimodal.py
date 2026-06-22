@@ -7,7 +7,7 @@
   - 全局单例模式
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from backend.rag.multimodal import (
     FigureExtractor,

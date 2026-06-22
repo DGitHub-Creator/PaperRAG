@@ -10,10 +10,8 @@
 """
 
 import io
-import os
 import threading
 import traceback
-from typing import Any
 
 from backend.core.logging_config import get_logger
 

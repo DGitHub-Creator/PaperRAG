@@ -2,15 +2,12 @@
 
 import asyncio
 
-import pytest
-
 from backend.services.tools import (
-    get_last_rag_context,
+    _knowledge_calls_var,
     _set_last_rag_context,
+    get_last_rag_context,
     reset_tool_call_guards,
     set_rag_step_queue,
-    _knowledge_calls_var,
-    _rag_context_var,
 )
 
 

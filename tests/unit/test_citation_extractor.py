@@ -1,4 +1,4 @@
-from backend.rag.citation_extractor import extract_citations, extract_citation_refs, has_citations
+from backend.rag.citation_extractor import extract_citation_refs, extract_citations, has_citations
 
 
 class TestExtractCitations:
