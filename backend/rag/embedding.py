@@ -32,9 +32,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from backend.core.config import (
     BM25_STATE_PATH,
-    EMBEDDING_MODEL,
     EMBEDDING_DEVICE,
-    DENSE_EMBEDDING_DIM,
+    EMBEDDING_MODEL,
     HF_HOME,
 )
 from backend.core.logging_config import get_logger

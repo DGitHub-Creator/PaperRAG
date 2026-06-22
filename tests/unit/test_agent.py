@@ -19,8 +19,9 @@ class TestConversationStorageCacheKeys:
 
 class TestConversationStorageSave:
     def test_save_new_session(self):
-        from backend.services.agent import ConversationStorage
         from langchain_core.messages import HumanMessage
+
+        from backend.services.agent import ConversationStorage
 
         store = ConversationStorage()
         db = MagicMock()
@@ -106,8 +107,8 @@ class TestConversationStorageLoad:
 
 class TestConversationStorageList:
     def test_list_sessions(self):
-        from backend.services.agent import ConversationStorage
         import backend.services.agent as agent_mod
+        from backend.services.agent import ConversationStorage
 
         store = ConversationStorage()
         user = MagicMock()
@@ -186,8 +187,9 @@ class TestConversationStorageList:
 
 class TestToLangchainMessages:
     def test_human_message(self):
-        from backend.services.agent import ConversationStorage
         from langchain_core.messages import HumanMessage
+
+        from backend.services.agent import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "human", "content": "Hello"}]
@@ -197,8 +199,9 @@ class TestToLangchainMessages:
         assert result[0].content == "Hello"
 
     def test_ai_message(self):
-        from backend.services.agent import ConversationStorage
         from langchain_core.messages import AIMessage
+
+        from backend.services.agent import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "ai", "content": "Hi there"}]
@@ -207,8 +210,9 @@ class TestToLangchainMessages:
         assert isinstance(result[0], AIMessage)
 
     def test_system_message(self):
-        from backend.services.agent import ConversationStorage
         from langchain_core.messages import SystemMessage
+
+        from backend.services.agent import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "system", "content": "Be helpful"}]

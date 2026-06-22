@@ -29,15 +29,16 @@ Milvus 客户端 —— 连接管理、集合初始化与混合检索。
 """
 
 import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
-from pymilvus import MilvusClient, DataType, AnnSearchRequest, RRFRanker
+from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker
 
 from backend.core.config import (
+    DENSE_EMBEDDING_DIM,
+    MILVUS_COLLECTION,
     MILVUS_HOST,
     MILVUS_PORT,
-    MILVUS_COLLECTION,
-    DENSE_EMBEDDING_DIM,
 )
 from backend.core.logging_config import get_logger
 

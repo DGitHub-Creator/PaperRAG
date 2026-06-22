@@ -1,18 +1,16 @@
+# Import our application's Base metadata for autogenerate support
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-# Import our application's Base metadata for autogenerate support
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.core.models import Base  # noqa: E402
 from backend.core.config import DATABASE_URL  # noqa: E402
+from backend.core.models import Base  # noqa: E402
 
 config = context.config
 

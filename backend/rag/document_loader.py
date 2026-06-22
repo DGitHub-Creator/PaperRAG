@@ -21,32 +21,31 @@
 
 import os
 import traceback
-from typing import Dict, List
 
+from langchain_community.document_loaders import (
+    Docx2txtLoader,
+    PyPDFLoader,
+    UnstructuredExcelLoader,
+)
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    Docx2txtLoader,
-    UnstructuredExcelLoader,
-)
 
 from backend.core.config import (
-    CHUNK_SIZE,
     CHUNK_OVERLAP,
+    CHUNK_SIZE,
     ENABLE_ACADEMIC_CLEANING,
     ENABLE_STRUCTURAL_CHUNKING,
     PARSE_MAX_WORKERS,
 )
 from backend.core.logging_config import get_logger
 from backend.rag.academic_cleaner import clean_paper_text
-from backend.rag.theorem_detector import detect_theorem_proof
+from backend.rag.citation_extractor import extract_citations
 from backend.rag.formula_normalizer import extract_formulas
-from backend.rag.citation_extractor import extract_citations, has_citations
-from backend.rag.glossary_extractor import extract_glossary, has_glossary
+from backend.rag.glossary_extractor import extract_glossary
 from backend.rag.layout_analyzer import analyze_layout, extract_regions_by_type
+from backend.rag.theorem_detector import detect_theorem_proof
 
 logger = get_logger(__name__)
 
@@ -319,9 +318,9 @@ class DocumentLoader:
     def _split_page_to_three_levels(
         self,
         text: str,
-        base_doc: Dict,
+        base_doc: dict,
         page_global_chunk_idx: int,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """对单页（或单段）文本执行三层嵌套滑动窗口分块。
 
         流程:
@@ -341,7 +340,7 @@ class DocumentLoader:
         if not text:
             return []
 
-        root_chunks: List[Dict] = []
+        root_chunks: list[dict] = []
         page_number = int(base_doc.get("page_number", 0))
         filename = base_doc["filename"]
 
@@ -429,7 +428,7 @@ class DocumentLoader:
         doc_type: str,
         file_path: str,
         parser: str = "",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """标准三层滑动窗口分块（兼容非 PDF 文档及关闭结构分块时使用）。
 
         对整个文档文本执行三层嵌套滑动窗口分块，所有 chunk 标记为
@@ -499,7 +498,7 @@ class DocumentLoader:
         full_text: str,
         filename: str,
         parser: str = "",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """基于 Markdown 标题做结构分块 + 递归字符分块兜底。
 
         流程:
@@ -527,7 +526,7 @@ class DocumentLoader:
             chunk_overlap=self._structural_chunk_overlap,
         )
 
-        all_docs: List[Dict] = []
+        all_docs: list[dict] = []
         global_idx = 0
 
         for p_idx, parent in enumerate(parents):
@@ -589,7 +588,7 @@ class DocumentLoader:
 
     # ── PDF 加载（多解析器降级 + 学术清洗 + 分块）─────────────────────
 
-    def _load_pdf(self, file_path: str, filename: str) -> List[Dict]:
+    def _load_pdf(self, file_path: str, filename: str) -> list[dict]:
         """PDF 完整处理链路：多解析器降级 → 学术清洗 → 分块。
 
         步骤:

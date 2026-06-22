@@ -12,7 +12,6 @@
     >>> cleaned = clean_paper_text(raw_pdf_text)
 """
 
-import logging
 import re
 
 from backend.core.logging_config import get_logger

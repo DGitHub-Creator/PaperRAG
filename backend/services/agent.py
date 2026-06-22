@@ -21,26 +21,25 @@ import asyncio
 import json
 from datetime import datetime
 
-from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
-from backend.core.config import ARK_API_KEY, MODEL, BASE_URL
+from backend.agent.core import build_agent
+from backend.agent.verify import extract_outcome
+from backend.core.config import BASE_URL, MODEL
 from backend.core.database import SessionLocal
+from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
 from backend.core.llm import get_chat_model
 from backend.core.logging_config import get_logger
-from backend.core.models import User, ChatSession, ChatMessage
+from backend.core.models import ChatMessage, ChatSession, User
 from backend.services.cache import cache
 from backend.services.tools import (
     get_current_weather,
-    search_knowledge_base,
     get_last_rag_context,
     reset_tool_call_guards,
+    search_knowledge_base,
     set_rag_step_queue,
 )
-from backend.core.dependencies import get_agent_instance, get_agent_model, get_conversation_storage
-from backend.agent.core import build_agent
-from backend.agent.verify import extract_outcome
 
 logger = get_logger(__name__)
 

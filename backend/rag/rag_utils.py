@@ -14,7 +14,7 @@
 
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
@@ -26,7 +26,6 @@ from backend.core.config import (
     EXPAND_MAX_TOTAL_CHUNKS,
     EXPAND_NEXT_PARENT,
     EXPAND_PREV_PARENT,
-    HF_HOME,
     LEAF_RETRIEVE_LEVEL,
     LOCAL_RERANKER,
     RERANK_API_KEY,
@@ -41,9 +40,9 @@ from backend.core.dependencies import (
     get_stepback_model,
 )
 from backend.core.logging_config import get_logger
-from backend.rag.formula_normalizer import extract_formulas, normalize_formula
+from backend.rag.citation_extractor import extract_citation_refs
 from backend.rag.formula_index import get_formula_lsh_index
-from backend.rag.citation_extractor import extract_citations, extract_citation_refs
+from backend.rag.formula_normalizer import extract_formulas, normalize_formula
 
 load_dotenv()
 logger = get_logger(__name__)
@@ -66,8 +65,8 @@ def _get_rerank_endpoint() -> str:
 # ── Auto-merging（三级分块合并）──────────────────────────────────
 
 def _merge_to_parent_level(
-    docs: List[dict], threshold: int = 2
-) -> Tuple[List[dict], int]:
+    docs: list[dict], threshold: int = 2
+) -> tuple[list[dict], int]:
     """将叶子 chunk 按 parent_chunk_id 分组，满足阈值后替换为父块。
 
     当同一父块下的子块数 >= threshold 时，从 ParentChunkStore 拉取父块文本，
@@ -81,7 +80,7 @@ def _merge_to_parent_level(
         (merged_docs, merged_count): 合并后的文档列表和实际替换的父块数。
     """
     # 按 parent_chunk_id 分组
-    groups: Dict[str, List[dict]] = defaultdict(list)
+    groups: dict[str, list[dict]] = defaultdict(list)
     for doc in docs:
         parent_id = (doc.get("parent_chunk_id") or "").strip()
         if parent_id:
@@ -102,7 +101,7 @@ def _merge_to_parent_level(
         for item in parent_docs if item.get("chunk_id")
     }
 
-    merged_docs: List[dict] = []
+    merged_docs: list[dict] = []
     merged_count = 0
 
     for doc in docs:
@@ -125,7 +124,7 @@ def _merge_to_parent_level(
         merged_count += 1
 
     # 去重（同一父块可能被多个子块命中）
-    deduped: List[dict] = []
+    deduped: list[dict] = []
     seen = set()
     for item in merged_docs:
         key = item.get("chunk_id") or (
@@ -140,8 +139,8 @@ def _merge_to_parent_level(
 
 
 def _auto_merge_documents(
-    docs: List[dict], top_k: int
-) -> Tuple[List[dict], Dict[str, Any]]:
+    docs: list[dict], top_k: int
+) -> tuple[list[dict], dict[str, Any]]:
     """两阶段 Auto-merging: L3→L2 再 L2→L1。
 
     每阶段独立判断阈值，不可合并的 chunk 保留原级别。
@@ -194,8 +193,8 @@ def _auto_merge_documents(
 # ── Rerank（双轨：本地 Cross-Encoder + Jina API）─────────────────
 
 def _rerank_documents(
-    query: str, docs: List[dict], top_k: int
-) -> Tuple[List[dict], Dict[str, Any]]:
+    query: str, docs: list[dict], top_k: int
+) -> tuple[list[dict], dict[str, Any]]:
     """对候选文档进行精排。
 
     策略选择（优先级从高到低）:
@@ -217,7 +216,7 @@ def _rerank_documents(
     # 附加 RRF 排名信息
     docs_with_rank = [{**doc, "rrf_rank": i} for i, doc in enumerate(docs, 1)]
 
-    meta: Dict[str, Any] = {
+    meta: dict[str, Any] = {
         "rerank_enabled": bool(
             (RERANK_MODEL and RERANK_API_KEY and RERANK_BINDING_HOST) or LOCAL_RERANKER
         ),
@@ -302,7 +301,7 @@ def _rerank_documents(
 
 # ── 上下文扩展（Context Expansion）────────────────────────────────
 
-def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
+def _expand_context(docs: list[dict]) -> tuple[list[dict], dict[str, Any]]:
     """对检索后的文档执行上下文扩展。
 
     扩展策略:
@@ -322,7 +321,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
     Returns:
         (expanded_docs, expand_meta): 扩展后的文档和元信息。
     """
-    meta: Dict[str, Any] = {
+    meta: dict[str, Any] = {
         "context_expansion_enabled": ENABLE_CONTEXT_EXPANSION,
         "context_expansion_applied": False,
         "expand_prev_parent": EXPAND_PREV_PARENT,
@@ -334,7 +333,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
         return docs, meta
 
     # 1. 收集待扩展的 (filename, parent_idx)，标记是否含定理/证明
-    expand_set: Dict[tuple, bool] = {}
+    expand_set: dict[tuple, bool] = {}
     for doc in docs:
         filename = doc.get("filename", "")
         pi = doc.get("parent_idx")
@@ -353,7 +352,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
         return docs, meta
 
     # 2. 对含定理/证明的父块，扩展相邻父块
-    all_parents: Dict[tuple, bool] = dict(expand_set)
+    all_parents: dict[tuple, bool] = dict(expand_set)
     if EXPAND_PREV_PARENT > 0 or EXPAND_NEXT_PARENT > 0:
         for (filename, pi), has_tp in expand_set.items():
             if has_tp:
@@ -365,7 +364,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
                     all_parents.setdefault((filename, pi + offset), False)
 
     # 3. 批量查询 Milvus 获取扩展子块
-    all_children: Dict[str, dict] = {}
+    all_children: dict[str, dict] = {}
     for (filename, pi) in all_parents:
         try:
             filter_expr = f'filename == "{filename}" && parent_idx == {pi}'
@@ -404,7 +403,7 @@ def _expand_context(docs: List[dict]) -> Tuple[List[dict], Dict[str, Any]]:
             continue
 
     # 4. 合并：扩展结果 + 原始命中（原始命中覆盖以保留检索得分）
-    result_map: Dict[str, dict] = {}
+    result_map: dict[str, dict] = {}
     for cid, doc in all_children.items():
         result_map[cid] = doc
     for doc in docs:
@@ -694,7 +693,7 @@ def _citation_boost(docs: list[dict], query: str) -> list[dict]:
     return cited + others
 
 
-def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
+def retrieve_documents(query: str, top_k: int = 5) -> dict[str, Any]:
     """核心检索函数：Hybrid 检索 → Formula 检索 → Rerank → Auto-merge → Context Expansion。
 
     完整的五阶段检索流程:
@@ -725,7 +724,7 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
     formula_match = len(formula_docs) > 0
 
     # ── 文本检索（Hybrid 优先，Dense 降级）─────────────────────────
-    result: Dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
     try:
         _es = get_embedding_service()
         de = _es.get_embeddings([query])[0]
@@ -776,7 +775,7 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
     return result
 
 
-def _empty_retrieve_result(candidate_k: int) -> Dict[str, Any]:
+def _empty_retrieve_result(candidate_k: int) -> dict[str, Any]:
     """构建空检索结果的 meta（所有功能标记为未应用）。"""
     return {
         "docs": [],

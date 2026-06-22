@@ -14,19 +14,18 @@
 
 import asyncio
 import contextvars
-from typing import Optional
 
 import requests
 from langchain_core.tools import tool
 
-from backend.core.config import AMAP_WEATHER_API, AMAP_API_KEY
+from backend.core.config import AMAP_API_KEY, AMAP_WEATHER_API
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # ── contextvars 上下文变量（替代进程级全局变量） ────────────────────
 
-_rag_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+_rag_context_var: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "_rag_context_var", default=None
 )
 """最近一次 RAG 检索的上下文（包含 rag_trace 等追踪信息），按请求隔离。"""
@@ -56,7 +55,7 @@ def _set_last_rag_context(context: dict) -> None:
     _rag_context_var.set(context)
 
 
-def get_last_rag_context(clear: bool = True) -> Optional[dict]:
+def get_last_rag_context(clear: bool = True) -> dict | None:
     """获取最近一次 RAG 检索上下文，默认读取后清空。
 
     设计为读取即清空，防止跨请求污染。
@@ -127,7 +126,7 @@ def emit_rag_step(icon: str, label: str, detail: str = "") -> None:
 # ── Agent 工具函数 ──────────────────────────────────────────────────
 
 
-def get_current_weather(location: str, extensions: Optional[str] = "base") -> str:
+def get_current_weather(location: str, extensions: str | None = "base") -> str:
     """获取指定城市的天气信息（高德地图 API）。
 
     支持两种查询模式：

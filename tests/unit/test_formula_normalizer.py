@@ -1,7 +1,7 @@
 from backend.rag.formula_normalizer import (
-    normalize_formula,
     extract_formulas,
     formula_similarity,
+    normalize_formula,
 )
 
 
