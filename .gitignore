@@ -28,3 +28,14 @@ coverage.xml
 # Study
 langchain-study/
 .claude/
+
+# Large model files (download locally, do not commit)
+models/
+*.bin
+*.safetensors
+
+# Cloned repos
+citelocal-agent/
+
+# Compose plans
+docs/compose/
