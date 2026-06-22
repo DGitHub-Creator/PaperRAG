@@ -45,6 +45,13 @@ jobs:
         run: |
           pip install .[test]
           pip install slowapi
+      - name: Apply migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/langchain_app
+          JWT_SECRET_KEY: test-secret-key
+          MILVUS_HOST: ""
+          REDIS_URL: ""
       - name: Check migration consistency
         run: alembic check
         env:
