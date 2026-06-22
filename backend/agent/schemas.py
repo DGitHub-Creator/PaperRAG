@@ -1,5 +1,6 @@
-from typing import Literal, Optional, TypedDict
-from pydantic import BaseModel, Field
+from typing import Literal, TypedDict
+
+from pydantic import BaseModel
 
 
 class IntentSchema(BaseModel):
@@ -12,7 +13,7 @@ class State(TypedDict):
     """Agent 状态字典"""
     messages: list
     question_input: dict
-    classification_decision: Optional[str]
+    classification_decision: str | None
     trace: list
     retrieved_locators: list
     evidence: list

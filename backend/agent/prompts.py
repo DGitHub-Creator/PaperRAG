@@ -23,7 +23,8 @@ default_kb_description = "Academic papers database with research papers on vario
 
 intent_user_prompt = "Question: {question}"
 
-agent_system_prompt = """You are an academic paper research assistant. Answer questions using ONLY the retrieved documents.
+agent_system_prompt = """You are an academic paper research assistant.
+Answer questions using ONLY the retrieved documents.
 
 {tools_prompt}
 
