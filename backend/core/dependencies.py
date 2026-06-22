@@ -10,7 +10,8 @@
 """
 
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class DependencyContainer:
@@ -85,7 +86,8 @@ def get_stepback_model():
 def get_local_reranker():
     def _create():
         from sentence_transformers import CrossEncoder
-        from backend.core.config import RERANK_MODEL, HF_HOME
+
+        from backend.core.config import HF_HOME, RERANK_MODEL
         model_name = RERANK_MODEL or "BAAI/bge-reranker-v2-m3"
         return CrossEncoder(model_name, cache_folder=HF_HOME)
     return _container.get_or_create("local_reranker", _create)

@@ -16,9 +16,7 @@
                                     [已达上限] → END
 """
 
-import logging
-import os
-from typing import List, Literal, Optional, TypedDict
+from typing import Literal, TypedDict
 
 from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
@@ -26,6 +24,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from backend.core.config import MAX_RAG_RETRIES
+from backend.core.dependencies import get_grader_model, get_router_model
 from backend.core.logging_config import get_logger
 from backend.rag.rag_utils import (
     generate_hypothetical_document,
@@ -36,9 +35,6 @@ from backend.services.tools import emit_rag_step
 
 load_dotenv()
 logger = get_logger(__name__)
-
-from backend.core.dependencies import get_grader_model, get_router_model
-
 
 # ── Prompt 与结构化输出 ───────────────────────────────────────────
 
@@ -87,23 +83,23 @@ class RAGState(TypedDict):
     question: str
     query: str
     context: str
-    docs: List[dict]
-    route: Optional[str]
-    expansion_type: Optional[str]
-    expanded_query: Optional[str]
-    step_back_question: Optional[str]
-    step_back_answer: Optional[str]
-    hypothetical_doc: Optional[str]
-    rag_trace: Optional[dict]
+    docs: list[dict]
+    route: str | None
+    expansion_type: str | None
+    expanded_query: str | None
+    step_back_question: str | None
+    step_back_answer: str | None
+    hypothetical_doc: str | None
+    rag_trace: dict | None
     retry_count: int
     """当前多轮检索的重试次数（0=初次，达到 MAX_RAG_RETRIES 后强制结束）。"""
-    accumulated_docs: List[dict]
+    accumulated_docs: list[dict]
     """多轮检索中累积的所有文档（去重后）。"""
-    conversation_history: Optional[str]
+    conversation_history: str | None
     """历史对话摘要（最近 2 轮 Q&A），用于上下文感知检索。"""
 
 
-def _format_docs(docs: List[dict]) -> str:
+def _format_docs(docs: list[dict]) -> str:
     """将文档列表格式化为 LLM 可理解的上下文文本。
 
     每个文档格式: [序号] 文件名 (第N页): 正文 ...
@@ -405,7 +401,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
     emit_rag_step("\U0001f504", "使用扩展查询重新检索...", f"策略: {strategy}")
 
     # ── 汇总变量 ────────────────────────────────────────────────
-    results: List[dict] = []
+    results: list[dict] = []
     rerank_applied_any = False
     rerank_enabled_any = False
     rerank_model = None

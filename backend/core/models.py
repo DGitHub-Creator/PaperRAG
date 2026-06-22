@@ -26,7 +26,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -72,8 +71,6 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    # 关联：一个用户拥有多个工作空间
-    workspaces = relationship("Workspace", back_populates="owner")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
@@ -104,12 +101,6 @@ class ChatSession(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
-    )
-    # 外键 → workspaces.id，会话所属工作空间
-    workspace_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workspaces.id", ondelete="SET NULL"),
-        nullable=True,
         index=True,
     )
     # 会话标识符：前端生成的唯一 session ID（如 UUID）
@@ -267,116 +258,106 @@ class ParentChunk(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Workspace —— 工作空间表
+# 论文知识图谱模型
 # ══════════════════════════════════════════════════════════════════════
 
-class Workspace(Base):
-    """工作空间模型 —— 实现多租户数据隔离。
 
-    工作空间用于组织和隔离用户数据，所有会话和文档都可以关联到特定工作空间。
+class PaperNode(Base):
+    """论文节点 —— 知识图谱中的论文/文档实体。
+
+    每篇被索引的论文创建一个节点，挂载该论文的引文引用和缩略语。
     """
 
-    __tablename__ = "workspaces"
+    __tablename__ = "paper_nodes"
 
-    # 主键：自增整数 ID
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    # 工作空间名称
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # 所有者外键 → users.id
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    filename: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
     )
-    # 创建时间
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    # 更新时间
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-
-    # 关联：工作空间所有者
-    owner = relationship("User", back_populates="workspaces")
-    # 关联：工作空间成员
-    members = relationship("WorkspaceMember", back_populates="workspace")
-
-    def __repr__(self) -> str:
-        return f"<Workspace(id={self.id}, name='{self.name}', owner_id={self.owner_id})>"
-
-
-class WorkspaceMember(Base):
-    """工作空间成员模型 —— 管理用户与工作空间的关联关系。
-
-    role 取值:
-      - "owner":  工作空间所有者（自动创建，拥有所有权限）
-      - "admin":  管理员（可管理成员）
-      - "member": 普通成员（只读访问）
-    """
-
-    __tablename__ = "workspace_members"
-
-    # 主键：自增整数 ID
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    # 工作空间外键 → workspaces.id
-    workspace_id: Mapped[int] = mapped_column(
-        ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    # 用户外键 → users.id
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    # 成员角色：owner / admin / member
-    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
-    # 创建时间
+    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    year: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    authors: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    abstract: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    citation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    # 关联：工作空间
-    workspace = relationship("Workspace", back_populates="members")
-    # 关联：用户
-    user = relationship("User")
+    citations_from = relationship(
+        "CitationEdge",
+        foreign_keys="CitationEdge.source_id",
+        back_populates="source",
+        cascade="all, delete-orphan",
+    )
+    citations_to = relationship(
+        "CitationEdge",
+        foreign_keys="CitationEdge.target_id",
+        back_populates="target",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
-        return f"<WorkspaceMember(workspace_id={self.workspace_id}, user_id={self.user_id}, role='{self.role}')>"
+        return f"<PaperNode(id={self.id}, filename='{self.filename}')>"
 
 
-# ══════════════════════════════════════════════════════════════════════
-# UsageLog —— API 用量日志表
-# ══════════════════════════════════════════════════════════════════════
+class CitationEdge(Base):
+    """引文边 —— 论文间的引用关系。
 
-
-class UsageLog(Base):
-    """API 用量日志模型 —— 记录每次 API 调用的端点、延迟、状态码等信息。
-
-    用于用量统计和限流监控。
+    source_id → target_id 表示 source 引用了 target。
+    context 字段存储引文出现的上下文文本片段。
     """
 
-    __tablename__ = "usage_logs"
+    __tablename__ = "citation_edges"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=False, index=True
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
-    endpoint: Mapped[str] = mapped_column(String(100), nullable=False)
-    method: Mapped[str] = mapped_column(String(10), nullable=True)
-    status_code: Mapped[int] = mapped_column(Integer, nullable=True)
-    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    target_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    context: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, default=datetime.utcnow, nullable=False
     )
 
-    user = relationship("User")
+    source = relationship(
+        "PaperNode", foreign_keys=[source_id], back_populates="citations_from"
+    )
+    target = relationship(
+        "PaperNode", foreign_keys=[target_id], back_populates="citations_to"
+    )
 
     def __repr__(self) -> str:
-        return (
-            f"<UsageLog(id={self.id}, user_id={self.user_id}, "
-            f"endpoint='{self.endpoint}', status_code={self.status_code})>"
-        )
+        return f"<CitationEdge({self.source_id} → {self.target_id})>"
+
+
+class GlossaryEntry(Base):
+    """缩略语条目 —— 论文中出现的缩写-全称映射。
+
+    chunk_id 关联到 Milvus 中的具体分块，便于定位上下文。
+    """
+
+    __tablename__ = "glossary_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    paper_id: Mapped[int] = mapped_column(
+        ForeignKey("paper_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    term: Mapped[str] = mapped_column(String(200), nullable=False)
+    definition: Mapped[str] = mapped_column(String(1000), nullable=False)
+    chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    paper = relationship("PaperNode", backref="glossary_entries")
+
+    def __repr__(self) -> str:
+        return f"<GlossaryEntry(term='{self.term}', paper_id={self.paper_id})>"

@@ -5,7 +5,6 @@
 """
 
 import os
-import sys
 from pathlib import Path
 
 # ── 项目元信息 ────────────────────────────────────────────────────
@@ -81,17 +80,19 @@ USE_REDIS_JOB_MANAGER = os.getenv("USE_REDIS_JOB_MANAGER", "false").lower() == "
 
 # ── CORS 与安全 ──────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
-ALLOWED_ORIGINS = (
-    ["*"]
-    if _raw_origins == "*"
-    else [o.strip() for o in _raw_origins.split(",")]
-)
+ALLOWED_ORIGINS = ["*"] if _raw_origins == "*" else [o.strip() for o in _raw_origins.split(",")]
 """CORS 允许的来源。逗号分隔列表，或 * 表示全部允许（开发模式）。"""
+
+# ── 速率限制 ──────────────────────────────────────────────────────
+RATE_LIMIT = os.getenv("RATE_LIMIT", "60/minute")
+"""全局速率限制，默认 60 次/分钟。格式: "<次数>/<单位>"。设为空字符串可禁用。"""
 
 # ── 认证配置 ──────────────────────────────────────────────────────
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "replace-with-strong-random-secret")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+JWT_REFRESH_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_EXPIRE_DAYS", "30"))
+"""Refresh Token 过期天数，默认 30 天。"""
 ADMIN_INVITE_CODE = os.getenv("ADMIN_INVITE_CODE", "paperrag-admin-2026")
 PASSWORD_PBKDF2_ROUNDS = int(os.getenv("PASSWORD_PBKDF2_ROUNDS", "310000"))
 MIN_PASSWORD_LENGTH = int(os.getenv("MIN_PASSWORD_LENGTH", "8"))

@@ -7,23 +7,23 @@
 
 import logging
 import os
-import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
 from backend.api.ws import router as ws_router
-from backend.core.config import ALLOWED_ORIGINS
+from backend.core.config import ALLOWED_ORIGINS, RATE_LIMIT
 from backend.core.database import init_db
 from backend.core.logging_config import setup_root_logger
 from backend.core.rate_limit import limiter
+from backend.core.stats import record_request
 
 # ── 初始化日志系统 ──────────────────────────────────────────────────
 # 在应用启动前配置根 logger，后续所有模块的 logger 自动继承 handler
@@ -49,45 +49,14 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="PaperRAG - 学术论文 RAG 知识库平台")
 
-    # ── 限流配置 ──────────────────────────────────────────────
+    # ── 速率限制 ───────────────────────────────────────────────────
     app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
-
-    @app.exception_handler(RateLimitExceeded)
-    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "请求过于频繁，请稍后重试"},
-        )
-
-    # ── 用量统计中间件 ────────────────────────────────────────
-    @app.middleware("http")
-    async def _usage_log(request: Request, call_next):
-        """记录 API 用量日志（仅记录 /auth 和 /chat 端点）。"""
-        start = time.time()
-        response = await call_next(request)
-        latency_ms = int((time.time() - start) * 1000)
-        path = request.url.path
-        if path.startswith("/auth") or path.startswith("/chat"):
-            try:
-                from backend.core.database import SessionLocal
-                from backend.core.models import UsageLog
-                db = SessionLocal()
-                try:
-                    user_id = getattr(request.state, "user_id", None)
-                    db.add(UsageLog(
-                        user_id=user_id or 0,
-                        endpoint=path,
-                        method=request.method,
-                        status_code=response.status_code,
-                        latency_ms=latency_ms,
-                    ))
-                    db.commit()
-                finally:
-                    db.close()
-            except Exception:
-                pass
-        return response
+    if RATE_LIMIT:
+        logger.info("全局速率限制已启用: %s", RATE_LIMIT)
+    else:
+        logger.warning("速率限制已禁用（RATE_LIMIT 未设置）")
 
     # ── 启动事件: 数据库初始化 ──────────────────────────────────
     @app.on_event("startup")
@@ -111,6 +80,13 @@ def create_app() -> FastAPI:
     else:
         logger.warning("CORS 允许所有来源（仅推荐开发环境使用）")
 
+    # ── 请求统计中间件 ─────────────────────────────────────────
+    @app.middleware("http")
+    async def _stats_middleware(request: Request, call_next):
+        record_request(request.url.path)
+        response = await call_next(request)
+        return response
+
     # ── 开发环境无缓存中间件 ────────────────────────────────────
     @app.middleware("http")
     async def _no_cache(request, call_next):
@@ -132,7 +108,9 @@ def create_app() -> FastAPI:
     # ── 挂载前端静态文件 ────────────────────────────────────────
     # 生产优先: dist/ → 开发备选: frontend/
     dist_dir = FRONTEND_DIR / "dist"
-    static_dir = dist_dir if dist_dir.exists() and (dist_dir / "index.html").exists() else FRONTEND_DIR
+    static_dir = (
+        dist_dir if dist_dir.exists() and (dist_dir / "index.html").exists() else FRONTEND_DIR
+    )
     if static_dir.exists():
         app.mount(
             "/",
@@ -150,6 +128,7 @@ logger.info("PaperRAG 应用已就绪")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         app,
         host=os.getenv("HOST", "0.0.0.0"),

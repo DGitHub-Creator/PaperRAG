@@ -18,6 +18,8 @@ volumes/
 data/
 
 # Test artifacts
+tests/__pycache__/
+tests/**/__pycache__/
 .pytest_cache/
 htmlcov/
 .coverage
@@ -26,3 +28,14 @@ coverage.xml
 # Study
 langchain-study/
 .claude/
+
+# Large model files (download locally, do not commit)
+models/
+*.bin
+*.safetensors
+
+# Cloned repos
+citelocal-agent/
+
+# Compose plans
+docs/compose/

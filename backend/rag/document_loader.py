@@ -21,31 +21,30 @@
 
 import os
 import traceback
-from typing import Dict, List, Tuple
 
+from langchain_community.document_loaders import (
+    Docx2txtLoader,
+    PyPDFLoader,
+    UnstructuredExcelLoader,
+)
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    Docx2txtLoader,
-    UnstructuredExcelLoader,
-)
 
 from backend.core.config import (
-    CHUNK_SIZE,
     CHUNK_OVERLAP,
+    CHUNK_SIZE,
     ENABLE_ACADEMIC_CLEANING,
     ENABLE_STRUCTURAL_CHUNKING,
     PARSE_MAX_WORKERS,
 )
 from backend.core.logging_config import get_logger
-from backend.rag.academic_cleaner import (
-    clean_paper_text,
-    clean_paper_text_with_layout,
-    analyze_page_layout,
-)
+from backend.rag.academic_cleaner import clean_paper_text
+from backend.rag.citation_extractor import extract_citations
+from backend.rag.formula_normalizer import extract_formulas
+from backend.rag.glossary_extractor import extract_glossary
+from backend.rag.layout_analyzer import analyze_layout, extract_regions_by_type
 from backend.rag.theorem_detector import detect_theorem_proof
 
 logger = get_logger(__name__)
@@ -147,16 +146,7 @@ def _try_pdfplumber(file_path: str) -> str | None:
         return None
     try:
         with pdfplumber.open(file_path) as pdf:
-            pages = []
-            for page in pdf.pages:
-                regions = analyze_page_layout(page)
-                if regions:
-                    page_text = clean_paper_text_with_layout(
-                        page.extract_text() or "", regions
-                    )
-                else:
-                    page_text = page.extract_text() or ""
-                pages.append(page_text)
+            pages = [page.extract_text() or "" for page in pdf.pages]
         return "\n\n".join(pages) if pages else None
     except Exception:
         logger.debug("pdfplumber 解析异常: %s", traceback.format_exc())
@@ -328,9 +318,9 @@ class DocumentLoader:
     def _split_page_to_three_levels(
         self,
         text: str,
-        base_doc: Dict,
+        base_doc: dict,
         page_global_chunk_idx: int,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """对单页（或单段）文本执行三层嵌套滑动窗口分块。
 
         流程:
@@ -350,7 +340,7 @@ class DocumentLoader:
         if not text:
             return []
 
-        root_chunks: List[Dict] = []
+        root_chunks: list[dict] = []
         page_number = int(base_doc.get("page_number", 0))
         filename = base_doc["filename"]
 
@@ -438,7 +428,7 @@ class DocumentLoader:
         doc_type: str,
         file_path: str,
         parser: str = "",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """标准三层滑动窗口分块（兼容非 PDF 文档及关闭结构分块时使用）。
 
         对整个文档文本执行三层嵌套滑动窗口分块，所有 chunk 标记为
@@ -471,6 +461,12 @@ class DocumentLoader:
             "chapter_path": "",
             "has_theorem_in_parent": False,
             "has_proof_in_parent": False,
+            "has_formula": False,
+            "formulas": [],
+            "has_citation": False,
+            "citations": [],
+            "has_glossary": False,
+            "glossary_terms": [],
         }
 
         page_chunks = self._split_page_to_three_levels(
@@ -478,6 +474,20 @@ class DocumentLoader:
             base_doc=base_doc,
             page_global_chunk_idx=page_global_chunk_idx,
         )
+
+        # 对每个 chunk 提取公式/引文/缩略语元数据
+        for chunk in page_chunks:
+            chunk_text = chunk.get("text", "")
+            formulas = extract_formulas(chunk_text)
+            chunk["has_formula"] = len(formulas) > 0
+            chunk["formulas"] = formulas[:5]
+            citations = extract_citations(chunk_text)
+            chunk["has_citation"] = len(citations) > 0
+            chunk["citations"] = [c.raw for c in citations[:10]]
+            glossary = extract_glossary(chunk_text)
+            chunk["has_glossary"] = len(glossary) > 0
+            chunk["glossary_terms"] = [g.term for g in glossary[:5]]
+
         documents.extend(page_chunks)
         return documents
 
@@ -488,7 +498,7 @@ class DocumentLoader:
         full_text: str,
         filename: str,
         parser: str = "",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """基于 Markdown 标题做结构分块 + 递归字符分块兜底。
 
         流程:
@@ -516,7 +526,7 @@ class DocumentLoader:
             chunk_overlap=self._structural_chunk_overlap,
         )
 
-        all_docs: List[Dict] = []
+        all_docs: list[dict] = []
         global_idx = 0
 
         for p_idx, parent in enumerate(parents):
@@ -538,6 +548,9 @@ class DocumentLoader:
 
             for c_idx, child_text in enumerate(children):
                 chunk_id = f"{filename}_p{p_idx}_c{c_idx}"
+                formulas = extract_formulas(child_text)
+                citations = extract_citations(child_text)
+                glossary = extract_glossary(child_text)
                 all_docs.append({
                     "text": child_text,
                     "chunk_id": chunk_id,
@@ -558,6 +571,15 @@ class DocumentLoader:
                     "chapter_path": chapter_path,
                     "has_theorem_in_parent": has_theorem,
                     "has_proof_in_parent": has_proof,
+                    # ── 公式感知元数据 ─────────────────────
+                    "has_formula": len(formulas) > 0,
+                    "formulas": formulas[:5],   # 最多保留 5 个公式
+                    # ── 引文元数据 ─────────────────────────
+                    "has_citation": len(citations) > 0,
+                    "citations": [c.raw for c in citations[:10]],
+                    # ── 缩略语元数据 ────────────────────────
+                    "has_glossary": len(glossary) > 0,
+                    "glossary_terms": [g.term for g in glossary[:5]],
                 })
                 global_idx += 1
 
@@ -566,7 +588,7 @@ class DocumentLoader:
 
     # ── PDF 加载（多解析器降级 + 学术清洗 + 分块）─────────────────────
 
-    def _load_pdf(self, file_path: str, filename: str) -> List[Dict]:
+    def _load_pdf(self, file_path: str, filename: str) -> list[dict]:
         """PDF 完整处理链路：多解析器降级 → 学术清洗 → 分块。
 
         步骤:
@@ -591,9 +613,33 @@ class DocumentLoader:
 
         # 分块策略选择
         if self._enable_structural_chunking:
-            return self._split_structural(full_text, filename, parser)
+            chunks = self._split_structural(full_text, filename, parser)
         else:
-            return self._split_standard(full_text, filename, "PDF", file_path, parser)
+            chunks = self._split_standard(full_text, filename, "PDF", file_path, parser)
+
+        # 可选 ML 布局分析
+        try:
+            layout_blocks = analyze_layout(file_path)
+            if layout_blocks:
+                figure_count = len(extract_regions_by_type(layout_blocks, {"Figure"}))
+                table_count = len(extract_regions_by_type(layout_blocks, {"Table"}))
+                logger.info(
+                    "  [%s] 布局分析: %d 个区块 (%d 图, %d 表)",
+                    filename, len(layout_blocks), figure_count, table_count,
+                )
+                # 标记包含图表/表格的 chunk
+                figure_pages = {b.page_number for b in extract_regions_by_type(
+                    layout_blocks, {"Figure"})}
+                table_pages = {b.page_number for b in extract_regions_by_type(
+                    layout_blocks, {"Table"})}
+                for chunk in chunks:
+                    page = chunk.get("page_number", 0)
+                    chunk["has_figure"] = page in figure_pages
+                    chunk["has_table"] = page in table_pages
+        except Exception:
+            pass
+
+        return chunks
 
     # ── 公开接口 ──────────────────────────────────────────────────────
 
@@ -685,139 +731,3 @@ class DocumentLoader:
             len(all_documents),
         )
         return all_documents
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  LaTeX 公式提取与标准化
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# 匹配 LaTeX 公式: $...$ (inline) 和 $$...$$ (display)
-_FORMULA_PATTERN = re.compile(r"\$\$(.+?)\$\$|\$(.+?)\$", re.DOTALL)
-
-# LaTeX 命令标准化映射
-_LATEX_NORMALIZE = {
-    r"\ ": " ",
-    r"\,": " ",
-    r"\;": " ",
-    r"\!": "",
-    r"\quad": " ",
-    r"\qquad": "  ",
-    r"\alpha": "α",
-    r"\beta": "β",
-    r"\gamma": "γ",
-    r"\delta": "δ",
-    r"\epsilon": "ε",
-    r"\theta": "θ",
-    r"\lambda": "λ",
-    r"\mu": "μ",
-    r"\pi": "π",
-    r"\sigma": "σ",
-    r"\phi": "φ",
-    r"\omega": "ω",
-    r"\infty": "∞",
-    r"\sum": "Σ",
-    r"\prod": "Π",
-    r"\int": "∫",
-    r"\partial": "∂",
-    r"\nabla": "∇",
-    r"\sqrt": "√",
-    r"\leq": "≤",
-    r"\geq": "≥",
-    r"\neq": "≠",
-    r"\approx": "≈",
-    r"\times": "×",
-    r"\cdot": "·",
-    r"\pm": "±",
-    r"\rightarrow": "→",
-    r"\leftarrow": "←",
-    r"\Rightarrow": "⇒",
-    r"\Leftarrow": "⇐",
-    r"\leftrightarrow": "↔",
-    r"\in": "∈",
-    r"\notin": "∉",
-    r"\subset": "⊂",
-    r"\supset": "⊃",
-    r"\cup": "∪",
-    r"\cap": "∩",
-    r"\forall": "∀",
-    r"\exists": "∃",
-    r"\neg": "¬",
-    r"\land": "∧",
-    r"\lor": "∨",
-}
-
-
-def extract_formulas(text: str) -> list[dict]:
-    """Extract LaTeX formulas from text.
-    
-    Args:
-        text: Text containing LaTeX formulas.
-        
-    Returns:
-        List of dicts with 'raw' (original LaTeX) and 'normalized' (plain text) fields.
-    """
-    formulas = []
-    for match in _FORMULA_PATTERN.finditer(text):
-        raw = match.group(1) or match.group(2)
-        if raw:
-            normalized = normalize_latex(raw)
-            formulas.append({
-                'raw': raw.strip(),
-                'normalized': normalized,
-                'start': match.start(),
-                'end': match.end(),
-            })
-    return formulas
-
-
-def normalize_latex(latex: str) -> str:
-    """Normalize LaTeX formula to plain text representation.
-    
-    Removes commands, replaces symbols with Unicode, normalizes whitespace.
-    
-    Args:
-        latex: Raw LaTeX formula string.
-        
-    Returns:
-        Normalized plain text representation.
-    """
-    text = latex
-    
-    # Apply symbol replacements
-    for cmd, replacement in _LATEX_NORMALIZE.items():
-        text = text.replace(cmd, replacement)
-    
-    # Remove remaining commands like \mathbb, \text, etc.
-    text = re.sub(r"\\[a-zA-Z]+\{([^}]*)\}", r"\1", text)
-    
-    # Remove remaining backslash commands
-    text = re.sub(r"\\[a-zA-Z]+", "", text)
-    
-    # Remove braces
-    text = text.replace("{", "").replace("}", "")
-    
-    # Normalize whitespace
-    text = re.sub(r"\s+", " ", text).strip()
-    
-    return text
-
-
-def extract_formulas_from_chunks(chunks: list[dict]) -> list[dict]:
-    """Extract formulas from all chunks and add as metadata.
-    
-    Args:
-        chunks: List of chunk dicts with 'text' field.
-        
-    Returns:
-        List of formula dicts with chunk reference info.
-    """
-    all_formulas = []
-    for i, chunk in enumerate(chunks):
-        text = chunk.get('text', '')
-        formulas = extract_formulas(text)
-        for formula in formulas:
-            formula['chunk_idx'] = i
-            formula['filename'] = chunk.get('filename', '')
-            formula['page_number'] = chunk.get('page_number', 0)
-        all_formulas.extend(formulas)
-    return all_formulas
