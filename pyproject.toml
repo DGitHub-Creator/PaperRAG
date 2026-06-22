@@ -64,6 +64,7 @@ source = ["backend"]
 omit = [
     "backend/vectordb/*",
     "backend/rag/document_loader.py",
+    "backend/core/database.py",
 ]
 
 [tool.coverage.report]
@@ -77,6 +78,8 @@ exclude_lines = [
     "logger.debug",
     "logger.info",
 ]
+fail_under = 40
+show_missing = true
 
 [tool.ruff]
 target-version = "py312"
@@ -84,11 +87,3 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "S"]
-
-[tool.coverage.run]
-source = ["backend"]
-omit = ["backend/core/database.py"]
-
-[tool.coverage.report]
-fail_under = 40
-show_missing = true
