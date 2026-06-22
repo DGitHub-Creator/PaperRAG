@@ -2,8 +2,6 @@
 
 import re
 
-import pytest
-
 
 def extract_citations(text: str, rag_trace: dict | None) -> list[dict]:
     if not text or not rag_trace:
