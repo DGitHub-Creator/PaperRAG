@@ -1,0 +1,23 @@
+[
+  {
+    "id": "definition-query",
+    "question": "What is the main definition introduced in the paper?",
+    "expected_terms": ["definition"],
+    "min_sources": 1,
+    "notes": "Smoke case for definition-style retrieval."
+  },
+  {
+    "id": "formula-query",
+    "question": "Which equation supports the core method?",
+    "expected_terms": ["equation", "formula"],
+    "min_sources": 1,
+    "notes": "Smoke case for formula-aware retrieval."
+  },
+  {
+    "id": "citation-query",
+    "question": "Which cited work is used as supporting evidence?",
+    "expected_terms": ["citation", "reference"],
+    "min_sources": 1,
+    "notes": "Smoke case for citation-grounded answers."
+  }
+]

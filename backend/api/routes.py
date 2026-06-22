@@ -39,7 +39,6 @@ API 路由模块 —— 所有 HTTP 端点定义。
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 
 from fastapi import (
@@ -48,30 +47,16 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
-    Request,
     UploadFile,
-    status,
 )
-from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
-from sqlalchemy.orm import Session
 
 from backend.core.auth import (
-    authenticate_user,
-    create_access_token,
-    create_refresh_token,
     get_current_user,
-    get_db,
-    get_password_hash,
     require_admin,
-    resolve_role,
 )
 from backend.core.config import (
     DATA_DIR,
     INGESTED_STATE_PATH,
-    JWT_ALGORITHM,
-    JWT_SECRET_KEY,
-    MIN_PASSWORD_LENGTH,
     UPLOAD_DIR,
 )
 from backend.core.dependencies import (
@@ -81,14 +66,9 @@ from backend.core.dependencies import (
 )
 from backend.core.logging_config import get_logger
 from backend.core.models import User
-from backend.core.rate_limit import limiter
 from backend.core.stats import get_stats, reset_stats
 from backend.rag.document_loader import DocumentLoader
 from backend.schemas.schemas import (
-    AuthResponse,
-    ChatRequest,
-    ChatResponse,
-    CurrentUserResponse,
     DocumentDeleteJobResponse,
     DocumentDeleteResponse,
     DocumentDeleteStartResponse,
@@ -99,16 +79,7 @@ from backend.schemas.schemas import (
     DocumentUploadStartResponse,
     IncrementalIngestRequest,
     IncrementalIngestResponse,
-    LoginRequest,
-    MessageInfo,
-    RefreshTokenRequest,
-    RegisterRequest,
-    SessionDeleteResponse,
-    SessionInfo,
-    SessionListResponse,
-    SessionMessagesResponse,
 )
-from backend.services.agent import chat_with_agent, chat_with_agent_stream, storage
 from backend.services.cache import cache as redis_cache
 from backend.services.upload_jobs import (
     DELETE_STEPS,
@@ -240,362 +211,7 @@ def _compute_file_hash(file_path: Path) -> str:
 # ═══════════════════════════════════════════════════════════════════
 
 
-@router.post("/auth/register", response_model=AuthResponse)
-@limiter.limit("10/minute")
-async def register(request: RegisterRequest, request_obj: Request, db: Session = Depends(get_db)):
-    """用户注册端点。
-
-    处理逻辑：
-      1. 校验用户名和密码非空。
-      2. 检查用户名是否已被注册。
-      3. 根据 role 参数和 admin_code 解析最终角色。
-      4. 创建 User 记录并返回 JWT 令牌。
-
-    Args:
-        request: 注册请求体（username, password, role, admin_code）。
-        db: SQLAlchemy 数据库会话（依赖注入）。
-
-    Returns:
-        AuthResponse: 包含 access_token, username, role。
-
-    Raises:
-        HTTPException 400: 用户名或密码为空。
-        HTTPException 409: 用户名已存在。
-    """
-    username = (request.username or "").strip()
-    password = (request.password or "").strip()
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="用户名和密码不能为空")
-
-    # 密码强度检查
-    if MIN_PASSWORD_LENGTH > 0 and len(password) < MIN_PASSWORD_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位",
-        )
-    categories = sum(
-        [
-            bool(re.search(r"[a-z]", password)),
-            bool(re.search(r"[A-Z]", password)),
-            bool(re.search(r"\d", password)),
-        ]
-    )
-    if MIN_PASSWORD_LENGTH > 0 and categories < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="密码必须包含大写字母、小写字母、数字中的至少两种",
-        )
-
-    exists = db.query(User).filter(User.username == username).first()
-    if exists:
-        raise HTTPException(status_code=409, detail="用户名已存在")
-
-    role = resolve_role(request.role, request.admin_code)
-    user = User(username=username, password_hash=get_password_hash(password), role=role)
-    db.add(user)
-    db.commit()
-
-    access_token = create_access_token(username=username, role=role)
-    refresh_token = create_refresh_token(username=username, role=role)
-    logger.info("用户注册成功: username=%s, role=%s", username, role)
-    return AuthResponse(
-        access_token=access_token, refresh_token=refresh_token, username=username, role=role
-    )
-
-
-@router.post("/auth/login", response_model=AuthResponse)
-@limiter.limit("20/minute")
-async def login(request: LoginRequest, request_obj: Request, db: Session = Depends(get_db)):
-    """用户登录端点。
-
-    使用 authenticate_user 验证凭据，成功则返回 JWT 令牌。
-
-    Args:
-        request: 登录请求体（username, password）。
-        db: SQLAlchemy 数据库会话（依赖注入）。
-
-    Returns:
-        AuthResponse: 包含 access_token, username, role。
-
-    Raises:
-        HTTPException 401: 用户名或密码错误。
-    """
-    user = authenticate_user(db, request.username, request.password)
-    if not user:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-    access_token = create_access_token(username=user.username, role=user.role)
-    refresh_token = create_refresh_token(username=user.username, role=user.role)
-    logger.info("用户登录成功: username=%s", user.username)
-    return AuthResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        username=user.username,
-        role=user.role,
-    )
-
-
-@router.get("/auth/me", response_model=CurrentUserResponse)
-async def me(current_user: User = Depends(get_current_user)):
-    """获取当前已认证用户的信息。
-
-    Args:
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        CurrentUserResponse: 包含 username 和 role。
-    """
-    return CurrentUserResponse(username=current_user.username, role=current_user.role)
-
-
-@router.post("/auth/refresh", response_model=AuthResponse)
-@limiter.limit("20/minute")
-async def refresh_token(
-    request: RefreshTokenRequest, request_obj: Request, db: Session = Depends(get_db)
-):
-    """刷新访问令牌。
-
-    使用有效的 Refresh Token 获取新的 access_token 和 refresh_token。
-    Refresh Token 必须具有 "type": "refresh" 标识，且未过期。
-
-    Args:
-        request: 刷新请求体（refresh_token）。
-        db: SQLAlchemy 数据库会话。
-
-    Returns:
-        AuthResponse: 包含新的 access_token, refresh_token, username, role。
-
-    Raises:
-        HTTPException 401: Refresh Token 无效、过期或类型不匹配。
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效或过期的刷新令牌",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(request.refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "refresh":
-            logger.warning(
-                "Refresh Token 类型不匹配: 期望 'refresh'，实际 '%s'", payload.get("type")
-            )
-            raise credentials_exception
-        username: str | None = payload.get("sub")
-        role: str | None = payload.get("role")
-        if not username or not role:
-            logger.warning("Refresh Token payload 缺少 sub 或 role")
-            raise credentials_exception
-    except JWTError:
-        logger.warning("Refresh Token 解码失败或已过期")
-        raise credentials_exception
-
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        logger.warning(f"Refresh Token 中的用户 '{username}' 在数据库中不存在")
-        raise credentials_exception
-
-    new_access = create_access_token(username=user.username, role=user.role)
-    new_refresh = create_refresh_token(username=user.username, role=user.role)
-    logger.info("令牌刷新成功: username=%s", user.username)
-    return AuthResponse(
-        access_token=new_access, refresh_token=new_refresh, username=user.username, role=user.role
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════
 # 会话端点
-# ═══════════════════════════════════════════════════════════════════
-
-
-@router.get("/sessions/{session_id}", response_model=SessionMessagesResponse)
-async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user)):
-    """获取指定会话的所有历史消息。
-
-    Args:
-        session_id: 会话 ID。
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        SessionMessagesResponse: 包含 messages 列表。
-
-    Raises:
-        HTTPException 500: 查询失败时。
-    """
-    try:
-        messages = [
-            MessageInfo(
-                type=msg["type"],
-                content=msg["content"],
-                timestamp=msg["timestamp"],
-                rag_trace=msg.get("rag_trace"),
-            )
-            for msg in storage.get_session_messages(current_user.username, session_id)
-        ]
-        return SessionMessagesResponse(messages=messages)
-    except Exception as e:
-        logger.exception("获取会话消息失败: session_id=%s", session_id)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(current_user: User = Depends(get_current_user)):
-    """获取当前用户的所有会话列表，按更新时间降序。
-
-    Args:
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        SessionListResponse: 包含 sessions 列表。
-
-    Raises:
-        HTTPException 500: 查询失败时。
-    """
-    try:
-        sessions = [
-            SessionInfo(**item) for item in storage.list_session_infos(current_user.username)
-        ]
-        sessions.sort(key=lambda x: x.updated_at, reverse=True)
-        return SessionListResponse(sessions=sessions)
-    except Exception as e:
-        logger.exception("列出会话失败: user=%s", current_user.username)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
-async def delete_session(session_id: str, current_user: User = Depends(get_current_user)):
-    """删除当前用户的指定会话（含其所有消息）。
-
-    Args:
-        session_id: 要删除的会话 ID。
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        SessionDeleteResponse: 包含 session_id 和操作消息。
-
-    Raises:
-        HTTPException 404: 会话不存在。
-        HTTPException 500: 删除操作失败。
-    """
-    try:
-        deleted = storage.delete_session(current_user.username, session_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="会话不存在")
-        logger.info("会话已删除: user=%s, session_id=%s", current_user.username, session_id)
-        return SessionDeleteResponse(session_id=session_id, message="成功删除会话")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("删除会话失败: session_id=%s", session_id)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 对话端点
-# ═══════════════════════════════════════════════════════════════════
-
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
-    """同步对话端点 —— 向 Agent 发送消息并等待完整响应。
-
-    处理流程：
-      1. 调用 chat_with_agent 同步处理用户消息。
-      2. 检测上游模型服务的 HTTP 错误码（429/401/403）并映射到对应 HTTP 状态码。
-      3. 返回包含响应文本和 RAG trace 的 ChatResponse。
-
-    Args:
-        request: 对话请求体（message, session_id）。
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        ChatResponse: 包含 response 和可选的 rag_trace。
-
-    Raises:
-        HTTPException 429: 上游模型服务触发限流。
-        HTTPException 401/403: 上游模型服务认证/授权失败。
-        HTTPException 500: 其他错误。
-    """
-    try:
-        session_id = request.session_id or "default_session"
-        resp = chat_with_agent(request.message, current_user.username, session_id)
-        if isinstance(resp, dict):
-            return ChatResponse(**resp)
-        return ChatResponse(response=resp)
-    except Exception as e:
-        message = str(e)
-        # 检测上游模型服务的 HTTP 错误码
-        match = re.search(r"Error code:\s*(\d{3})", message)
-        if match:
-            code = int(match.group(1))
-            if code == 429:
-                raise HTTPException(
-                    status_code=429,
-                    detail=(
-                        "上游模型服务触发限流/额度限制（429）。请检查账号额度/模型状态。\n"
-                        f"原始错误：{message}"
-                    ),
-                )
-            if code in (401, 403):
-                raise HTTPException(status_code=code, detail=message)
-            raise HTTPException(status_code=code, detail=message)
-        logger.exception("同步对话失败: user=%s", current_user.username)
-        raise HTTPException(status_code=500, detail=message)
-
-
-@router.post("/chat/stream")
-async def chat_stream_endpoint(
-    request: ChatRequest, current_user: User = Depends(get_current_user)
-):
-    """流式对话端点 —— 使用 Server-Sent Events (SSE) 实时推送 Agent 响应。
-
-    SSE 事件类型：
-      - {"type": "content", "content": "..."}  — 文本内容块
-      - {"type": "rag_step", "step": {...}}     — RAG 检索步骤（实时推送）
-      - {"type": "trace", "rag_trace": {...}}   — RAG 检索追踪信息（最后推送）
-      - {"type": "error", "content": "..."}     — 错误信息
-      - [DONE]                                    — 流结束信号
-
-    HTTP 响应头配置：
-      - Cache-Control: no-cache  — 禁止缓存
-      - Connection: keep-alive   — 保持连接
-      - X-Accel-Buffering: no    — 禁用 Nginx 缓冲
-
-    Args:
-        request: 对话请求体（message, session_id）。
-        current_user: 当前用户（JWT 依赖注入）。
-
-    Returns:
-        StreamingResponse: text/event-stream 媒体类型。
-    """
-
-    async def event_generator():
-        """SSE 事件生成器 —— 逐块 yield Agent 的输出和 RAG 步骤。
-
-        异常时生成 error 事件，避免客户端连接挂起。
-        """
-        try:
-            session_id = request.session_id or "default_session"
-            async for chunk in chat_with_agent_stream(
-                request.message, current_user.username, session_id
-            ):
-                yield chunk
-        except Exception as e:
-            logger.exception("流式对话异常: user=%s", current_user.username)
-            error_data = {"type": "error", "content": str(e)}
-            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 文件格式检测工具
 # ═══════════════════════════════════════════════════════════════════
 
 
@@ -619,6 +235,18 @@ def _is_supported_document(filename: str) -> bool:
         or file_lower.endswith((".docx", ".doc"))
         or file_lower.endswith((".xlsx", ".xls"))
     )
+
+
+def _normalize_document_filename(filename: str) -> str:
+    """Return a safe basename for uploaded or deleted documents."""
+    safe_name = Path(filename or "").name.strip()
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="filename must not be empty")
+    if safe_name != filename or safe_name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="filename must not contain path segments")
+    if not _is_supported_document(safe_name):
+        raise HTTPException(status_code=400, detail="unsupported document type")
+    return safe_name
 
 
 async def _save_upload_file(file: UploadFile, file_path: Path) -> None:
@@ -1018,7 +646,7 @@ async def upload_document_async(
         HTTPException 400: 文件名为空或格式不支持。
         HTTPException 500: 文件保存失败。
     """
-    filename = file.filename or ""
+    filename = _normalize_document_filename(file.filename or "")
     if not filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
     if not _is_supported_document(filename):
@@ -1102,7 +730,7 @@ async def upload_document(file: UploadFile = File(...), _: User = Depends(requir
         HTTPException 500: 文档处理或向量化失败。
     """
     try:
-        filename = file.filename or ""
+        filename = _normalize_document_filename(file.filename or "")
         filename.lower()
         if not filename:
             raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -1195,6 +823,7 @@ async def delete_document_async(
     Returns:
         DocumentDeleteStartResponse: 包含 job_id, filename, message。
     """
+    filename = _normalize_document_filename(filename)
     job = delete_job_manager.create_job(
         filename,
         steps=DELETE_STEPS,
@@ -1250,6 +879,7 @@ async def delete_document(filename: str, _: User = Depends(require_admin)):
         HTTPException 500: 删除操作失败。
     """
     try:
+        filename = _normalize_document_filename(filename)
         get_milvus_manager().init_collection()
 
         delete_expr = f'filename == "{filename}"'

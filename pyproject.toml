@@ -40,6 +40,16 @@ dependencies = [
     "slowapi>=0.1.9",
 ]
 
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = [
+    "alembic*",
+    "frontend*",
+    "logs*",
+    "models*",
+    "tests*",
+]
+
 [project.optional-dependencies]
 study = [
     "langchain-classic>=0.2.0",

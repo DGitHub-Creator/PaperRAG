@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
+*.whl
 *.egg-info
 
 # Virtual environments
@@ -16,6 +17,7 @@ volumes/
 # OS files
 .DS_Store
 data/
+logs/
 
 # Test artifacts
 tests/__pycache__/
@@ -33,6 +35,9 @@ langchain-study/
 models/
 *.bin
 *.safetensors
+
+# Frontend dependencies
+frontend/node_modules/
 
 # Cloned repos
 citelocal-agent/
