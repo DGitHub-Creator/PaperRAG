@@ -16,10 +16,18 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from backend.api.auth import router as auth_router
+from backend.api.chat import router as chat_router
 from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
+from backend.api.sessions import router as sessions_router
 from backend.api.ws import router as ws_router
-from backend.core.config import ALLOWED_ORIGINS, RATE_LIMIT
+from backend.core.config import (
+    ALLOWED_ORIGINS,
+    RATE_LIMIT,
+    ensure_runtime_directories,
+    validate_runtime_security,
+)
 from backend.core.database import init_db
 from backend.core.logging_config import setup_root_logger
 from backend.core.rate_limit import limiter
@@ -63,6 +71,8 @@ def create_app() -> FastAPI:
     async def _startup_init_db():
         """应用启动时自动建表（如不存在）。"""
         logger.info("正在初始化数据库...")
+        ensure_runtime_directories()
+        validate_runtime_security()
         init_db()
         logger.info("数据库初始化完成")
 
@@ -102,6 +112,9 @@ def create_app() -> FastAPI:
     # ── 注册路由 ────────────────────────────────────────────────
     # 健康检查优先注册，避免被静态文件挂载覆盖
     app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(sessions_router)
+    app.include_router(chat_router)
     app.include_router(api_router)
     app.include_router(ws_router)
 

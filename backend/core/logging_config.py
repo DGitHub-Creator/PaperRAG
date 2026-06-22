@@ -26,7 +26,6 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # ── 日志目录 ──────────────────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "app.log"
 
 # ── JSON 模式 ────────────────────────────────────────────────────
@@ -72,6 +71,7 @@ def setup_root_logger() -> None:
     if _initialized:
         return
     _initialized = True
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)

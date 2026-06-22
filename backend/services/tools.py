@@ -271,6 +271,8 @@ def search_knowledge_base(query: str) -> str:
         }
 
     # 保存 source_map 到 RAG 上下文，供后处理使用
+    rag_trace = dict(rag_trace or {})
+    rag_trace["source_map"] = source_map
     _set_last_rag_context({
         "rag_trace": rag_trace,
         "source_map": source_map,

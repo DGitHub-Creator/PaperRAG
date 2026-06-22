@@ -133,6 +133,35 @@ class RetrievedChunk(BaseModel):
     chapter_path: str | None = None
 
 
+class SourceReference(BaseModel):
+    """Normalized source reference used by RAG traces and citations."""
+
+    filename: str | None = None
+    page: str | int | None = None
+    chunk_id: str | None = None
+    source_label: str | None = None
+
+
+class CitationInfo(BaseModel):
+    """Citation emitted or verified for an answer."""
+
+    claim: str | None = None
+    source_label: str | None = None
+    filename: str | None = None
+    page: str | int | None = None
+    chunk_id: str | None = None
+    supported: bool | None = None
+    reason: str | None = None
+
+
+class UnsupportedClaim(BaseModel):
+    """Answer claim that could not be grounded in retrieved evidence."""
+
+    claim: str
+    reason: str | None = None
+    suggested_action: str | None = None
+
+
 class RagTrace(BaseModel):
     """RAG 检索追踪信息 —— 记录检索流水线各阶段的详细参数和结果。
 
@@ -212,6 +241,9 @@ class RagTrace(BaseModel):
     retrieved_chunks: list[RetrievedChunk] | None = None
     initial_retrieved_chunks: list[RetrievedChunk] | None = None
     expanded_retrieved_chunks: list[RetrievedChunk] | None = None
+    source_map: dict[str, SourceReference] | None = None
+    citations: list[CitationInfo] | None = None
+    unsupported_claims: list[UnsupportedClaim] | None = None
 
 
 class ChatResponse(BaseModel):

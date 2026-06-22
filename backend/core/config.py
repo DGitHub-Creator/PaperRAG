@@ -7,8 +7,13 @@
 import os
 from pathlib import Path
 
+from backend.core.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 # ── 项目元信息 ────────────────────────────────────────────────────
 VERSION = "0.1.0"
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
 """应用版本号，用于健康检查和 API 响应。"""
 
 # ── 项目路径 ──────────────────────────────────────────────────────
@@ -26,8 +31,10 @@ sentence_transformers / transformers 会优先从此目录加载模型缓存，
 可通过 HF_HOME 环境变量覆盖。"""
 HF_HOME = os.getenv("HF_HOME", str(MODEL_CACHE_DIR))
 
-for _dir in (DATA_DIR, UPLOAD_DIR, LOG_DIR, MODEL_CACHE_DIR):
-    _dir.mkdir(parents=True, exist_ok=True)
+def ensure_runtime_directories() -> None:
+    """Create runtime directories that the API writes to directly."""
+    for directory in (DATA_DIR, UPLOAD_DIR):
+        directory.mkdir(parents=True, exist_ok=True)
 
 # ── LLM 模型配置（统一前缀，向后兼容旧变量）─────────────────────────
 ARK_API_KEY = os.getenv("ARK_API_KEY", "")
@@ -75,7 +82,10 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "paperrag")
 REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL_SECONDS", "300"))
-USE_REDIS_JOB_MANAGER = os.getenv("USE_REDIS_JOB_MANAGER", "false").lower() == "true"
+USE_REDIS_JOB_MANAGER = os.getenv(
+    "USE_REDIS_JOB_MANAGER",
+    "true" if APP_ENV in {"prod", "production"} else "false",
+).lower() == "true"
 """是否使用 Redis 任务管理器（替代进程内存，支持多 worker）。"""
 
 # ── CORS 与安全 ──────────────────────────────────────────────────
@@ -141,3 +151,29 @@ INGESTED_STATE_PATH = DATA_DIR / "ingested.json"
 # ── 工具配置 ──────────────────────────────────────────────────────
 AMAP_WEATHER_API = os.getenv("AMAP_WEATHER_API", "https://restapi.amap.com/v3/weather/weatherInfo")
 AMAP_API_KEY = os.getenv("AMAP_API_KEY", "")
+
+
+def is_production() -> bool:
+    """Return True when runtime settings should be treated as production."""
+    return APP_ENV in {"prod", "production"}
+
+
+def validate_runtime_security() -> None:
+    """Validate security-sensitive runtime settings."""
+    issues = []
+    if JWT_SECRET_KEY == "replace-with-strong-random-secret":
+        issues.append("JWT_SECRET_KEY is still using the default placeholder")
+    if ADMIN_INVITE_CODE == "paperrag-admin-2026":
+        issues.append("ADMIN_INVITE_CODE is still using the default value")
+    if ALLOWED_ORIGINS == ["*"]:
+        issues.append("ALLOWED_ORIGINS allows every origin")
+    if is_production() and not USE_REDIS_JOB_MANAGER:
+        issues.append("USE_REDIS_JOB_MANAGER should be enabled for production job recovery")
+
+    if not issues:
+        return
+
+    message = "; ".join(issues)
+    if is_production():
+        raise RuntimeError(f"Unsafe production configuration: {message}")
+    logger.warning("Development configuration warning: %s", message)
