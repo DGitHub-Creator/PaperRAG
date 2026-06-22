@@ -48,7 +48,7 @@ from backend.core.database import get_db
 from backend.core.logging_config import get_logger
 
 # ORM 模型
-from backend.core.models import User
+from backend.core.models import User, WorkspaceMember
 
 logger = get_logger(__name__)
 
@@ -355,3 +355,61 @@ def resolve_role(requested_role: str | None, admin_code: str | None) -> str:
 
     logger.warning(f"管理员邀请码验证失败: 收到 '{admin_code}'")
     raise HTTPException(status_code=403, detail="管理员邀请码错误")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 工作区访问控制
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _check_workspace_access(
+    db: Session,
+    workspace_id: int,
+    user_id: int,
+    username: str,
+    required_roles: list[str] | None = None,
+) -> WorkspaceMember:
+    """检查用户是否有权访问指定工作区。
+
+    查询 workspace_members 表，确认用户是该工作区的成员。
+    如果指定了 required_roles，还会额外检查角色是否满足要求。
+
+    Args:
+        db: 数据库会话。
+        workspace_id: 工作区 ID。
+        user_id: 用户 ID。
+        username: 用户名（仅用于日志）。
+        required_roles: 可选的角色白名单。
+
+    Returns:
+        WorkspaceMember 实例。
+
+    Raises:
+        HTTPException(403): 用户不是工作区成员或角色不满足要求。
+    """
+    member = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not member:
+        logger.warning(
+            f"用户 '{username}' (id={user_id}) 尝试访问工作区 {workspace_id}，但不是该工作区成员"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="您不是该工作区的成员",
+        )
+    if required_roles and member.role not in required_roles:
+        logger.warning(
+            f"用户 '{username}' (角色: {member.role}) 尝试访问工作区 {workspace_id}，"
+            f"需要角色 {required_roles}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="您没有足够的权限访问该工作区",
+        )
+    return member
