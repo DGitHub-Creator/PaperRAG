@@ -16,20 +16,18 @@ class TestHealthEndpoint:
 
 class TestAuthUnauthenticated:
     def test_me_unauthenticated(self, client):
-        resp = client.get("/auth/me")
+        resp = client.get("/api/v1/auth/me")
         assert resp.status_code == 401
 
     def test_refresh_unauthenticated(self, client):
-        # slowapi middleware wraps 401 in ExceptionGroup;
-        # we skip to avoid TestClient compatibility issues.
         pass
 
 
 class TestStatsEndpoint:
     def test_get_stats_requires_admin(self, client):
-        resp = client.get("/stats/usage")
+        resp = client.get("/api/v1/stats/usage")
         assert resp.status_code == 401
 
     def test_reset_stats_requires_admin(self, client):
-        resp = client.delete("/stats/usage")
+        resp = client.delete("/api/v1/stats/usage")
         assert resp.status_code == 401
