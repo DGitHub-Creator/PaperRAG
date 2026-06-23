@@ -12,7 +12,7 @@ from backend.schemas.schemas import (
     SessionListResponse,
     SessionMessagesResponse,
 )
-from backend.services.agent import storage
+from backend.core.dependencies import get_conversation_storage
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 @router.get("/sessions/{session_id}", response_model=SessionMessagesResponse)
 async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user)):
     try:
+        storage = get_conversation_storage()
         messages = [
             MessageInfo(
                 type=msg["type"],
@@ -39,6 +40,7 @@ async def get_session_messages(session_id: str, current_user: User = Depends(get
 @router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(current_user: User = Depends(get_current_user)):
     try:
+        storage = get_conversation_storage()
         sessions = [
             SessionInfo(**item) for item in storage.list_session_infos(current_user.username)
         ]
@@ -52,6 +54,7 @@ async def list_sessions(current_user: User = Depends(get_current_user)):
 @router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
 async def delete_session(session_id: str, current_user: User = Depends(get_current_user)):
     try:
+        storage = get_conversation_storage()
         deleted = storage.delete_session(current_user.username, session_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Session does not exist")

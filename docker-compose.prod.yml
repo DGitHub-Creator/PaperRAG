@@ -110,6 +110,7 @@ services:
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
       - HF_HOME=/app/models
+      - USE_REDIS_JOB_MANAGER=true
     volumes:
       - models_data:/app/models
       - app_data:/app/data

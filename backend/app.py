@@ -26,10 +26,13 @@ from backend.core.config import (
     ALLOWED_ORIGINS,
     RATE_LIMIT,
     ensure_runtime_directories,
+    validate_config,
     validate_runtime_security,
 )
 from backend.core.database import init_db
+from backend.core.exceptions import PaperRAGError, paper_rag_error_handler, unhandled_error_handler
 from backend.core.logging_config import setup_root_logger
+from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
 from backend.core.rate_limit import limiter
 from backend.core.stats import record_request
 
@@ -66,14 +69,20 @@ def create_app() -> FastAPI:
     else:
         logger.warning("速率限制已禁用（RATE_LIMIT 未设置）")
 
+    # ── 统一异常处理 ─────────────────────────────────────────────
+    app.add_exception_handler(PaperRAGError, paper_rag_error_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)
+
     # ── 启动事件: 数据库初始化 ──────────────────────────────────
     @app.on_event("startup")
     async def _startup_init_db():
         """应用启动时自动建表（如不存在）。"""
         logger.info("正在初始化数据库...")
         ensure_runtime_directories()
+        validate_config()
         validate_runtime_security()
         init_db()
+        init_metrics()
         logger.info("数据库初始化完成")
 
     # ── CORS 中间件（生产环境通过 ALLOWED_ORIGINS 环境变量限制）─
@@ -109,14 +118,21 @@ def create_app() -> FastAPI:
             response.headers["Expires"] = "0"
         return response
 
+    # ── Prometheus 指标中间件 ───────────────────────────────────
+    @app.middleware("http")
+    async def _metrics_middleware(request: Request, call_next):
+        return await metrics_middleware(request, call_next)
+
     # ── 注册路由 ────────────────────────────────────────────────
-    # 健康检查优先注册，避免被静态文件挂载覆盖
+    # 健康检查和指标端点（根路径，不加前缀）
     app.include_router(health_router)
-    app.include_router(auth_router)
-    app.include_router(sessions_router)
-    app.include_router(chat_router)
-    app.include_router(api_router)
-    app.include_router(ws_router)
+    app.add_api_route("/metrics", metrics_endpoint, methods=["GET"])
+    # API 路由统一加 /api/v1 前缀
+    app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(sessions_router, prefix="/api/v1")
+    app.include_router(chat_router, prefix="/api/v1")
+    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(ws_router, prefix="/api/v1")
 
     # ── 挂载前端静态文件 ────────────────────────────────────────
     # 生产优先: dist/ → 开发备选: frontend/

@@ -226,32 +226,39 @@ class SemanticCache:
 
 
 class RedisCache:
-    """Redis JSON 缓存封装 + 可选的语义缓存代理。
+    """Redis JSON 缓存封装 + 可选的语义缓存代理 + 熔断降级。
 
-    作为集中式缓存层：
-      - 为所有服务提供基于 Redis 的 JSON 序列化缓存（get/set/delete）。
-      - 通过 get_semantic() 可获取进程内 SemanticCache 实例，
-        用于 RAG 等场景的语义级缓存命中。
-
-    配置参数（从 backend.core.config 导入）：
-      - REDIS_URL: Redis 连接地址（默认 redis://127.0.0.1:6379/0）
-      - REDIS_KEY_PREFIX: 键前缀（默认 "paperrag"）
-      - REDIS_CACHE_TTL: 默认 TTL 秒数（默认 300）
-
-    所有 Redis 操作都带有 try-except 保护，Redis 不可用时静默降级。
+    所有 Redis 操作带有 try-except 保护，Redis 不可用时静默降级。
+    连续失败达阈值后自动熔断，避免雪崩。
     """
 
-    def __init__(self):
-        """初始化 Redis 缓存客户端。
+    CIRCUIT_THRESHOLD = 5
+    CIRCUIT_TIMEOUT = 60.0
 
-        Redis 连接采用懒加载模式，第一次使用时才建立连接。
-        SemanticCache 同样懒加载。
-        """
+    def __init__(self):
         self.redis_url = REDIS_URL
         self.key_prefix = REDIS_KEY_PREFIX
         self.default_ttl = REDIS_CACHE_TTL
         self._client: redis.Redis | None = None
         self._semantic: SemanticCache | None = None
+        self._failure_count = 0
+        self._circuit_open_until = 0.0
+
+    def _is_circuit_open(self) -> bool:
+        if self._failure_count >= self.CIRCUIT_THRESHOLD:
+            if time.time() < self._circuit_open_until:
+                return True
+            self._failure_count = 0
+        return False
+
+    def _on_failure(self):
+        self._failure_count += 1
+        if self._failure_count >= self.CIRCUIT_THRESHOLD:
+            self._circuit_open_until = time.time() + self.CIRCUIT_TIMEOUT
+            logger.warning("Redis 熔断开启，%ds 后重试", self.CIRCUIT_TIMEOUT)
+
+    def _on_success(self):
+        self._failure_count = 0
 
     def _get_client(self) -> redis.Redis:
         """获取 Redis 客户端连接（懒加载模式）。
@@ -278,66 +285,54 @@ class RedisCache:
         return f"{self.key_prefix}:{key}"
 
     def get_json(self, key: str) -> Any | None:
-        """从 Redis 读取 JSON 值并反序列化。
-
-        Args:
-            key: 缓存键（不含前缀）。
-
-        Returns:
-            反序列化后的 Python 对象，键不存在或异常时返回 None。
-        """
+        if self._is_circuit_open():
+            return None
         try:
             value = self._get_client().get(self._key(key))
+            self._on_success()
             if not value:
                 return None
             return json.loads(value)
         except Exception:
+            self._on_failure()
             logger.debug("Redis 读取失败: key=%s", key, exc_info=True)
             return None
 
     def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
-        """将 Python 对象序列化为 JSON 并写入 Redis，设置 TTL。
-
-        Args:
-            key: 缓存键（不含前缀）。
-            value: 任意 JSON 可序列化的 Python 对象。
-            ttl: 过期时间（秒），None 则使用默认 TTL。
-        """
+        if self._is_circuit_open():
+            return
         try:
             payload = json.dumps(value, ensure_ascii=False)
             self._get_client().setex(
                 self._key(key), ttl or self.default_ttl, payload
             )
+            self._on_success()
         except Exception:
+            self._on_failure()
             logger.debug("Redis 写入失败: key=%s", key, exc_info=True)
 
     def delete(self, key: str) -> None:
-        """从 Redis 删除指定键。
-
-        Args:
-            key: 缓存键（不含前缀）。
-        """
+        if self._is_circuit_open():
+            return
         try:
             self._get_client().delete(self._key(key))
+            self._on_success()
         except Exception:
+            self._on_failure()
             logger.debug("Redis 删除失败: key=%s", key, exc_info=True)
 
     def delete_pattern(self, pattern: str) -> None:
-        """按模式批量删除 Redis 键。
-
-        先通过 KEYS 命令查找匹配的所有键，再批量删除。
-        注意：KEYS 在大数据量下可能阻塞，仅适用于键数量可控的场景。
-
-        Args:
-            pattern: 键匹配模式（不含前缀），支持 Redis glob 通配符。
-        """
+        if self._is_circuit_open():
+            return
         try:
             full_pattern = self._key(pattern)
             keys = self._get_client().keys(full_pattern)
             if keys:
                 self._get_client().delete(*keys)
-                logger.debug("Redis 按模式删除: pattern=%s, 删除 %d 个键", pattern, len(keys))
+            self._on_success()
+            logger.debug("Redis 按模式删除: pattern=%s, 删除 %d 个键", pattern, len(keys))
         except Exception:
+            self._on_failure()
             logger.debug("Redis 按模式删除失败: pattern=%s", pattern, exc_info=True)
 
     def get_semantic(self) -> SemanticCache:
