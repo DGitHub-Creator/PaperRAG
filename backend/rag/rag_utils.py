@@ -32,6 +32,7 @@ from backend.core.config import (
     RERANK_BINDING_HOST,
     RERANK_MODEL,
 )
+from backend.core.config import LLM_TIMEOUT_SECONDS
 from backend.core.dependencies import (
     get_embedding_service,
     get_local_reranker,
@@ -367,7 +368,8 @@ def _expand_context(docs: list[dict]) -> tuple[list[dict], dict[str, Any]]:
     all_children: dict[str, dict] = {}
     for (filename, pi) in all_parents:
         try:
-            filter_expr = f'filename == "{filename}" && parent_idx == {pi}'
+            escaped = filename.replace('"', '\\"')
+            filter_expr = f'filename == "{escaped}" && parent_idx == {pi}'
             rows = get_milvus_manager().query_all(
                 filter_expr=filter_expr,
                 output_fields=[
@@ -470,7 +472,7 @@ def _generate_step_back_question(query: str) -> str:
         f"用户问题：{query}"
     )
     try:
-        return (model.invoke(prompt).content or "").strip()
+        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
     except Exception as e:
         logger.warning("退步问题生成失败: %s", e)
         return ""
@@ -494,7 +496,7 @@ def _answer_step_back_question(step_back_question: str) -> str:
         f"退步问题：{step_back_question}"
     )
     try:
-        return (model.invoke(prompt).content or "").strip()
+        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
     except Exception as e:
         logger.warning("退步问题回答失败: %s", e)
         return ""
@@ -523,7 +525,7 @@ def generate_hypothetical_document(query: str) -> str:
         f"用户问题：{query}"
     )
     try:
-        return (model.invoke(prompt).content or "").strip()
+        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
     except Exception as e:
         logger.warning("HyDE 生成失败: %s", e)
         return ""

@@ -23,7 +23,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-from backend.core.config import MAX_RAG_RETRIES
+from backend.core.config import LLM_TIMEOUT_SECONDS, MAX_RAG_RETRIES
 from backend.core.dependencies import get_grader_model, get_router_model
 from backend.core.logging_config import get_logger
 from backend.rag.rag_utils import (
@@ -274,7 +274,8 @@ def grade_documents_node(state: RAGState) -> RAGState:
     # 结构化输出评分
     prompt = GRADE_PROMPT.format(question=question, context=context)
     response = grader.with_structured_output(GradeDocuments).invoke(
-        [{"role": "user", "content": prompt}]
+        [{"role": "user", "content": prompt}],
+        config={"timeout": LLM_TIMEOUT_SECONDS},
     )
 
     score = (response.binary_score or "").strip().lower()
@@ -337,7 +338,8 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         )
         try:
             decision = router.with_structured_output(RewriteStrategy).invoke(
-                [{"role": "user", "content": prompt}]
+                [{"role": "user", "content": prompt}],
+                config={"timeout": LLM_TIMEOUT_SECONDS},
             )
             strategy = decision.strategy
             logger.info("路由决策: %s", strategy)

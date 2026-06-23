@@ -35,6 +35,7 @@ from backend.core.config.llm import (  # noqa: F401
     LLM_API_KEY,
     LLM_MODEL,
     LLM_PROVIDER,
+    LLM_TIMEOUT_SECONDS,
     MAX_LLM_CALLS_PER_QUERY,
     MODEL,
     VERSION,
