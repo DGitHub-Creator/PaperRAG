@@ -15,7 +15,12 @@ hljs.registerLanguage("xml", xml)
 
 import { createApp } from "vue"
 import App from "./App.vue"
-import "../style.css"
+import "./assets/variables.css"
+import "./assets/sidebar.css"
+import "./assets/chat.css"
+import "./assets/history.css"
+import "./assets/settings.css"
+import "./assets/rag-trace.css"
 import { configureRenderer } from "./utils/markdown"
 import i18n from "./i18n"
 
