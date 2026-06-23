@@ -18,7 +18,6 @@
 
 from typing import Literal, TypedDict
 
-from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
@@ -33,7 +32,6 @@ from backend.rag.rag_utils import (
 )
 from backend.services.tools import emit_rag_step
 
-load_dotenv()
 logger = get_logger(__name__)
 
 # ── Prompt 与结构化输出 ───────────────────────────────────────────

@@ -77,6 +77,8 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup_init_db():
         """应用启动时自动建表（如不存在）。"""
+        from dotenv import load_dotenv
+        load_dotenv()
         logger.info("正在初始化数据库...")
         ensure_runtime_directories()
         validate_config()

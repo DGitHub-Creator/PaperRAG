@@ -6,6 +6,8 @@ from prometheus_client import Counter, Gauge, Histogram, Info, generate_latest
 from starlette.requests import Request
 from starlette.responses import Response
 
+from backend.core.config import VERSION
+
 APP_INFO = Info("paperrag", "PaperRAG application information")
 REQUEST_COUNT = Counter(
     "paperrag_http_requests_total",
@@ -25,7 +27,7 @@ ACTIVE_REQUESTS = Gauge(
 
 
 def init_metrics():
-    APP_INFO.info({"version": "0.2.0"})
+    APP_INFO.info({"version": VERSION})
 
 
 async def metrics_endpoint(request: Request) -> Response:
