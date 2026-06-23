@@ -1,0 +1,51 @@
+/* CSS 变量与全局重置 */
+:root {
+    --primary-color: #ff9e99;
+    --primary-light: #ffb7b2;
+    --secondary-color: #ffdac1;
+    --accent-color: #e2f0cb;
+    --bg-color: #fff5f5;
+    --text-color: #6d6875;
+    --text-light: #a5a5a5;
+    --white: #ffffff;
+    --sidebar-bg: #fff0f0;
+    --bot-msg-bg: #f0f8ff;
+    --user-msg-bg: #ffb7b2;
+    --shadow: 0 8px 24px rgba(255, 183, 178, 0.2);
+    --border-radius: 20px;
+    --transition: all 0.3s ease;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Nunito', 'Microsoft YaHei', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-image:
+        radial-gradient(#ffdac1 2px, transparent 2px),
+        radial-gradient(#e2f0cb 2px, transparent 2px);
+    background-size: 30px 30px;
+    background-position: 0 0, 15px 15px;
+    overflow: hidden;
+}
+
+.app-wrapper {
+    width: 95vw;
+    height: 90vh;
+    max-width: 1200px;
+    background-color: var(--white);
+    border-radius: 30px;
+    box-shadow: var(--shadow);
+    display: flex;
+    overflow: hidden;
+    border: 4px solid var(--white);
+}
