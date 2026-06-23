@@ -93,18 +93,8 @@ def get_local_reranker():
     return _container.get_or_create("local_reranker", _create)
 
 
-def get_agent_instance():
-    from backend.services.agent import create_agent_instance
-    return _container.get_or_create("agent_instance", lambda: create_agent_instance()[0])
-
-
-def get_agent_model():
-    from backend.services.agent import create_agent_instance
-    return _container.get_or_create("agent_model", lambda: create_agent_instance()[1])
-
-
 def get_conversation_storage():
-    from backend.services.agent import ConversationStorage
+    from backend.services.conversation_storage import ConversationStorage
     return _container.get_or_create("conversation_storage", ConversationStorage)
 
 

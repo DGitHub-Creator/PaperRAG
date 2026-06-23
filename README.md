@@ -177,23 +177,23 @@ npm run build
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/auth/register` | 注册 |
-| POST | `/auth/login` | 登录 |
-| POST | `/auth/refresh` | 刷新 token |
-| GET | `/auth/me` | 当前用户 |
-| GET | `/sessions` | 会话列表 |
-| GET | `/sessions/{session_id}` | 会话消息 |
-| DELETE | `/sessions/{session_id}` | 删除会话 |
-| POST | `/chat` | 同步聊天 |
-| POST | `/chat/stream` | SSE 流式聊天 |
-| WS | `/ws/chat?token=...` | WebSocket 流式聊天 |
-| GET | `/documents` | 文档列表 |
-| POST | `/documents/upload/async` | 异步上传文档 |
-| GET | `/documents/upload/jobs/{job_id}` | 查询上传任务 |
-| POST | `/documents/ingest` | 增量导入目录 |
-| DELETE | `/documents/delete/async/{filename}` | 异步删除文档 |
-| POST | `/cache/clear` | 清空缓存 |
-| GET | `/stats/usage` | 使用统计 |
+| POST | `/api/v1/auth/register` | 注册 |
+| POST | `/api/v1/auth/login` | 登录 |
+| POST | `/api/v1/auth/refresh` | 刷新 token |
+| GET | `/api/v1/auth/me` | 当前用户 |
+| GET | `/api/v1/sessions` | 会话列表 |
+| GET | `/api/v1/sessions/{session_id}` | 会话消息 |
+| DELETE | `/api/v1/sessions/{session_id}` | 删除会话 |
+| POST | `/api/v1/chat` | 同步聊天 |
+| POST | `/api/v1/chat/stream` | SSE 流式聊天 |
+| WS | `/api/v1/ws/chat?token=...` | WebSocket 流式聊天 |
+| GET | `/api/v1/documents` | 文档列表 |
+| POST | `/api/v1/documents/upload/async` | 异步上传文档 |
+| GET | `/api/v1/documents/upload/jobs/{job_id}` | 查询上传任务 |
+| POST | `/api/v1/documents/ingest` | 增量导入目录 |
+| DELETE | `/api/v1/documents/delete/async/{filename}` | 异步删除文档 |
+| POST | `/api/v1/cache/clear` | 清空缓存 |
+| GET | `/api/v1/stats/usage` | 使用统计 |
 
 ## 测试与质量检查
 
@@ -214,9 +214,7 @@ npm run build
 ## 当前已知问题
 
 - 代码注释中存在历史编码污染，建议后续逐步修复。
-- `backend/api/routes.py` 仍较大，建议拆分为多个 router。
-- 旧版前端静态文件与 Vite 源码并存，需要明确 legacy 边界。
-- 旧 Agent 与新 LangGraph Agent 并存，需要统一入口和输出协议。
+- `frontend/style.css` 仍为单体文件（~26KB），建议按组件拆分。
 - 生产环境需要强制设置 JWT secret、CORS、上传限制等安全基线。
 
 详细分析与计划见 [架构评审与改进计划](docs/architecture-review-and-improvement-plan.md)。

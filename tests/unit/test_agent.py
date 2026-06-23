@@ -2,10 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
+_STORAGE_MOD = "backend.services.conversation_storage"
+
 
 class TestConversationStorageCacheKeys:
     def setup_method(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
         self.store = ConversationStorage
 
     def test_messages_cache_key(self):
@@ -21,15 +23,13 @@ class TestConversationStorageSave:
     def test_save_new_session(self):
         from langchain_core.messages import HumanMessage
 
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         db = MagicMock()
 
-        # query User → found
         user = MagicMock()
         user.id = 1
-        # query ChatSession → None (new session)
         session_filter = MagicMock()
         session_filter.first.return_value = None
         user_filter = MagicMock()
@@ -45,7 +45,6 @@ class TestConversationStorageSave:
                 q = MagicMock()
                 q.filter.return_value = session_filter
                 return q
-            # ChatMessage delete query
             q = MagicMock()
             q.filter.return_value = MagicMock()
             return q
@@ -57,10 +56,10 @@ class TestConversationStorageSave:
         db.close = MagicMock()
 
         with (
-            patch("backend.services.agent.SessionLocal", return_value=db),
+            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
             patch.object(store, "_messages_cache_key", return_value="cache:k"),
             patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch("backend.services.agent.cache"),
+            patch(f"{_STORAGE_MOD}.cache"),
         ):
             store.save(
                 user_id="alice",
@@ -72,14 +71,14 @@ class TestConversationStorageSave:
 
 class TestConversationStorageLoad:
     def test_load_from_redis(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         cache_mock = MagicMock()
         cache_mock.get_json.return_value = [{"type": "human", "content": "Hello"}]
 
         with (
-            patch("backend.services.agent.cache", cache_mock),
+            patch(f"{_STORAGE_MOD}.cache", cache_mock),
             patch.object(store, "_messages_cache_key", return_value="cache:k"),
         ):
             result = store.load("alice", "sess1")
@@ -87,7 +86,7 @@ class TestConversationStorageLoad:
             assert result[0].content == "Hello"
 
     def test_load_empty_session(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         cache_mock = MagicMock()
@@ -97,8 +96,8 @@ class TestConversationStorageLoad:
         db.close = MagicMock()
 
         with (
-            patch("backend.services.agent.cache", cache_mock),
-            patch("backend.services.agent.SessionLocal", return_value=db),
+            patch(f"{_STORAGE_MOD}.cache", cache_mock),
+            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
             patch.object(store, "_messages_cache_key", return_value="cache:k"),
         ):
             result = store.load("alice", "empty_sess")
@@ -107,8 +106,8 @@ class TestConversationStorageLoad:
 
 class TestConversationStorageList:
     def test_list_sessions(self):
-        import backend.services.agent as agent_mod
-        from backend.services.agent import ConversationStorage
+        import backend.services.conversation_storage as storage_mod
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         user = MagicMock()
@@ -133,11 +132,11 @@ class TestConversationStorageList:
         call_log = []
         def query_side_effect(*args):
             call_log.append(args)
-            if args and args[0] is agent_mod.User:
+            if args and args[0] is storage_mod.User:
                 return q_user
-            if args and args[0] is agent_mod.ChatSession:
+            if args and args[0] is storage_mod.ChatSession:
                 return q_session
-            if args and args[0] is agent_mod.ChatMessage:
+            if args and args[0] is storage_mod.ChatMessage:
                 return q_msg
             return MagicMock()
 
@@ -145,9 +144,9 @@ class TestConversationStorageList:
         db.close = MagicMock()
 
         with (
-            patch("backend.services.agent.SessionLocal", return_value=db),
+            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
             patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch("backend.services.agent.cache") as cache_mock,
+            patch(f"{_STORAGE_MOD}.cache") as cache_mock,
         ):
             cache_mock.get_json.return_value = None
             infos = store.list_session_infos("alice")
@@ -156,7 +155,7 @@ class TestConversationStorageList:
             assert infos[0]["session_id"] == "sess1"
 
     def test_delete_session_exists(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         db = MagicMock()
@@ -165,22 +164,22 @@ class TestConversationStorageList:
         db.delete = MagicMock()
 
         with (
-            patch("backend.services.agent.SessionLocal", return_value=db),
+            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
             patch.object(store, "_messages_cache_key", return_value="cache:k"),
             patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch("backend.services.agent.cache"),
+            patch(f"{_STORAGE_MOD}.cache"),
         ):
             result = store.delete_session("alice", "sess1")
             assert result is True
 
     def test_delete_session_not_found(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         store = ConversationStorage()
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = None
 
-        with patch("backend.services.agent.SessionLocal", return_value=db):
+        with patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db):
             result = store.delete_session("alice", "nonexistent")
             assert result is False
 
@@ -189,7 +188,7 @@ class TestToLangchainMessages:
     def test_human_message(self):
         from langchain_core.messages import HumanMessage
 
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "human", "content": "Hello"}]
@@ -201,7 +200,7 @@ class TestToLangchainMessages:
     def test_ai_message(self):
         from langchain_core.messages import AIMessage
 
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "ai", "content": "Hi there"}]
@@ -212,7 +211,7 @@ class TestToLangchainMessages:
     def test_system_message(self):
         from langchain_core.messages import SystemMessage
 
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "system", "content": "Be helpful"}]
@@ -221,7 +220,7 @@ class TestToLangchainMessages:
         assert isinstance(result[0], SystemMessage)
 
     def test_unknown_type_skipped(self):
-        from backend.services.agent import ConversationStorage
+        from backend.services.conversation_storage import ConversationStorage
 
         result = ConversationStorage._to_langchain_messages(
             [{"type": "unknown", "content": "???"}]
