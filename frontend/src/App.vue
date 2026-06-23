@@ -51,6 +51,7 @@ const authMode = ref("login")
 let initialized = false
 
 onMounted(async () => {
+  window.addEventListener("auth-expired", () => logout())
   const token = localStorage.getItem("accessToken")
   if (token) {
     try { await fetchMe(); initialized = true; connectWs(token) }

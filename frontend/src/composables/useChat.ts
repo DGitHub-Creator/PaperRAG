@@ -36,8 +36,11 @@ export function useChat() {
   const ws = useWebSocket()
   let wsBotIdx = -1
 
+  let _scrollRaf = 0
   function scrollToBottom(): void {
-    nextTick(() => {
+    if (_scrollRaf) return
+    _scrollRaf = requestAnimationFrame(() => {
+      _scrollRaf = 0
       const el = document.querySelector(".chat-container")
       if (el) el.scrollTop = el.scrollHeight
     })
