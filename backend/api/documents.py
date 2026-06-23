@@ -40,15 +40,13 @@ logger = get_logger(__name__)
 COMPUTED_DATA_DIR = DATA_DIR
 COMPUTED_UPLOAD_DIR = UPLOAD_DIR
 
-_loader = None
-
 
 def _get_loader():
-    global _loader
-    if _loader is None:
+    from backend.core.dependencies import _container
+    def _create():
         from backend.rag.document_loader import DocumentLoader
-        _loader = DocumentLoader()
-    return _loader
+        return DocumentLoader()
+    return _container.get_or_create("document_loader", _create)
 
 
 router = APIRouter()

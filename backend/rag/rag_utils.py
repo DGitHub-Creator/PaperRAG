@@ -17,7 +17,6 @@ from collections import defaultdict
 from typing import Any
 
 import requests
-from dotenv import load_dotenv
 
 from backend.core.config import (
     AUTO_MERGE_ENABLED,
@@ -45,7 +44,6 @@ from backend.rag.citation_extractor import extract_citation_refs
 from backend.rag.formula_index import get_formula_lsh_index
 from backend.rag.formula_normalizer import extract_formulas, normalize_formula
 
-load_dotenv()
 logger = get_logger(__name__)
 
 
