@@ -64,7 +64,7 @@ def _get_milvus_writer():
 
 def _remove_bm25_stats_for_filename(filename: str) -> None:
     rows = get_milvus_manager().query_all(
-        filter_expr=f'filename == "{filename}"',
+        filter_expr=_safe_milvus_filter(filename),
         output_fields=["text"],
     )
     texts = [r.get("text") or "" for r in rows]
@@ -109,6 +109,11 @@ def _compute_file_hash(file_path: Path) -> str:
     return h.hexdigest()
 
 
+def _safe_milvus_filter(filename: str) -> str:
+    escaped = filename.replace('"', '\\"')
+    return f'filename == "{escaped}"'
+
+
 def _is_supported_document(filename: str) -> bool:
     file_lower = filename.lower()
     return (
@@ -146,7 +151,7 @@ def _process_upload_job(job_id: str, file_path: str, filename: str) -> None:
         failed_step = "cleanup"
         upload_job_manager.update_step(job_id, "cleanup", 10, "running", "正在清理同名旧文档")
         get_milvus_manager().init_collection()
-        delete_expr = f'filename == "{filename}"'
+        delete_expr = _safe_milvus_filter(filename)
         try:
             _remove_bm25_stats_for_filename(filename)
         except Exception:
@@ -227,7 +232,7 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         failed_step = "prepare"
         delete_job_manager.update_step(job_id, "prepare", 20, "running", "正在初始化 Milvus 集合")
         get_milvus_manager().init_collection()
-        delete_expr = f'filename == "{filename}"'
+        delete_expr = _safe_milvus_filter(filename)
         delete_job_manager.complete_step(job_id, "prepare", "删除任务已创建")
 
         failed_step = "bm25"
@@ -269,7 +274,7 @@ def _process_ingest_job(
 
         for name in to_delete:
             try:
-                delete_expr = f'filename == "{name}"'
+                delete_expr = _safe_milvus_filter(name)
                 _remove_bm25_stats_for_filename(name)
                 get_milvus_manager().delete(delete_expr)
                 get_parent_chunk_store().delete_by_filename(name)
@@ -306,7 +311,7 @@ def _process_ingest_job(
                 all_leaf_docs.extend(leaf_docs)
 
                 try:
-                    delete_expr = f'filename == "{fp.name}"'
+                    delete_expr = _safe_milvus_filter(fp.name)
                     _remove_bm25_stats_for_filename(fp.name)
                     get_milvus_manager().delete(delete_expr)
                     get_parent_chunk_store().delete_by_filename(fp.name)
@@ -480,7 +485,7 @@ async def upload_document(file: UploadFile = File(...), _: User = Depends(requir
         os.makedirs(COMPUTED_UPLOAD_DIR, exist_ok=True)
         get_milvus_manager().init_collection()
 
-        delete_expr = f'filename == "{filename}"'
+        delete_expr = _safe_milvus_filter(filename)
         try:
             _remove_bm25_stats_for_filename(filename)
         except Exception:
@@ -574,7 +579,7 @@ async def delete_document(filename: str, _: User = Depends(require_admin)):
         filename = _normalize_document_filename(filename)
         get_milvus_manager().init_collection()
 
-        delete_expr = f'filename == "{filename}"'
+        delete_expr = _safe_milvus_filter(filename)
         _remove_bm25_stats_for_filename(filename)
         result = get_milvus_manager().delete(delete_expr)
         get_parent_chunk_store().delete_by_filename(filename)

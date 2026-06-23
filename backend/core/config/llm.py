@@ -20,3 +20,4 @@ LLM_MODEL = os.getenv("LLM_MODEL", "") or MODEL
 LLM_GRADE_MODEL = os.getenv("LLM_GRADE_MODEL", "") or GRADE_MODEL
 
 MAX_LLM_CALLS_PER_QUERY = int(os.getenv("MAX_LLM_CALLS_PER_QUERY", "6"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))

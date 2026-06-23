@@ -19,6 +19,8 @@ from typing import Literal, cast
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
+
+from backend.core.config import LLM_TIMEOUT_SECONDS
 from langgraph.types import Command
 
 from backend.agent.prompts import (
@@ -84,7 +86,8 @@ def build_agent(config=None, checkpointer=None):
         return {
             "messages": [
                 llm_with_tools.invoke(
-                    [{"role": "system", "content": system_prompt}] + state["messages"]
+                    [{"role": "system", "content": system_prompt}] + state["messages"],
+                    config={"timeout": LLM_TIMEOUT_SECONDS},
                 )
             ]
         }
@@ -129,7 +132,7 @@ def build_agent(config=None, checkpointer=None):
             result = cast(IntentSchema, llm_router.invoke([
                 {"role": "system", "content": router_sys},
                 {"role": "user", "content": intent_user_prompt.format(question=question)},
-            ]))
+            ], config={"timeout": LLM_TIMEOUT_SECONDS}))
             classification = result.classification
         except Exception as e:
             logger.warning("intent router failed: %s", e)
@@ -233,14 +236,15 @@ def run_agent(
             [f"{'用户' if msg.type == 'human' else 'AI'}: {msg.content}" for msg in messages[:40]]
         )
         summary = model.invoke(
-            f"请总结以下对话的关键信息：\n{old_conversation}\n总结（包含用户信息、重要事实、待办事项）："
+            f"请总结以下对话的关键信息：\n{old_conversation}\n总结（包含用户信息、重要事实、待办事项）：",
+            config={"timeout": LLM_TIMEOUT_SECONDS},
         ).content
         messages = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + messages[40:]
 
     messages.append(HumanMessage(content=user_text))
 
     agent_input = _convert_messages_to_agent_input(messages, user_text)
-    result = agent.invoke(agent_input, config={"configurable": {"thread_id": session_id}})
+    result = agent.invoke(agent_input, config={"configurable": {"thread_id": session_id}, "timeout": LLM_TIMEOUT_SECONDS})
 
     response_content = _extract_response(result)
     retrieved_locators = result.get("retrieved_locators", []) if isinstance(result, dict) else []
@@ -299,7 +303,8 @@ async def run_agent_stream(
             [f"{'用户' if msg.type == 'human' else 'AI'}: {msg.content}" for msg in messages[:40]]
         )
         summary = model.invoke(
-            f"请总结以下对话的关键信息：\n{old_conversation}\n总结（包含用户信息、重要事实、待办事项）："
+            f"请总结以下对话的关键信息：\n{old_conversation}\n总结（包含用户信息、重要事实、待办事项）：",
+            config={"timeout": LLM_TIMEOUT_SECONDS},
         ).content
         messages = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + messages[40:]
 
