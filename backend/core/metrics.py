@@ -2,7 +2,7 @@
 
 import time
 
-from prometheus_client import Counter, Histogram, Info, generate_latest
+from prometheus_client import Counter, Gauge, Histogram, Info, generate_latest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -18,7 +18,7 @@ REQUEST_LATENCY = Histogram(
     ["method", "endpoint"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
-ACTIVE_REQUESTS = Counter(
+ACTIVE_REQUESTS = Gauge(
     "paperrag_active_requests",
     "Number of currently active requests",
 )

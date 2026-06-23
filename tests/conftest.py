@@ -111,10 +111,12 @@ def app():
 
 @pytest.fixture
 def client(app):
-    """FastAPI TestClient（拦截启动时的数据库初始化）。"""
-    # app.py 中的 _startup_init_db 使用 from backend.core.database import init_db，
-    # 因此需要在 app 自己的命名空间中 patch。
-    with patch("backend.app.init_db"):
+    """FastAPI TestClient（拦截启动时的数据库初始化和配置校验）。"""
+    with (
+        patch("backend.app.init_db"),
+        patch("backend.app.validate_config"),
+        patch("backend.app.validate_runtime_security"),
+    ):
         with TestClient(app) as c:
             yield c
 
