@@ -1,4 +1,4 @@
-"""检索参数配置。"""
+"""检索与文档解析参数配置。"""
 
 import os
 
@@ -21,3 +21,9 @@ ENABLE_CACHE = os.getenv("ENABLE_CACHE", "true").lower() != "false"
 CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", "500"))
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "604800"))
 CACHE_SIM_THRESHOLD = float(os.getenv("CACHE_SIM_THRESHOLD", "0.92"))
+
+PARSE_MAX_WORKERS = int(os.getenv("PARSE_MAX_WORKERS", "4"))
+ENABLE_ACADEMIC_CLEANING = os.getenv("ENABLE_ACADEMIC_CLEANING", "true").lower() != "false"
+ENABLE_STRUCTURAL_CHUNKING = os.getenv("ENABLE_STRUCTURAL_CHUNKING", "true").lower() != "false"
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
