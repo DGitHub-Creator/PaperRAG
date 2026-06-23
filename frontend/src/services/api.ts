@@ -17,7 +17,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   if (response.status === 401) {
     localStorage.removeItem("accessToken")
     localStorage.removeItem("currentUser")
-    window.location.reload()
+    window.dispatchEvent(new CustomEvent("auth-expired"))
     throw new Error("登录已过期")
   }
   return response
