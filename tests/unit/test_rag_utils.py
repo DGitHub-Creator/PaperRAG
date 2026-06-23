@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 class TestGenerateHypotheticalDocument:
     def test_generates_document(self, mock_llm):
-        with patch("backend.rag.rag_utils._get_stepback_model") as mock_model:
+        with patch("backend.rag.rag_utils.get_stepback_model") as mock_model:
             mock_instance = MagicMock()
             mock_instance.invoke.return_value.content = "This is a hypothetical document about MPC."
             mock_model.return_value = mock_instance
@@ -16,7 +16,7 @@ class TestGenerateHypotheticalDocument:
             assert "hypothetical document" in result
 
     def test_returns_empty_on_model_failure(self, mock_llm):
-        with patch("backend.rag.rag_utils._get_stepback_model") as mock_model:
+        with patch("backend.rag.rag_utils.get_stepback_model") as mock_model:
             mock_model.return_value = None
             from backend.rag.rag_utils import generate_hypothetical_document
 
@@ -24,7 +24,7 @@ class TestGenerateHypotheticalDocument:
             assert result == ""
 
     def test_returns_empty_on_invoke_exception(self, mock_llm):
-        with patch("backend.rag.rag_utils._get_stepback_model") as mock_model:
+        with patch("backend.rag.rag_utils.get_stepback_model") as mock_model:
             mock_instance = MagicMock()
             mock_instance.invoke.side_effect = RuntimeError("API error")
             mock_model.return_value = mock_instance
@@ -37,7 +37,7 @@ class TestGenerateHypotheticalDocument:
 class TestStepBackExpand:
     def test_full_expansion(self, mock_llm):
         with (
-            patch("backend.rag.rag_utils._get_stepback_model") as mock_model,
+            patch("backend.rag.rag_utils.get_stepback_model") as mock_model,
             patch("backend.rag.rag_utils._generate_step_back_question") as mock_q,
             patch("backend.rag.rag_utils._answer_step_back_question") as mock_a,
         ):

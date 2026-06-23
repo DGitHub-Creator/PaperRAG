@@ -1,6 +1,19 @@
 """LangGraph RAG 管线节点单元测试 —— mock LLM 输出。"""
 
+import sys
 from unittest.mock import MagicMock, patch
+
+# Mock langgraph if not installed
+for mod in ["langgraph", "langgraph.checkpoint", "langgraph.checkpoint.memory",
+            "langgraph.graph", "langgraph.types"]:
+    if mod not in sys.modules:
+        sys.modules[mod] = MagicMock()
+
+# Mock langchain.chat_models if not installed
+if "langchain" not in sys.modules:
+    sys.modules["langchain"] = MagicMock()
+if "langchain.chat_models" not in sys.modules:
+    sys.modules["langchain.chat_models"] = MagicMock()
 
 
 def _make_state(overrides: dict | None = None) -> dict:
@@ -26,7 +39,7 @@ def _make_state(overrides: dict | None = None) -> dict:
 class TestGradeDocumentsNode:
     """测试 grade_documents_node 的分支逻辑。"""
 
-    @patch("backend.rag.rag_pipeline._get_grader_model")
+    @patch("backend.rag.rag_pipeline.get_grader_model")
     def test_grade_yes_routes_to_generate(self, mock_get_grader):
         from backend.rag.rag_pipeline import grade_documents_node
 
@@ -40,7 +53,7 @@ class TestGradeDocumentsNode:
         assert result["route"] == "generate_answer"
         assert result["rag_trace"]["grade_score"] == "yes"
 
-    @patch("backend.rag.rag_pipeline._get_grader_model")
+    @patch("backend.rag.rag_pipeline.get_grader_model")
     def test_grade_no_routes_to_rewrite(self, mock_get_grader):
         from backend.rag.rag_pipeline import grade_documents_node
 
@@ -54,7 +67,7 @@ class TestGradeDocumentsNode:
         assert result["route"] == "rewrite_question"
         assert result["rag_trace"]["grade_score"] == "no"
 
-    @patch("backend.rag.rag_pipeline._get_grader_model")
+    @patch("backend.rag.rag_pipeline.get_grader_model")
     def test_grader_unavailable_defaults_to_rewrite(self, mock_get_grader):
         from backend.rag.rag_pipeline import grade_documents_node
 
@@ -68,7 +81,7 @@ class TestGradeDocumentsNode:
 class TestRewriteQuestionNode:
     """测试 rewrite_question_node 的策略选择。"""
 
-    @patch("backend.rag.rag_pipeline._get_router_model")
+    @patch("backend.rag.rag_pipeline.get_router_model")
     @patch("backend.rag.rag_pipeline.step_back_expand")
     def test_strategy_step_back(self, mock_step_back, mock_get_router):
         from backend.rag.rag_pipeline import rewrite_question_node
@@ -89,7 +102,7 @@ class TestRewriteQuestionNode:
         assert result["expansion_type"] == "step_back"
         assert result["rag_trace"]["rewrite_strategy"] == "step_back"
 
-    @patch("backend.rag.rag_pipeline._get_router_model")
+    @patch("backend.rag.rag_pipeline.get_router_model")
     @patch("backend.rag.rag_pipeline.step_back_expand")
     @patch("backend.rag.rag_pipeline.generate_hypothetical_document")
     def test_strategy_hyde(self, mock_hyde, mock_step_back, mock_get_router):
@@ -107,7 +120,7 @@ class TestRewriteQuestionNode:
         assert result["expansion_type"] == "hyde"
         assert result["rag_trace"]["rewrite_strategy"] == "hyde"
 
-    @patch("backend.rag.rag_pipeline._get_router_model")
+    @patch("backend.rag.rag_pipeline.get_router_model")
     @patch("backend.rag.rag_pipeline.step_back_expand")
     @patch("backend.rag.rag_pipeline.generate_hypothetical_document")
     def test_strategy_complex(self, mock_hyde, mock_step_back, mock_get_router):
