@@ -18,6 +18,8 @@ Pydantic 数据模型定义 —— API 请求/响应的 Schema。
 """
 
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 # ═══════════════════════════════════════════════════════════════════
@@ -485,3 +487,28 @@ class IncrementalIngestResponse(BaseModel):
     files_modified: int = 0
     files_skipped: int = 0
     files_deleted: int = 0
+
+
+# ── Workspace 相关 Schema ──────────────────────────────────────────
+
+
+class WorkspaceCreate(BaseModel):
+    """创建工作空间请求体。"""
+    name: str
+
+
+class WorkspaceResponse(BaseModel):
+    """工作空间响应体。"""
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceMemberAdd(BaseModel):
+    """添加工作空间成员请求体。"""
+    user_id: int
+    role: str = "member"

@@ -7,7 +7,12 @@
   - 全局单例模式
 """
 
+import sys
 from unittest.mock import MagicMock, patch
+
+# Mock sentence_transformers if not installed
+if "sentence_transformers" not in sys.modules:
+    sys.modules["sentence_transformers"] = MagicMock()
 
 from backend.rag.multimodal import (
     FigureExtractor,
