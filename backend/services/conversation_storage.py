@@ -117,6 +117,7 @@ class ConversationStorage:
         except Exception:
             logger.exception("保存对话失败: user=%s, session=%s", user_id, session_id)
             db.rollback()
+            raise
         finally:
             db.close()
 

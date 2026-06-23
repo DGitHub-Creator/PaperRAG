@@ -9,6 +9,8 @@
 """
 
 import json
+import time
+from collections import defaultdict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
@@ -19,6 +21,10 @@ from backend.services.agent import chat_with_agent_stream
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_WS_RATE_LIMIT = 10
+_WS_RATE_WINDOW = 60.0
+_ws_msg_counts: dict[str, list[float]] = defaultdict(list)
 
 
 async def get_user_from_ws_token(websocket: WebSocket) -> str | None:
@@ -74,6 +80,15 @@ async def websocket_chat_endpoint(websocket: WebSocket):
             data = await websocket.receive_json()
             message = data.get("message", "")
             session_id = data.get("session_id", "default_session")
+
+            now = time.time()
+            _ws_msg_counts[username] = [
+                t for t in _ws_msg_counts[username] if now - t < _WS_RATE_WINDOW
+            ]
+            if len(_ws_msg_counts[username]) >= _WS_RATE_LIMIT:
+                await websocket.send_json({"type": "error", "content": "消息频率超限，请稍后再试"})
+                continue
+            _ws_msg_counts[username].append(now)
 
             # 使用已有的 SSE 流式函数，将事件转发到 WebSocket
             async for chunk in chat_with_agent_stream(
