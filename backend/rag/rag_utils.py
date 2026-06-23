@@ -31,6 +31,7 @@ from backend.core.config import (
     RERANK_BINDING_HOST,
     RERANK_MODEL,
 )
+from backend.core.budget import record_llm_call
 from backend.core.config import LLM_TIMEOUT_SECONDS
 from backend.core.dependencies import (
     get_embedding_service,
@@ -470,7 +471,9 @@ def _generate_step_back_question(query: str) -> str:
         f"用户问题：{query}"
     )
     try:
-        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        result = (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        record_llm_call(estimated_tokens=150)
+        return result
     except Exception as e:
         logger.warning("退步问题生成失败: %s", e)
         return ""
@@ -494,7 +497,9 @@ def _answer_step_back_question(step_back_question: str) -> str:
         f"退步问题：{step_back_question}"
     )
     try:
-        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        result = (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        record_llm_call(estimated_tokens=100)
+        return result
     except Exception as e:
         logger.warning("退步问题回答失败: %s", e)
         return ""
@@ -523,7 +528,9 @@ def generate_hypothetical_document(query: str) -> str:
         f"用户问题：{query}"
     )
     try:
-        return (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        result = (model.invoke(prompt, config={"timeout": LLM_TIMEOUT_SECONDS}).content or "").strip()
+        record_llm_call(estimated_tokens=200)
+        return result
     except Exception as e:
         logger.warning("HyDE 生成失败: %s", e)
         return ""

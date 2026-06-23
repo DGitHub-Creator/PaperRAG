@@ -22,6 +22,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+from backend.core.budget import budget_ok, record_llm_call, reset_budget
 from backend.core.config import LLM_TIMEOUT_SECONDS, MAX_RAG_RETRIES
 from backend.core.dependencies import get_grader_model, get_router_model
 from backend.core.logging_config import get_logger
@@ -275,6 +276,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
         [{"role": "user", "content": prompt}],
         config={"timeout": LLM_TIMEOUT_SECONDS},
     )
+    record_llm_call(estimated_tokens=200)
 
     score = (response.binary_score or "").strip().lower()
     route = "generate_answer" if score == "yes" else "rewrite_question"
@@ -323,7 +325,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     router = get_router_model()
     strategy = "step_back"
 
-    if router:
+    if router and budget_ok():
         context_hint = ""
         if history:
             context_hint = f"\n历史对话上下文（仅供参考）: {history[:300]}"
@@ -339,26 +341,30 @@ def rewrite_question_node(state: RAGState) -> RAGState:
                 [{"role": "user", "content": prompt}],
                 config={"timeout": LLM_TIMEOUT_SECONDS},
             )
+            record_llm_call(estimated_tokens=150)
             strategy = decision.strategy
             logger.info("路由决策: %s", strategy)
         except Exception as e:
             logger.warning("策略路由失败: %s，默认使用 step_back", e)
             strategy = "step_back"
+    elif not budget_ok():
+        emit_rag_step("💰", "已达调用预算上限，跳过重写")
+        strategy = "step_back"
 
-    # 根据策略执行扩展
+    # 根据策略执行扩展（预算不足时降级为 step_back）
     expanded_query = question
     step_back_question = ""
     step_back_answer = ""
     hypothetical_doc = ""
 
-    if strategy in ("step_back", "complex"):
+    if strategy in ("step_back", "complex") and budget_ok():
         emit_rag_step("\U0001f9e0", f"使用策略: {strategy}", "生成退步问题")
         step_back = step_back_expand(question)
         step_back_question = step_back.get("step_back_question", "")
         step_back_answer = step_back.get("step_back_answer", "")
         expanded_query = step_back.get("expanded_query", question)
 
-    if strategy in ("hyde", "complex"):
+    if strategy in ("hyde", "complex") and budget_ok():
         emit_rag_step("\U0001f4dd", "HyDE 假设性文档生成中...")
         hypothetical_doc = generate_hypothetical_document(question)
         logger.debug("HyDE 文档长度: %d 字符", len(hypothetical_doc))
@@ -627,6 +633,7 @@ def run_rag_graph(question: str, conversation_history: str = "") -> dict:
 
     from backend.core.dependencies import get_rag_graph
 
+    reset_budget()
     thread_id = f"rag-{threading.get_ident()}-{id(question)}"
     logger.info("RAG 工作流启动: %s (thread=%s)", question[:80], thread_id)
     result = get_rag_graph().invoke(
