@@ -253,6 +253,8 @@ def _process_delete_job(job_id: str, filename: str) -> None:
         get_parent_chunk_store().delete_by_filename(filename)
         delete_job_manager.complete_step(job_id, "parent_store", "父级分块已删除")
 
+        _remove_ingested_record(filename)
+
         delete_job_manager.complete_job(job_id, f"已删除 {filename}，向量数据 {deleted_count} 条")
 
     except Exception as e:
@@ -469,7 +471,6 @@ async def list_upload_jobs(_: User = Depends(require_admin)):
 async def upload_document(file: UploadFile = File(...), _: User = Depends(require_admin)):
     try:
         filename = _normalize_document_filename(file.filename or "")
-        filename.lower()
         if not filename:
             raise HTTPException(status_code=400, detail="文件名不能为空")
         if not _is_supported_document(filename):

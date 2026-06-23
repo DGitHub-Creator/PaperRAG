@@ -381,6 +381,42 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     }
 
 
+def _merge_retrieval_meta(
+    target: dict,
+    source: dict,
+    prefix: str = "",
+) -> None:
+    """将单次检索的 meta 合并到汇总 target 中，就地修改。"""
+    target["rerank_applied_any"] = target["rerank_applied_any"] or bool(source.get("rerank_applied"))
+    target["rerank_enabled_any"] = target["rerank_enabled_any"] or bool(source.get("rerank_enabled"))
+    target["rerank_model"] = target["rerank_model"] or source.get("rerank_model")
+    target["rerank_endpoint"] = target["rerank_endpoint"] or source.get("rerank_endpoint")
+    if source.get("rerank_error"):
+        target["rerank_errors"].append(f"{prefix}:{source['rerank_error']}")
+    target["retrieval_mode"] = target["retrieval_mode"] or source.get("retrieval_mode")
+    target["candidate_k"] = target["candidate_k"] or source.get("candidate_k")
+    target["leaf_retrieve_level"] = target["leaf_retrieve_level"] or source.get("leaf_retrieve_level")
+    target["auto_merge_enabled"] = (
+        target["auto_merge_enabled"]
+        if target["auto_merge_enabled"] is not None
+        else source.get("auto_merge_enabled")
+    )
+    target["auto_merge_applied"] = target["auto_merge_applied"] or bool(source.get("auto_merge_applied"))
+    target["auto_merge_threshold"] = target["auto_merge_threshold"] or source.get("auto_merge_threshold")
+    target["auto_merge_replaced_chunks"] += int(source.get("auto_merge_replaced_chunks") or 0)
+    target["auto_merge_steps"] += int(source.get("auto_merge_steps") or 0)
+    target["ctx_expansion_enabled"] = (
+        target["ctx_expansion_enabled"]
+        if target["ctx_expansion_enabled"] is not None
+        else source.get("context_expansion_enabled")
+    )
+    target["ctx_expansion_applied"] = target["ctx_expansion_applied"] or bool(source.get("context_expansion_applied"))
+    target["expand_prev_parent"] = target["expand_prev_parent"] or source.get("expand_prev_parent")
+    target["expand_next_parent"] = target["expand_next_parent"] or source.get("expand_next_parent")
+    target["expand_max_chunks"] = target["expand_max_chunks"] or source.get("expand_max_chunks")
+    target["expanded_chunk_count"] += int(source.get("expanded_chunk_count") or 0)
+
+
 # ── 节点 4: 扩展检索 ─────────────────────────────────────────────
 
 def retrieve_expanded(state: RAGState) -> RAGState:
@@ -404,26 +440,17 @@ def retrieve_expanded(state: RAGState) -> RAGState:
 
     # ── 汇总变量 ────────────────────────────────────────────────
     results: list[dict] = []
-    rerank_applied_any = False
-    rerank_enabled_any = False
-    rerank_model = None
-    rerank_endpoint = None
-    rerank_errors: list[str] = []
-    retrieval_mode = None
-    candidate_k = None
-    leaf_retrieve_level = None
-    auto_merge_enabled = None
-    auto_merge_applied = False
-    auto_merge_threshold = None
-    auto_merge_replaced_chunks = 0
-    auto_merge_steps = 0
-
-    ctx_expansion_enabled = None
-    ctx_expansion_applied = False
-    expand_prev_parent = None
-    expand_next_parent = None
-    expand_max_chunks = None
-    expanded_chunk_count = 0
+    agg = {
+        "rerank_applied_any": False, "rerank_enabled_any": False,
+        "rerank_model": None, "rerank_endpoint": None, "rerank_errors": [],
+        "retrieval_mode": None, "candidate_k": None, "leaf_retrieve_level": None,
+        "auto_merge_enabled": None, "auto_merge_applied": False,
+        "auto_merge_threshold": None, "auto_merge_replaced_chunks": 0,
+        "auto_merge_steps": 0, "ctx_expansion_enabled": None,
+        "ctx_expansion_applied": False, "expand_prev_parent": None,
+        "expand_next_parent": None, "expand_max_chunks": None,
+        "expanded_chunk_count": 0,
+    }
 
     # ── HyDE 路径 ──────────────────────────────────────────────
     if strategy in ("hyde", "complex"):
@@ -445,31 +472,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
             ),
         )
 
-        # 汇总 HyDE 元数据
-        rerank_applied_any = rerank_applied_any or bool(hyde_meta.get("rerank_applied"))
-        rerank_enabled_any = rerank_enabled_any or bool(hyde_meta.get("rerank_enabled"))
-        rerank_model = rerank_model or hyde_meta.get("rerank_model")
-        rerank_endpoint = rerank_endpoint or hyde_meta.get("rerank_endpoint")
-        if hyde_meta.get("rerank_error"):
-            rerank_errors.append(f"hyde:{hyde_meta.get('rerank_error')}")
-        retrieval_mode = retrieval_mode or hyde_meta.get("retrieval_mode")
-        candidate_k = candidate_k or hyde_meta.get("candidate_k")
-        leaf_retrieve_level = leaf_retrieve_level or hyde_meta.get("leaf_retrieve_level")
-        auto_merge_enabled = (
-            auto_merge_enabled
-            if auto_merge_enabled is not None
-            else hyde_meta.get("auto_merge_enabled")
-        )
-        auto_merge_applied = auto_merge_applied or bool(hyde_meta.get("auto_merge_applied"))
-        auto_merge_threshold = auto_merge_threshold or hyde_meta.get("auto_merge_threshold")
-        auto_merge_replaced_chunks += int(hyde_meta.get("auto_merge_replaced_chunks") or 0)
-        auto_merge_steps += int(hyde_meta.get("auto_merge_steps") or 0)
-        ctx_expansion_enabled = hyde_meta.get("context_expansion_enabled")
-        ctx_expansion_applied = ctx_expansion_applied or bool(hyde_meta.get("context_expansion_applied"))
-        expand_prev_parent = expand_prev_parent or hyde_meta.get("expand_prev_parent")
-        expand_next_parent = expand_next_parent or hyde_meta.get("expand_next_parent")
-        expand_max_chunks = expand_max_chunks or hyde_meta.get("expand_max_chunks")
-        expanded_chunk_count += int(hyde_meta.get("expanded_chunk_count") or 0)
+        _merge_retrieval_meta(agg, hyde_meta, prefix="hyde")
 
     # ── Step-back 路径 ─────────────────────────────────────────
     if strategy in ("step_back", "complex"):
@@ -488,35 +491,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
             ),
         )
 
-        # 汇总 Step-back 元数据
-        rerank_applied_any = rerank_applied_any or bool(step_meta.get("rerank_applied"))
-        rerank_enabled_any = rerank_enabled_any or bool(step_meta.get("rerank_enabled"))
-        rerank_model = rerank_model or step_meta.get("rerank_model")
-        rerank_endpoint = rerank_endpoint or step_meta.get("rerank_endpoint")
-        if step_meta.get("rerank_error"):
-            rerank_errors.append(f"step_back:{step_meta.get('rerank_error')}")
-        retrieval_mode = retrieval_mode or step_meta.get("retrieval_mode")
-        candidate_k = candidate_k or step_meta.get("candidate_k")
-        leaf_retrieve_level = leaf_retrieve_level or step_meta.get("leaf_retrieve_level")
-        auto_merge_enabled = (
-            auto_merge_enabled
-            if auto_merge_enabled is not None
-            else step_meta.get("auto_merge_enabled")
-        )
-        auto_merge_applied = auto_merge_applied or bool(step_meta.get("auto_merge_applied"))
-        auto_merge_threshold = auto_merge_threshold or step_meta.get("auto_merge_threshold")
-        auto_merge_replaced_chunks += int(step_meta.get("auto_merge_replaced_chunks") or 0)
-        auto_merge_steps += int(step_meta.get("auto_merge_steps") or 0)
-        ctx_expansion_enabled = (
-            ctx_expansion_enabled
-            if ctx_expansion_enabled is not None
-            else step_meta.get("context_expansion_enabled")
-        )
-        ctx_expansion_applied = ctx_expansion_applied or bool(step_meta.get("context_expansion_applied"))
-        expand_prev_parent = expand_prev_parent or step_meta.get("expand_prev_parent")
-        expand_next_parent = expand_next_parent or step_meta.get("expand_next_parent")
-        expand_max_chunks = expand_max_chunks or step_meta.get("expand_max_chunks")
-        expanded_chunk_count += int(step_meta.get("expanded_chunk_count") or 0)
+        _merge_retrieval_meta(agg, step_meta, prefix="step_back")
 
     # ── 去重 ──────────────────────────────────────────────────
     deduped = []
@@ -546,25 +521,25 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         "retrieved_chunks": deduped,
         "expanded_retrieved_chunks": deduped,
         "retrieval_stage": "expanded",
-        "rerank_enabled": rerank_enabled_any,
-        "rerank_applied": rerank_applied_any,
-        "rerank_model": rerank_model,
-        "rerank_endpoint": rerank_endpoint,
-        "rerank_error": "; ".join(rerank_errors) if rerank_errors else None,
-        "retrieval_mode": retrieval_mode,
-        "candidate_k": candidate_k,
-        "leaf_retrieve_level": leaf_retrieve_level,
-        "auto_merge_enabled": auto_merge_enabled,
-        "auto_merge_applied": auto_merge_applied,
-        "auto_merge_threshold": auto_merge_threshold,
-        "auto_merge_replaced_chunks": auto_merge_replaced_chunks,
-        "auto_merge_steps": auto_merge_steps,
-        "context_expansion_enabled": ctx_expansion_enabled,
-        "context_expansion_applied": ctx_expansion_applied,
-        "expand_prev_parent": expand_prev_parent,
-        "expand_next_parent": expand_next_parent,
-        "expand_max_chunks": expand_max_chunks,
-        "expanded_chunk_count": expanded_chunk_count,
+        "rerank_enabled": agg["rerank_enabled_any"],
+        "rerank_applied": agg["rerank_applied_any"],
+        "rerank_model": agg["rerank_model"],
+        "rerank_endpoint": agg["rerank_endpoint"],
+        "rerank_error": "; ".join(agg["rerank_errors"]) if agg["rerank_errors"] else None,
+        "retrieval_mode": agg["retrieval_mode"],
+        "candidate_k": agg["candidate_k"],
+        "leaf_retrieve_level": agg["leaf_retrieve_level"],
+        "auto_merge_enabled": agg["auto_merge_enabled"],
+        "auto_merge_applied": agg["auto_merge_applied"],
+        "auto_merge_threshold": agg["auto_merge_threshold"],
+        "auto_merge_replaced_chunks": agg["auto_merge_replaced_chunks"],
+        "auto_merge_steps": agg["auto_merge_steps"],
+        "context_expansion_enabled": agg["ctx_expansion_enabled"],
+        "context_expansion_applied": agg["ctx_expansion_applied"],
+        "expand_prev_parent": agg["expand_prev_parent"],
+        "expand_next_parent": agg["expand_next_parent"],
+        "expand_max_chunks": agg["expand_max_chunks"],
+        "expanded_chunk_count": agg["expanded_chunk_count"],
     })
 
     logger.info(
