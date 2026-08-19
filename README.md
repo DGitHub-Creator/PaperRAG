@@ -4,7 +4,7 @@ PaperRAG 是一个面向学术论文的 RAG 知识库平台，重点处理论文
 
 项目当前包含 FastAPI 后端、Vue 3/Vite 前端、Milvus 向量库、PostgreSQL、Redis，以及文档解析、混合检索、Agent 问答、RAG Trace 和异步文档任务等能力。
 
-## 核心能力
+## 项目简介
 
 - 学术文档解析：PDF/Word/Excel 加载，学术文本清洗，结构化分块。
 - 学术结构识别：定理、证明、定义、公式、引文、术语表。
@@ -71,7 +71,7 @@ PaperRAG/
   pyproject.toml      Python 项目与测试配置
 ```
 
-## 快速开始
+## 运行方式（快速开始）
 
 ### 1. 准备环境
 
