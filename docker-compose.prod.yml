@@ -1,5 +1,3 @@
-version: '3.5'
-
 services:
   postgres:
     container_name: paperrag-postgres
@@ -7,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: langchain_app
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -52,8 +50,8 @@ services:
     container_name: milvus-minio
     image: minio/minio:RELEASE.2024-05-28T17-19-04Z
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
     volumes:
       - minio_data:/minio_data
     command: minio server /minio_data --console-address ":9001"
@@ -86,31 +84,24 @@ services:
       - "etcd"
     restart: unless-stopped
 
-  nginx:
-    container_name: paperrag-nginx
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./static:/usr/share/nginx/html:ro
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-
   backend:
     container_name: paperrag-backend
     build:
       context: .
       dockerfile: Dockerfile
+      target: backend
+    # 必填密钥从 .env.production 读取（参照 .env.production.example）
+    env_file:
+      - .env.production
     environment:
+      # 容器内服务地址（覆盖 .env.production 中的本地地址）
       - DATABASE_URL=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD}@postgres:5432/langchain_app
       - REDIS_URL=redis://redis:6379/0
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
       - HF_HOME=/app/models
       - USE_REDIS_JOB_MANAGER=true
+      - APP_ENV=production
     volumes:
       - models_data:/app/models
       - app_data:/app/data
@@ -127,6 +118,19 @@ services:
       redis:
         condition: service_healthy
       milvus:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    container_name: paperrag-nginx
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: nginx
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
         condition: service_healthy
     restart: unless-stopped
 

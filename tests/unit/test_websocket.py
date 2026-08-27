@@ -1,7 +1,7 @@
 """WebSocket 端点单元测试 —— 令牌验证、速率限制。"""
 
 import time
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock
 
 
 class TestGetUserFromWsToken:
@@ -34,7 +34,7 @@ class TestGetUserFromWsToken:
 
 class TestWebSocketRateLimit:
     def test_rate_limit_tracking(self):
-        from backend.api.ws import _ws_msg_counts, _WS_RATE_LIMIT, _WS_RATE_WINDOW
+        from backend.api.ws import _ws_msg_counts, _WS_RATE_LIMIT
         _ws_msg_counts.clear()
         username = "test_user_rate"
         now = time.time()

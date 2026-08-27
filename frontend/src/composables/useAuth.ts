@@ -31,7 +31,7 @@ export function useAuth() {
   }
 
   async function login(username: string, password: string): Promise<void> {
-    const res = await fetch("/auth/login", {
+    const res = await apiFetch("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -42,7 +42,7 @@ export function useAuth() {
   }
 
   async function register(username: string, password: string, role = "user", admin_code: string | null = null): Promise<void> {
-    const res = await fetch("/auth/register", {
+    const res = await apiFetch("/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password, role, admin_code }),

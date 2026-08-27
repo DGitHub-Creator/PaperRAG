@@ -13,11 +13,67 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert "version" in data
 
-    def test_ready_degraded(self, client: TestClient):
-        """当依赖服务不可用时应返回 503。"""
+    def test_ready_all_healthy(self, client: TestClient, monkeypatch):
+        """所有依赖可用时应返回 200。"""
+        monkeypatch.setattr(
+            "backend.api.health._check_db", lambda: (True, "connected")
+        )
+        monkeypatch.setattr(
+            "backend.api.health._check_redis", lambda: (True, "connected")
+        )
+        monkeypatch.setattr(
+            "backend.api.health._check_milvus", lambda: (True, "connected")
+        )
         resp = client.get("/ready")
-        # 在测试环境中，数据库/Milvus 可能不可用
-        assert resp.status_code in (200, 503)
-        if resp.status_code == 503:
-            data = resp.json()
-            assert data["detail"]["status"] == "unhealthy"
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert all(c["status"] == "ok" for c in data["checks"].values())
+
+    def test_ready_degraded(self, client: TestClient, monkeypatch):
+        """任一依赖不可用时应返回 503。"""
+        monkeypatch.setattr(
+            "backend.api.health._check_db", lambda: (False, "disconnected: mock")
+        )
+        monkeypatch.setattr(
+            "backend.api.health._check_redis", lambda: (True, "connected")
+        )
+        monkeypatch.setattr(
+            "backend.api.health._check_milvus", lambda: (False, "timeout after 3s")
+        )
+        resp = client.get("/ready")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["detail"]["status"] == "unhealthy"
+        checks = data["detail"]["checks"]
+        assert checks["database"]["status"] == "error"
+        assert checks["redis"]["status"] == "ok"
+        assert checks["milvus"]["status"] == "error"
+
+    def test_ready_check_timeout_is_bounded(self, client: TestClient, monkeypatch):
+        """单项检查超时应被 READY_CHECK_TIMEOUT 上限截断并返回 503。"""
+
+        def _slow_check():
+            import time
+
+            time.sleep(10)
+            return True, "connected"
+
+        monkeypatch.setattr(
+            "backend.api.health._check_db", lambda: (True, "connected")
+        )
+        monkeypatch.setattr(
+            "backend.api.health._check_redis", lambda: (True, "connected")
+        )
+        monkeypatch.setattr("backend.api.health._check_milvus", _slow_check)
+
+        import time
+
+        start = time.perf_counter()
+        resp = client.get("/ready")
+        elapsed = time.perf_counter() - start
+
+        assert resp.status_code == 503
+        assert elapsed < 8  # 远小于慢检查的 10s
+        data = resp.json()
+        assert "timeout" in data["detail"]["checks"]["milvus"]["detail"]

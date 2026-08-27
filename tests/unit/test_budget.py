@@ -1,6 +1,5 @@
 """LLM 调用预算追踪单元测试。"""
 
-from unittest.mock import patch
 
 
 class TestBudgetTracker:

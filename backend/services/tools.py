@@ -1,10 +1,10 @@
 """
 工具模块 —— Agent 工具函数定义与 RAG 状态管理。
 
-本模块为 LangChain Agent 提供可调用的工具函数，并管理跨工具的全局状态：
+本模块为 LangChain Agent 提供可调用的工具函数，并管理跨工具的请求级状态：
 
-  1. get_current_weather: 调用高德地图天气 API 获取实时天气 / 天气预报。
-  2. search_knowledge_base: 调用 RAG 流水线执行混合检索（密集 + 稀疏向量）。
+  1. search_knowledge_base: 调用 RAG 流水线执行混合检索（密集 + 稀疏向量），
+     返回带 ``[Source N]`` 标签的检索块供模型引用。
 
 状态管理使用 contextvars 替代模块级全局变量，确保：
   - asyncio 多任务间隔离（每个请求有独立上下文）
@@ -15,10 +15,8 @@
 import asyncio
 import contextvars
 
-import requests
 from langchain_core.tools import tool
 
-from backend.core.config import AMAP_API_KEY, AMAP_WEATHER_API
 from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +26,7 @@ logger = get_logger(__name__)
 _rag_context_var: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "_rag_context_var", default=None
 )
-"""最近一次 RAG 检索的上下文（包含 rag_trace 等追踪信息），按请求隔离。"""
+"""最近一次 RAG 检索的上下文（包含 rag_trace/source_map），按请求隔离。"""
 
 _knowledge_calls_var: contextvars.ContextVar[int] = contextvars.ContextVar(
     "_knowledge_calls_var", default=0
@@ -45,12 +43,34 @@ _rag_step_loop_var: contextvars.ContextVar = contextvars.ContextVar(
 )
 """当前 asyncio 事件循环引用，按请求隔离。"""
 
+_conversation_history_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_conversation_history_var", default=""
+)
+"""当前轮次的历史对话摘要（最近 2 轮 Q&A），供 RAG 检索做上下文感知。"""
+
+
+def set_conversation_history(history: str) -> None:
+    """设置当前轮次的历史对话摘要。
+
+    Agent 入口（run_agent / run_agent_stream）在每轮对话开始前调用，
+    search_knowledge_base 检索时读取，用于多轮上下文感知检索。
+
+    Args:
+        history: 历史对话摘要文本（如 "用户: ... AI: ..."），可为空字符串。
+    """
+    _conversation_history_var.set(history or "")
+
+
+def get_conversation_history() -> str:
+    """获取当前轮次的历史对话摘要。"""
+    return _conversation_history_var.get()
+
 
 def _set_last_rag_context(context: dict) -> None:
     """设置最近一次 RAG 检索上下文（当前请求上下文内）。
 
     Args:
-        context: 包含 rag_trace 等字段的上下文字典。
+        context: 包含 rag_trace/source_map 等字段的上下文字典。
     """
     _rag_context_var.set(context)
 
@@ -126,93 +146,6 @@ def emit_rag_step(icon: str, label: str, detail: str = "") -> None:
 # ── Agent 工具函数 ──────────────────────────────────────────────────
 
 
-def get_current_weather(location: str, extensions: str | None = "base") -> str:
-    """获取指定城市的天气信息（高德地图 API）。
-
-    支持两种查询模式：
-      - base: 实时天气（温度、湿度、风向、风力）
-      - all:  天气预报（今日白天/夜间天气、气温范围）
-
-    Args:
-        location: 城市名称或行政区划代码（如 "北京"、"110000"）。
-        extensions: 查询类型，"base" 为实时天气，"all" 为天气预报。默认为 "base"。
-
-    Returns:
-        格式化后的天气信息字符串，发生错误时返回错误描述字符串。
-
-    配置依赖（从 backend.core.config 导入）：
-      - AMAP_WEATHER_API: 高德天气 API 端点 URL
-      - AMAP_API_KEY: 高德 API 密钥
-    """
-    if not location:
-        return "location参数不能为空"
-    if extensions not in ("base", "all"):
-        return "extensions参数错误，请输入base或all"
-
-    if not AMAP_WEATHER_API or not AMAP_API_KEY:
-        logger.warning("天气服务未配置（缺少 AMAP_WEATHER_API 或 AMAP_API_KEY）")
-        return "天气服务未配置（缺少 AMAP_WEATHER_API 或 AMAP_API_KEY）"
-
-    params = {
-        "key": AMAP_API_KEY,
-        "city": location,
-        "extensions": extensions,
-        "output": "json",
-    }
-
-    try:
-        resp = requests.get(AMAP_WEATHER_API, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("status") != "1":
-            return f"查询失败：{data.get('info', '未知错误')}"
-
-        if extensions == "base":
-            # 实时天气
-            lives = data.get("lives", [])
-            if not lives:
-                return f"未查询到 {location} 的天气数据"
-            w = lives[0]
-            return (
-                f"【{w.get('city', location)} 实时天气】\n"
-                f"天气状况：{w.get('weather', '未知')}\n"
-                f"温度：{w.get('temperature', '未知')}℃\n"
-                f"湿度：{w.get('humidity', '未知')}%\n"
-                f"风向：{w.get('winddirection', '未知')}\n"
-                f"风力：{w.get('windpower', '未知')}级\n"
-                f"更新时间：{w.get('reporttime', '未知')}"
-            )
-
-        # 天气预报
-        forecasts = data.get("forecasts", [])
-        if not forecasts:
-            return f"未查询到 {location} 的天气预报数据"
-        f0 = forecasts[0]
-        out = [
-            f"【{f0.get('city', location)} 天气预报】",
-            f"更新时间：{f0.get('reporttime', '未知')}",
-            "",
-        ]
-        today = (f0.get("casts") or [])[0] if f0.get("casts") else {}
-        out += [
-            "今日天气：",
-            f"  白天：{today.get('dayweather', '未知')}",
-            f"  夜间：{today.get('nightweather', '未知')}",
-            f"  气温：{today.get('nighttemp', '未知')}~{today.get('daytemp', '未知')}℃",
-        ]
-        return "\n".join(out)
-
-    except requests.exceptions.Timeout:
-        logger.error("天气服务请求超时: location=%s", location)
-        return "错误：请求天气服务超时"
-    except requests.exceptions.RequestException as e:
-        logger.error("天气服务请求失败: location=%s, error=%s", location, e)
-        return f"错误：天气服务请求失败 - {e}"
-    except Exception as e:
-        logger.exception("天气数据解析失败: location=%s", location)
-        return f"错误：解析天气数据失败 - {e}"
-
-
 @tool("search_knowledge_base")
 def search_knowledge_base(query: str) -> str:
     """在知识库中搜索信息，使用混合检索（密集向量 + BM25 稀疏向量）。
@@ -226,7 +159,8 @@ def search_knowledge_base(query: str) -> str:
         query: 用户的问题或搜索查询字符串。
 
     Returns:
-        格式化后的检索结果字符串，包含来源文档、页码和文本内容。
+        格式化后的检索结果字符串，每个分块带 ``[Source N]`` 标签
+        （含来源文档、页码和文本内容），供模型在答案中引用。
         若未检索到相关文档，返回提示信息。
     """
     # 每轮最多调用一次的限制守卫（基于 contextvars，请求隔离）
@@ -242,17 +176,18 @@ def search_knowledge_base(query: str) -> str:
 
     # 运行 RAG 流水线（延迟导入，避免与 rag_pipeline 的 import 产生循环依赖）
     from backend.rag.rag_pipeline import run_rag_graph  # noqa: C0415
-    rag_result = run_rag_graph(query)
+    rag_result = run_rag_graph(
+        query,
+        conversation_history=get_conversation_history(),
+    )
 
     docs = rag_result.get("docs", []) if isinstance(rag_result, dict) else []
     rag_trace = rag_result.get("rag_trace", {}) if isinstance(rag_result, dict) else {}
 
-    # 保存 RAG 追踪信息（供 Agent 关联到对话消息）
-    if rag_trace:
-        _set_last_rag_context({"rag_trace": rag_trace})
-
     if not docs:
         logger.info("知识库检索无结果: query='%s'", query[:100])
+        if rag_trace:
+            _set_last_rag_context({"rag_trace": rag_trace, "source_map": {}})
         return "No relevant documents found in the knowledge base."
 
     # 格式化检索结果（含 Source 编号，供 Agent 引用）
@@ -270,7 +205,7 @@ def search_knowledge_base(query: str) -> str:
             "chunk_id": chunk_id,
         }
 
-    # 保存 source_map 到 RAG 上下文，供后处理使用
+    # 保存 source_map 到 RAG 上下文，供引用校验与前端展示使用
     rag_trace = dict(rag_trace or {})
     rag_trace["source_map"] = source_map
     _set_last_rag_context({

@@ -1,4 +1,6 @@
-const BASE = ""
+// 统一 API 前缀：后端路由全部挂在 /api/v1 下
+// 所有 authFetch / fetch 调用都必须经过 BASE，避免路径漂移
+const BASE = "/api/v1"
 
 function getToken(): string {
   return localStorage.getItem("accessToken") || ""
@@ -21,6 +23,11 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     throw new Error("登录已过期")
   }
   return response
+}
+
+/** 无认证请求（登录/注册），同样走统一前缀。 */
+export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  return fetch(BASE + url, options)
 }
 
 export function getFileIcon(fileType: string): string {

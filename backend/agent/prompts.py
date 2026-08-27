@@ -31,13 +31,16 @@ Answer questions using ONLY the retrieved documents.
 {kb_description}
 
 Important rules:
-1. Always cite your sources with page numbers
-2. If you don't have enough information, say so
-3. Synthesize information from multiple papers when needed
-4. Be precise and technical"""
+1. ALWAYS cite your sources using the exact [Source N] labels that appear in the
+   retrieved chunks. Every factual claim in your answer must carry at least one
+   [Source N] citation, placed right after the claim it supports.
+2. NEVER invent a source number that was not present in the retrieved chunks.
+3. If you don't have enough information, say so explicitly.
+4. Synthesize information from multiple papers when needed.
+5. Be precise and technical."""
 
 AGENT_TOOLS_PROMPT = """You have access to these tools:
-- search_docs: Search the knowledge base for relevant document chunks
+- search_knowledge_base: Search the knowledge base for relevant document chunks
 - list_sources: List all available documents in the knowledge base
 - Answer: Provide your final answer with citations (terminal tool)
 - Question: Ask for clarification (terminal tool)"""

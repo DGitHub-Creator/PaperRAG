@@ -22,7 +22,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-from backend.core.budget import budget_ok, record_llm_call, reset_budget
+from backend.core.budget import budget_ok, record_llm_call
 from backend.core.config import LLM_TIMEOUT_SECONDS, MAX_RAG_RETRIES
 from backend.core.dependencies import get_grader_model, get_router_model
 from backend.core.logging_config import get_logger
@@ -254,6 +254,19 @@ def grade_documents_node(state: RAGState) -> RAGState:
         return {"route": "generate_answer", "rag_trace": rag_trace}
 
     emit_rag_step("\U0001f4ca", "正在评估文档相关性...")
+
+    # LLM 预算耗尽 → 跳过评分，直接生成回答
+    if not budget_ok():
+        emit_rag_step("💰", "LLM 预算耗尽，跳过相关性评分")
+        rag_trace = state.get("rag_trace", {}) or {}
+        rag_trace.update({
+            "grade_score": "budget_exhausted",
+            "grade_route": "generate_answer",
+            "rewrite_needed": False,
+            "retry_count": retry_count,
+        })
+        logger.warning("LLM 预算耗尽，跳过相关性评分直接生成")
+        return {"route": "generate_answer", "rag_trace": rag_trace, "retry_count": retry_count}
 
     if not grader:
         # 无评分模型时默认重写（保守策略）
@@ -633,7 +646,8 @@ def run_rag_graph(question: str, conversation_history: str = "") -> dict:
 
     from backend.core.dependencies import get_rag_graph
 
-    reset_budget()
+    # 注意：预算由调用方（Agent 入口）统一 reset，此处不再清零，
+    # 使 intent_router / Agent 主调用 / RAG 内部调用共享同一预算。
     thread_id = f"rag-{threading.get_ident()}-{id(question)}"
     logger.info("RAG 工作流启动: %s (thread=%s)", question[:80], thread_id)
     result = get_rag_graph().invoke(

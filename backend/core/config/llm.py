@@ -2,7 +2,6 @@
 
 import os
 
-from backend.core.config.paths import ROOT_DIR
 
 VERSION = "0.1.0"
 APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()

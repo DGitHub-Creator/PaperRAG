@@ -56,6 +56,7 @@ from backend.core.config.database import (  # noqa: F401
     DB_MAX_OVERFLOW,
     DB_POOL_SIZE,
     MILVUS_COLLECTION,
+    MILVUS_CONNECT_TIMEOUT,
     MILVUS_HOST,
     MILVUS_PORT,
     REDIS_CACHE_TTL,

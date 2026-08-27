@@ -3,12 +3,13 @@
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from backend.core.auth import get_current_user
 from backend.core.logging_config import get_logger
 from backend.core.models import User
+from backend.core.rate_limit import limiter
 from backend.schemas.schemas import ChatRequest, ChatResponse
 from backend.services.agent import chat_with_agent, chat_with_agent_stream
 
@@ -17,7 +18,12 @@ logger = get_logger(__name__)
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def chat_endpoint(
+    request: ChatRequest,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
+):
     try:
         session_id = request.session_id or "default_session"
         resp = chat_with_agent(request.message, current_user.username, session_id)
@@ -45,8 +51,11 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_c
 
 
 @router.post("/chat/stream")
+@limiter.limit("20/minute")
 async def chat_stream_endpoint(
-    request: ChatRequest, current_user: User = Depends(get_current_user)
+    request: ChatRequest,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
 ):
     async def event_generator():
         try:

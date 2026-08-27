@@ -44,5 +44,5 @@ class TestPrompts:
             tools_prompt=AGENT_TOOLS_PROMPT,
             kb_description=default_kb_description
         )
-        assert "search_docs" in formatted
+        assert "search_knowledge_base" in formatted
         assert "Answer" in formatted

@@ -38,6 +38,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "alembic>=1.18.0",
     "slowapi>=0.1.9",
+    "prometheus-client>=0.21.0",
 ]
 
 [tool.setuptools.packages.find]

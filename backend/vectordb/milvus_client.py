@@ -37,6 +37,7 @@ from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker
 from backend.core.config import (
     DENSE_EMBEDDING_DIM,
     MILVUS_COLLECTION,
+    MILVUS_CONNECT_TIMEOUT,
     MILVUS_HOST,
     MILVUS_PORT,
 )
@@ -77,18 +78,28 @@ class MilvusManager:
             f"MilvusManager 已初始化: uri={self.uri}, collection={self.collection_name}"
         )
 
-    def _get_client(self) -> MilvusClient:
+    def _get_client(self, timeout: float | None = None) -> MilvusClient:
         """获取 MilvusClient 实例（懒加载，线程安全）。
 
         首次调用时创建 MilvusClient，后续调用直接返回已有实例。
         使用 RLock 确保多线程环境下只创建一个实例。
+
+        连接建立（gRPC channel ready）受 ``timeout`` 约束：未显式指定时
+        使用 ``MILVUS_CONNECT_TIMEOUT``（默认 10s）。不设上限时 gRPC 会
+        无限重连，Milvus 宕机期间会泄漏永久阻塞的线程。
+
+        Args:
+            timeout: 建立连接的超时上限（秒）；None 表示使用全局默认值。
 
         Returns:
             已连接的 MilvusClient 实例。
         """
         with self._client_lock:
             if self.client is None:
-                self.client = MilvusClient(uri=self.uri)
+                self.client = MilvusClient(
+                    uri=self.uri,
+                    timeout=timeout if timeout is not None else MILVUS_CONNECT_TIMEOUT,
+                )
                 logger.info(f"Milvus 客户端已连接: {self.uri}")
             return self.client
 

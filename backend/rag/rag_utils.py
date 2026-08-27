@@ -743,6 +743,8 @@ def retrieve_documents(query: str, top_k: int = 5) -> dict[str, Any]:
         reranked, rm = _rerank_documents(query, retrieved, top_k)
         merged, mm = _auto_merge_documents(reranked, top_k)
         expanded, em = _expand_context(merged)
+        rm.update(mm or {})
+        rm.update(em or {})
         rm["retrieval_mode"] = "hybrid"
         rm["formula_match"] = formula_match
         rm["formula_result_count"] = len(formula_docs)
@@ -760,6 +762,8 @@ def retrieve_documents(query: str, top_k: int = 5) -> dict[str, Any]:
             reranked, rm = _rerank_documents(query, retrieved, top_k)
             merged, mm = _auto_merge_documents(reranked, top_k)
             expanded, em = _expand_context(merged)
+            rm.update(mm or {})
+            rm.update(em or {})
             rm["retrieval_mode"] = "dense_fallback"
             rm["formula_match"] = formula_match
             rm["formula_result_count"] = len(formula_docs)

@@ -1,6 +1,6 @@
 """统一异常定义 —— 业务异常层级与全局错误处理。"""
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from backend.core.logging_config import get_logger
