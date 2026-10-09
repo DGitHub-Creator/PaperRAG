@@ -118,6 +118,7 @@ from backend.core.config.retrieval import (  # noqa: F401
 )
 from backend.core.config.auth import (  # noqa: F401
     ADMIN_INVITE_CODE,
+    AICORE_INTERNAL_TOKEN,
     ALLOWED_ORIGINS,
     JWT_ALGORITHM,
     JWT_EXPIRE_MINUTES,
@@ -182,6 +183,8 @@ def validate_runtime_security() -> None:
         issues.append("ALLOWED_ORIGINS allows every origin")
     if is_production() and not USE_REDIS_JOB_MANAGER:
         issues.append("USE_REDIS_JOB_MANAGER should be enabled for production job recovery")
+    if is_production() and not AICORE_INTERNAL_TOKEN:
+        issues.append("AICORE_INTERNAL_TOKEN 未配置，/internal/v1/ai 会拒绝一切请求（02 §3.5）")
 
     if not issues:
         if not ADMIN_INVITE_CODE:

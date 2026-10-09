@@ -22,6 +22,7 @@ from backend.api.health import router as health_router
 from backend.api.routes import router as api_router
 from backend.api.sessions import router as sessions_router
 from backend.api.ws import router as ws_router
+from backend.internal_api import internal_router
 from backend.core.config import (
     ALLOWED_ORIGINS,
     ensure_runtime_directories,
@@ -153,6 +154,8 @@ def create_app() -> FastAPI:
     app.include_router(chat_router, prefix="/api/v1")
     app.include_router(api_router, prefix="/api/v1")
     app.include_router(ws_router, prefix="/api/v1")
+    # 内部执行面：路径自带 /internal/v1/ai 前缀，不对浏览器暴露，也不进 openapi.yaml
+    app.include_router(internal_router)
 
     # ── 挂载前端静态文件 ────────────────────────────────────────
     # 生产优先: dist/ → 开发备选: frontend/

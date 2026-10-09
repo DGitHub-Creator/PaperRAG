@@ -63,6 +63,17 @@ def get_parent_chunk_store():
     return _container.get_or_create("parent_chunk_store", ParentChunkStore)
 
 
+def get_document_loader():
+    from backend.rag.document_loader import DocumentLoader
+    return _container.get_or_create("document_loader", DocumentLoader)
+
+
+def get_milvus_writer():
+    """writer 本身不进容器：它是一次性写入器，重量级依赖（embedding/milvus）已在容器里。"""
+    from backend.vectordb.milvus_writer import MilvusWriter
+    return MilvusWriter(embedding_service=get_embedding_service(), milvus_manager=get_milvus_manager())
+
+
 def get_rag_graph():
     from backend.rag.rag_pipeline import build_rag_graph
     return _container.get_or_create("rag_graph", build_rag_graph)

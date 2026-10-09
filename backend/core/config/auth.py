@@ -22,6 +22,9 @@ JWT_REFRESH_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_EXPIRE_DAYS", "30"))
 ADMIN_INVITE_CODE = os.getenv("ADMIN_INVITE_CODE", "")
 """空字符串表示禁止通过注册接口创建 admin（resolve_role 会显式报错）。"""
 
+AICORE_INTERNAL_TOKEN = os.getenv("AICORE_INTERNAL_TOKEN", "")
+"""Go → ai-core 的服务间静态令牌（02 §3.5）。空值不是「不鉴权」：内部执行面据此拒绝一切请求。"""
+
 PASSWORD_PBKDF2_ROUNDS = int(os.getenv("PASSWORD_PBKDF2_ROUNDS", "310000"))
 MIN_PASSWORD_LENGTH = int(os.getenv("MIN_PASSWORD_LENGTH", "8"))
 
