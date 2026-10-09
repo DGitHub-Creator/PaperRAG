@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0-0 与 P0-1 的本地可验部分都已完成并通过（pytest 333 项 + Go 16 项，X7 pass）；两者都卡在 real 级：本机没有 Docker Desktop，p0-environment.md §3 的容器行填不了。原则③：K1–K3 由你拍板后进入 P0-4 契约锁定，Go 才继续往外长",
+  "current": "P0-4 契约目录已落地并通过 X3（本机 mock 级，16 项用例含 11 项负向篡改）：contracts/ 四件产物 + scripts/check_contracts.py 已进 CI 门禁，抽取器从 frontend/src 现场数出的实调集合恰为 13 条，与 01 §3 口径一致。P0-0/P0-1 仍卡在 real 级（本机无 Docker Desktop）。原则③：K1（429 信封）、K2（sqlc 生成物）、K3（nginx 切换时机）、K4（422 是否降级为 400）由你拍板后，P0-5 跨语言契约测试与 P0-6 认证切片才开工。K1 的代价已核实比原先报的低：前端不读 .error、不按 429 分支，统一信封是后端一处 handler",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -41,9 +41,10 @@
           "id": "X3",
           "desc": "契约已锁定且有结构校验",
           "command": "uv run python scripts/check_contracts.py",
-          "expect": "退出 0：OpenAPI 覆盖 13 条在用接口 + health/ready；错误码表每码有 retryable 与 HTTP 映射",
+          "expect": "退出 0：OpenAPI 覆盖 13 条前端在用接口 + 5 条探针（共 18 个操作）；schema 的 code 枚举与 error-codes.md 逐字一致；表写入矩阵无未标过渡期的双写；前端实调集合与契约双向吻合",
           "level": "mock",
-          "result": "not_run"
+          "result": "pass",
+          "evidence_note": "2026-10-09 本地实跑 pass；tests/unit/test_check_contracts.py 16 项（11 项负向篡改，逐条证明规则会红）。CI backend job 已挂本门禁。K1/K4 仍未决：契约按 As-Is 记录 429 的 {\"error\": ...}，未擅自统一信封"
         },
         {
           "id": "X4",
@@ -182,15 +183,15 @@
         {
           "id": "P0-4",
           "title": "契约目录（openapi.yaml + ai-execution.schema.json + error-codes.md + table-acl.md + check_contracts.py）含 429 信封定案",
-          "status": "pending",
-          "evidence": "none",
+          "status": "in_progress",
+          "evidence": "mock",
           "requires": "mock",
           "hours": 8,
           "deps": [
             "P0-1"
           ],
           "verify": "uv run python scripts/check_contracts.py",
-          "note": "决策 K1 在本卡内定案"
+          "note": "五件产物齐且 X3 本机 pass；差 429/422 定案（K1、K4）才算 done——卡上写的验收含定案，未定不标 done"
         },
         {
           "id": "P0-5",
@@ -877,8 +878,8 @@
     {
       "id": "K1",
       "question": "429 错误信封统一到 {\"detail\": ...} 还是保留现实现的 {\"error\": ...}？",
-      "recommendation": "统一为 detail，同时改前端两处错误处理",
-      "blocking": "P0-4 契约锁定"
+      "recommendation": "统一为 detail。**代价已现场核实为「前端零改动」**：全仓前端不读 .error 字段、不按 429 分支（api.ts:19 只特判 401，useAuth.ts:40/51 只读 data.detail）；只需后端一处 handler + 契约一行",
+      "blocking": "P0-4 定案（契约已按 As-Is 记录，不阻塞 P0-2/P0-3）"
     },
     {
       "id": "K2",
@@ -891,6 +892,12 @@
       "question": "nginx upstream 切到 Go 的时机？",
       "recommendation": "P0-8 末、P0-9 之前，且必须先过 X5",
       "blocking": "P0-8"
+    },
+    {
+      "id": "K4",
+      "question": "422 校验失败：Go 复刻 FastAPI 的 {\"detail\": [数组]} 还是降级为 400 + 字符串 detail？",
+      "recommendation": "降级为 400 + 字符串。chi 不会天然产生那个数组，为复刻它专门写格式化器属原则④禁止的无关工作量；前端从不按 422 分支",
+      "blocking": "P0-6 之前的跨语言契约断言"
     },
     {
       "id": "D1",
