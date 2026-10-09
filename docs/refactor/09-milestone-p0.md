@@ -16,7 +16,7 @@
 | X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
 | X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
 | X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
-| X7 | 测试分层可用 | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test tests/unit/test_pytest_layering.py -q` | unit/integration 两条都选中用例且无 `PytestUnknownMarkWarning`；分层机检 5 项绿（marker 注册、`--strict-markers`、目录→层映射）。chain/e2e 层用例自 P0-5 起出现，现在为 0 条属预期 | mock |
+| X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test -- tests/unit/test_pytest_layering.py` | unit 310 / integration 23 / 分层机检 5 全绿，无 `PytestUnknownMarkWarning`。chain、e2e 两层的用例由 P0-5 与 P0-9 提供，此刻为 0 条属预期（`pytest -m chain --collect-only` 对空选择返回 rc=5，不能当判据） | mock |
 | X8 | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
 
 ## 1. 任务卡
@@ -38,11 +38,12 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | P0-0；`02` §1 目录律、`02` §2 进程表、`01` §6 兼容语义 |
-| 输出 | `server/go.mod`、`server/cmd/api/main.go`、`server/cmd/worker/main.go`（先只起健康检查与空循环）、`server/internal/httpapi/{router.go,middleware.go,envelope.go}`、`server/internal/observability/{logging.go,trace.go}`、`server/internal/config/config.go`、`server/Dockerfile`。行为：Chi 路由 + `log/slog` JSON + `trace_id` 注入 + `{"detail": ...}` 错误信封 + `/api/v1/health`、`/api/v1/ready`（PG ping） |
+| 输出 | `server/go.mod`、`server/cmd/api/main.go`、`server/cmd/worker/main.go`（先只起健康检查与空循环）、`server/internal/httpapi/{router.go,middleware.go,envelope.go,checks.go}`、`server/internal/observability/{logging.go,trace.go}`、`server/internal/config/config.go`、`server/Dockerfile`。行为：Chi 路由 + `log/slog` JSON + `trace_id` 注入 + `{"detail": ...}` 错误信封 + `/api/v1/health`、`/api/v1/ready`（PG ping） |
 | 依赖 | P0-0 |
 | 验收 | X1；`cd server && go vet ./... && go test ./...` 绿 |
 | 等级 | mock（单测）+ real（compose 起服务后 `/ready` 200） |
 | 规模/风险 | M / `/ready` 若沿用 Python 侧三依赖探活语义（PG/Redis/Milvus）需与 `01` #2 一致，别让前端或监控脚本发现语义漂移 |
+| 当前状态 | 2026-10-09：骨架已落，`gofmt`/`go vet`/`go test` 本地全绿（16 项 Go 用例：信封形状、503 失败带 `detail`、单项超时、trace 透传、panic 兜底、配置 fail-fast）。语义对齐已写进测试：`database` 键名、`timeout after Ns`、404/405 用 FastAPI 同款文案。real 级（compose 起服务 + `/ready` 200）待 Docker → `in_progress`、`evidence=mock` |
 
 ### P0-2 Schema 基线与非破坏性收编（吸收旧 A0-2 的只读核查）
 

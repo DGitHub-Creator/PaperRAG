@@ -12,6 +12,7 @@ P0-0 的产物之一。目标：**换一台机器、换一个操作系统，照�
 | 依赖 | 版本要求 | 检查方式 |
 | --- | --- | --- |
 | Python | ≥ 3.12（`.python-version` 钉住） | `uv run python -V` |
+| Go | ≥ 1.25（`server/go.mod` 钉 `go 1.25.1`） | `go version` |
 | uv | 任意近期版本 | `uv --version` |
 | Docker + compose v2 | 支持 `docker compose`（不是只能 `docker-compose`） | `docker compose version` |
 | 宿主机内存 | ≥ 12 GB（Milvus standalone + BGE-M3 一起要） | — |
@@ -36,6 +37,9 @@ uv run python -c "import secrets;print(secrets.token_urlsafe(32))"   # 输出写
 
 # 3) 装依赖（可复现：uv.lock）
 uv sync --extra test
+
+# 3b) Go 骨架自检（不需要容器；中国大陆网络先设 GOPROXY，见 §4 第 7 条）
+cd server && gofmt -l . && go vet ./... && go test ./... && cd ..
 
 # 4) 起基础设施 + backend，等到容器 healthy
 uv run python scripts/dev.py up                    # 首拉镜像 + Milvus 启动约 3-8 分钟
@@ -67,6 +71,7 @@ P0-1 之后会多出 `go-api` / `go-worker` / `ai-core` 三个服务，以及 ng
 | 1 | `dev.py doctor` | — | — | ⬜ not_run | 期望：无密钥时 exit=1 并列出阻塞项 |
 | 2 | `dev.py up` + `ps` | — | — | ⬜ not_run | 记录首拉耗时 |
 | 3 | `curl :8000/health` | — | — | ⬜ not_run | 期望 200 |
+| 3b | `gofmt` + `go vet` + `go test` | Windows / go1.25.1 | 2026-10-09 | ✅ pass | 16 项 Go 用例全绿，无需容器 |
 | 4 | `dev.py migrate` | — | — | ⬜ not_run | 存量库无 `alembic_version` 时见 §4 第 4 条 |
 | 5 | `test -m unit` / `-m integration` | — | — | ⬜ not_run | 期望 310 / 23 通过（本地已跑通，容器环境需复现） |
 | 6 | 全量 `uv run pytest -q` | — | — | ⬜ not_run | 期望 333 通过（2026-10-09 本地基线） |
@@ -74,6 +79,7 @@ P0-1 之后会多出 `go-api` / `go-worker` / `ai-core` 三个服务，以及 ng
 **2026-10-09 状态**：本机（Windows）**未安装 Docker Desktop**，`dev.py doctor` 实测返回
 exit=1 并给出"未找到 docker CLI"。因此 §2 的 4-8 步与 X1/X6/X7 的容器部分尚未实跑，
 P0-0 的证据等级停在 mock（脚本与分层的单元级验证 9 项通过），不标 done。
+3b 的 Go 自检不依赖容器，已在本机实跑通过。
 
 ## 4. 已知坑（按踩到的顺序）
 
@@ -90,9 +96,14 @@ P0-0 的证据等级停在 mock（脚本与分层的单元级验证 9 项通过�
    或 `--no-wait` 起完自己看 `logs -f`。
 6. **bind mount 权限**：`volumes/`、`models/`、`data/`、`logs/` 在项目根下（`DOCKER_VOLUME_DIRECTORY`
    可覆盖）。Docker Desktop 需要把项目所在盘加进 File Sharing，否则容器里目录是空的。
+7. **Go 模块代理**：`proxy.golang.org` 在中国大陆不可达（本机实测 dial tcp 超时）。设
+   `go env -w GOPROXY=https://goproxy.cn,direct`，或单条命令带 `GOPROXY=https://goproxy.cn,direct go mod tidy`。
+   注意 `go mod tidy` 比 `go build` 要得多——它连依赖自己的测试依赖（testify 等）一起解析，
+   所以首次 tidy 失败不代表代码有问题。容器构建用 `--build-arg GOPROXY=...`，仓库不写死镜像。
+8. **容器运行时缺失**：本机 2026-10-09 未装 Docker Desktop，`dev.py doctor` 直接 exit=1。
+   §3 里凡涉及 up/health 的行都填不了，别据此推断"链路是好的"——那正是 `08` §1 ②禁止的事。
 
 ## 5. 与本卡之外的关系
-
 - `dev.py seed` 不在本卡：种开发数据需要先跑通上传→入库链路（属 P1），
   现在写只会是一个假装能用的空壳命令。已在 `09` P0-0 输出项标注顺延。
 - Go 侧的 schema 迁移用 `server/migrations/` + golang-migrate（P0-2 起），与这里的 alembic

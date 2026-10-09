@@ -27,6 +27,31 @@ jobs:
       - name: Run tests
         run: uv run pytest -q --tb=short
 
+  go:
+    name: Go server (fmt + vet + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      # 格式与静态检查先跑：这三条就是 X4 判定命令的前半段（cd server && go vet ./... && go test ./...）
+      - name: Check gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
   progress:
     name: Progress (plan/schedule sync gate)
     runs-on: ubuntu-latest
