@@ -6,8 +6,8 @@
 ## 一句话现状
 
 - **完成了多少**：6%（按工时加权；21/360 小时，任务完成 3/37，验收 2/24 通过）
-- **现在在哪**：P0-0 的脚本与测试分层已落且 X7 通过（unit 310 / integration 23）；但本机没有 Docker Desktop，p0-environment.md §3 的实跑记录为空，P0-0 停在 in_progress（要求 real）。原则③：等你确认 K1–K3 与 D1–D3 后再写 Go 代码
-- **还差多少**：待办 33 项 / 334 小时（约 16.7-22.3 周），进行中 1 项；可立即开工：无
+- **现在在哪**：P0-0 与 P0-1 的本地可验部分都已完成并通过（pytest 333 项 + Go 16 项，X7 pass）；两者都卡在 real 级：本机没有 Docker Desktop，p0-environment.md §3 的容器行填不了。原则③：K1–K3 由你拍板后进入 P0-4 契约锁定，Go 才继续往外长
+- **还差多少**：待办 32 项 / 326 小时（约 16.3-21.7 周），进行中 2 项；可立即开工：无
 
 ## 阶段进度
 
@@ -43,7 +43,7 @@
 | A0-3 | 鉴权与运行安全修复（旧 A0-3） | 完成 | mock（要求 mock） | 10h | — | `uv run pytest -q` | 提交 d8f1563；307 项全绿。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1 |
 | SPEC-1 | spec 按四条原则重排 + 进度与可视化机制（08/09/04/06/README + progress.json/html/sync_progress.py） | 完成 | mock（要求 mock） | 8h | — | `uv run python scripts/sync_progress.py --check` | 路线改为 P0–P3；旧 Q1 与 Q5 的排期含义被取代，技术决策 Q2–Q8 沿用 |
 | P0-0 | 统一命令入口与可复现环境（scripts/dev.py + marker 分层 + .env.example 清理 + .gitattributes + p0-environment.md） | 进行中 | mock（要求 real） | 5h | — | `uv run python scripts/dev.py test -m unit` | 吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass，但 p0-environment.md §3 的实跑记录表全空：本机未安装 Docker Desktop，doctor 实测 exit=1，up/health/migrate 未实跑 → 等级 real 达不到，不标 done |
-| P0-1 | Go 服务骨架（cmd/api + cmd/worker + Chi 路由 + slog + trace_id + detail 错误信封 + health/ready） | 待办 | 未验证（要求 real） | 8h | P0-0 | `cd server && go vet ./... && go test ./...` |  |
+| P0-1 | Go 服务骨架（cmd/api + cmd/worker + Chi 路由 + slog + trace_id + detail 错误信封 + health/ready） | 进行中 | mock（要求 real） | 8h | P0-0 | `cd server && gofmt -l . && go vet ./... && go test ./...` | 16 项 Go 用例绿：/ready 失败用 {"detail":{...}} 信封、成功平铺；探测键名 database 与超时文案 "timeout after Ns" 逐字对齐 backend/api/health.py；404/405/500 都走 FastAPI 同款信封；trace_id 生成与透传；panic 兜底；生产缺 DATABASE_URL 拒绝启动。real 部分（compose 起服务后 /ready 200、Dockerfile 能否构建）本机无 Docker → 未验，不标 done |
 | P0-2 | Schema 基线与非破坏性收编（audit_schema.py + probe_timestamps.py + migrations/000001_baseline） | 待办 | 未验证（要求 real） | 8h | P0-0 | `uv run python scripts/audit_schema.py --check-baseline` | 含 create_all 建出的无 alembic_version 存量库的人工补版本步骤 |
 | P0-3 | Go 数据访问层（sqlc + pgx pool，生成物入库并以 diff 校验一致性） | 待办 | 未验证（要求 mock） | 4h | P0-2 | `cd server && sqlc generate && git diff --exit-code` | 决策 K2 |
 | P0-4 | 契约目录（openapi.yaml + ai-execution.schema.json + error-codes.md + table-acl.md + check_contracts.py）含 429 信封定案 | 待办 | 未验证（要求 mock） | 8h | P0-1 | `uv run python scripts/check_contracts.py` | 决策 K1 在本卡内定案 |
@@ -167,13 +167,13 @@
 ## 风险登记（前 8）
 
 - **开发机没有容器运行时，P0 的 real 级验收整体阻塞** ｜触发：本机未安装 Docker Desktop（2026-10-09 `where docker` 无结果、daemon 不存在） ｜缓解：P0-0 的 p0-environment.md §3 需要实跑记录；装上 Docker Desktop（WSL2 后端，宿主内存 ≥12GB）后按 §2 走一遍，X1/X6/X7 的容器部分与 P0-2/P0-8 才能开工
+- **Go 依赖拉不动，P0-1 之后每张 Go 卡都开不了工** ｜触发：proxy.golang.org 在中国大陆不可达（本机 dial tcp 实测超时）；go mod tidy 连依赖的测试依赖一起解析 ｜缓解：机器级 `go env -w GOPROXY=https://goproxy.cn,direct`，容器构建用 --build-arg GOPROXY；已写进 p0-environment.md §4 第 7 条。go.sum 入库保证离线也能 build
 - **Go 验不了旧密码，接管后用户登录全挂** ｜触发：PBKDF2 base64 编码差异（标准 vs urlsafe）、盐长度、迭代数 ｜缓解：先导出 golden vectors，X5 全绿前 Go 不接管 users
 - **SSE 形状漂移导致前端流式显示异常** ｜触发：Go 侧缓冲/flush 策略、nginx X-Accel-Buffering ｜缓解：P1 契约测试比对 Python 与 Go 的字节级帧序列
 - **同一份业务状态被双写** ｜触发：切换窗口内 Python 仍在写 chat_messages ｜缓解：单写者原则 + feature flag + 写路径断言，接口逐个切换
 - **P1 的引用被当成证据链宣传** ｜触发：chunk 真相层尚未建立，引用来自 Milvus 截断副本 ｜缓解：前端与 README 显式标注非证据级；证据级属 P2 验收（Z1/Z3）
 - **6 周日程与 solo 投入不匹配** ｜触发：总纲按全职强度估 6 周；solo 15–20h/周下 P0+P1≈5–6.5 周，P2 落在 W7 后 ｜缓解：不可压缩项固定（P0 骨架/契约/认证、P1 E2E），日程在 progress.json 里显式标 overtime 而非偷改日期
 - **存量库拒绝启动导致开发中断** ｜触发：d8f1563 删除静默 create_all 后，无 alembic_version 的库启动失败 ｜缓解：P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md
-- **Windows + Docker Desktop 上跑不通** ｜触发：bind mount 权限、CRLF、宿主端口占用、路径长度 ｜缓解：命令只走 scripts/*.py + compose；.gitattributes 固定 eol=lf；P0-0/P0-8 必须在 Windows 实跑
 
 ## 图例
 
