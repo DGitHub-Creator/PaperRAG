@@ -1,4 +1,4 @@
-"""PaperRAG FastAPI 应用入口 —— CORS、静态文件、数据库初始化、路由挂载。
+"""ResearchPilot FastAPI 应用入口 —— CORS、静态文件、数据库初始化、路由挂载。
 
 启动方式:
     uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
@@ -31,8 +31,8 @@ from backend.core.config import (
 )
 from backend.core.database import init_db
 from backend.core.exceptions import (
-    PaperRAGError,
-    paper_rag_error_handler,
+    ResearchPilotError,
+    research_pilot_error_handler,
     rate_limit_exceeded_handler,
     request_validation_error_handler,
     unhandled_error_handler,
@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
     Returns:
         配置完成的 FastAPI 实例。
     """
-    app = FastAPI(title="PaperRAG - 学术论文 RAG 知识库平台")
+    app = FastAPI(title="ResearchPilot - 自主科研平台")
 
     # ── 错误信封（决策 K1/K4：全仓只留 {"detail": "..."} 一种形状）──
     # 422 的数组 detail 由 pydantic 决定形状，Go 复刻不起，故降级为 400 + 字符串。
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
         )
 
     # ── 统一异常处理 ─────────────────────────────────────────────
-    app.add_exception_handler(PaperRAGError, paper_rag_error_handler)
+    app.add_exception_handler(ResearchPilotError, research_pilot_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
 
     # ── 启动事件: 数据库初始化 ──────────────────────────────────
@@ -176,7 +176,7 @@ def create_app() -> FastAPI:
 
 # ── 模块级 app 实例（uvicorn 入口）─────────────────────────────────
 app = create_app()
-logger.info("PaperRAG 应用已就绪")
+logger.info("ResearchPilot 应用已就绪")
 
 if __name__ == "__main__":
     import uvicorn

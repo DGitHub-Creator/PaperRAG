@@ -12,7 +12,7 @@ from backend.core.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class PaperRAGError(Exception):
+class ResearchPilotError(Exception):
     """应用基础异常。"""
     status_code = 500
     detail = "Internal server error"
@@ -22,13 +22,13 @@ class PaperRAGError(Exception):
         super().__init__(self.detail)
 
 
-class ConfigError(PaperRAGError):
+class ConfigError(ResearchPilotError):
     """配置错误。"""
     status_code = 500
     detail = "Configuration error"
 
 
-class DocumentError(PaperRAGError):
+class DocumentError(ResearchPilotError):
     """文档处理错误。"""
     status_code = 400
     detail = "Document processing error"
@@ -52,19 +52,19 @@ class UploadSizeExceededError(DocumentError):
     detail = "Upload file size exceeded"
 
 
-class AgentError(PaperRAGError):
+class AgentError(ResearchPilotError):
     """Agent 处理错误。"""
     status_code = 500
     detail = "Agent processing error"
 
 
-class RetrievalError(PaperRAGError):
+class RetrievalError(ResearchPilotError):
     """检索错误。"""
     status_code = 500
     detail = "Retrieval error"
 
 
-async def paper_rag_error_handler(request: Request, exc: PaperRAGError) -> JSONResponse:
+async def research_pilot_error_handler(request: Request, exc: ResearchPilotError) -> JSONResponse:
     logger.warning("Business error: %s %s - %s", request.method, request.url.path, exc.detail)
     return JSONResponse(
         status_code=exc.status_code,

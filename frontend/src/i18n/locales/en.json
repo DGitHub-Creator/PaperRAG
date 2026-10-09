@@ -1,12 +1,12 @@
 {
   "app": {
-    "title": "PaperRAG - Academic Knowledge Base",
+    "title": "ResearchPilot - Autonomous Research Platform",
     "subtitle": "Meow Assistant",
     "loading": "Loading..."
   },
   "auth": {
-    "login_title": "Login to PaperRAG",
-    "register_title": "Register PaperRAG",
+    "login_title": "Login to ResearchPilot",
+    "register_title": "Register ResearchPilot",
     "login_tip": "Login to use chat and history; admins can manage documents.",
     "register_tip": "Register to use chat and history; admins can manage documents.",
     "username": "Username",

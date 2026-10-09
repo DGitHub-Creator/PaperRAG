@@ -32,10 +32,12 @@ class TestRuntimeSecurityFailFast:
             with pytest.raises(RuntimeError, match="placeholder"):
                 validate_runtime_security()
 
-    def test_non_jwt_issues_only_warn_in_development(self):
+    @pytest.mark.parametrize("leaked", ["paperrag-admin-2026", "researchpilot-admin-2026"])
+    def test_non_jwt_issues_only_warn_in_development(self, leaked):
+        """两个项目名的弱默认口令都要拒：改名不能把已暴露过的值重新变成可用值。"""
         with (
             patch("backend.core.config.JWT_SECRET_KEY", "a-real-secret"),
-            patch("backend.core.config.ADMIN_INVITE_CODE", "paperrag-admin-2026"),
+            patch("backend.core.config.ADMIN_INVITE_CODE", leaked),
             patch("backend.core.config.is_production", return_value=False),
             patch("backend.core.config.logger") as mock_logger,
         ):

@@ -1,7 +1,7 @@
 # Compose v2 起 `version:` 字段已废弃且会被忽略（留着每次 config 都吐一条告警）
 services:
   postgres:
-    container_name: paperrag-postgres
+    container_name: researchpilot-postgres
     image: postgres:15
     environment:
       POSTGRES_DB: langchain_app
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   redis:
-    container_name: paperrag-redis
+    container_name: researchpilot-redis
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -91,7 +91,7 @@ services:
       - "etcd"
 
   backend:
-    container_name: paperrag-backend
+    container_name: researchpilot-backend
     build:
       context: .
       dockerfile: Dockerfile

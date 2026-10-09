@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # ──────────────────────────────────────────────────────────────────────
-# PaperRAG 多阶段构建
+# ResearchPilot 多阶段构建
 #
 # Targets:
 #   backend — Python API 服务（含前端 dist 作为兜底静态资源）
 #   nginx   — 静态资源 + 反向代理（生产推荐入口）
 #
 # 构建:
-#   docker build --target backend -t paperrag-backend .
-#   docker build --target nginx   -t paperrag-nginx   .
+#   docker build --target backend -t researchpilot-backend .
+#   docker build --target nginx   -t researchpilot-nginx   .
 # ──────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: 前端构建（Vite → dist/）──────────────────────────────────
@@ -45,10 +45,10 @@ COPY scripts/ ./scripts/
 COPY --from=frontend-builder /build/dist ./frontend/dist
 
 # 非 root 用户运行
-RUN useradd --create-home --uid 1000 paperrag \
+RUN useradd --create-home --uid 1000 researchpilot \
     && mkdir -p /app/data /app/logs /app/models \
-    && chown -R paperrag:paperrag /app
-USER paperrag
+    && chown -R researchpilot:researchpilot /app
+USER researchpilot
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/app/models \

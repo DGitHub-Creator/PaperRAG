@@ -1,12 +1,12 @@
 {
   "app": {
-    "title": "PaperRAG - 学术论文知识库",
+    "title": "ResearchPilot - 自主科研平台",
     "subtitle": "喵喵助手",
     "loading": "加载中..."
   },
   "auth": {
-    "login_title": "登录 PaperRAG",
-    "register_title": "注册 PaperRAG",
+    "login_title": "登录 ResearchPilot",
+    "register_title": "注册 ResearchPilot",
     "login_tip": "登录后即可使用聊天和历史记录；管理员可管理文档知识库。",
     "register_tip": "注册后即可使用聊天和历史记录；管理员可管理文档知识库。",
     "username": "用户名",

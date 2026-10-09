@@ -103,7 +103,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build --target backend -t paperrag-backend .
+        run: docker build --target backend -t researchpilot-backend .
 
       - name: Build nginx image
-        run: docker build --target nginx -t paperrag-nginx .
+        run: docker build --target nginx -t researchpilot-nginx .

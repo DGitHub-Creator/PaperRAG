@@ -1,4 +1,4 @@
-"""PaperRAG 集中配置 —— 统一管理所有模块的配置读取。
+"""ResearchPilot 集中配置 —— 统一管理所有模块的配置读取。
 
 环境分层由 ``APP_ENV`` 决定，预设在本模块顶部一次性应用：
   - development（默认）：不启用全局限流，其余取各子模块的安全默认值。
@@ -177,7 +177,9 @@ def validate_runtime_security() -> None:
     issues = []
     if JWT_SECRET_KEY == "replace-with-strong-random-secret":
         issues.append("JWT_SECRET_KEY is still using the default placeholder")
-    if ADMIN_INVITE_CODE == "paperrag-admin-2026":
+    # 两个都要拒：旧项目名的弱默认值在既有部署里可能已经写进 .env，
+    # 只删旧值等于把"已经暴露过的口令"重新变成可用口令。
+    if ADMIN_INVITE_CODE in {"paperrag-admin-2026", "researchpilot-admin-2026"}:
         issues.append("ADMIN_INVITE_CODE is still using the leaked default value")
     if ALLOWED_ORIGINS == ["*"]:
         issues.append("ALLOWED_ORIGINS allows every origin")

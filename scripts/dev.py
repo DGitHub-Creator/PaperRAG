@@ -36,7 +36,7 @@ SERVER_DIR = ROOT / "server"
 SQLC_VERSION = "v1.30.0"
 
 # compose 里被 depends_on 或健康检查依赖的服务容器名（与 docker-compose.yml 的 container_name 一致）
-HEALTH_CONTAINERS = ["paperrag-postgres", "paperrag-redis", "milvus-standalone", "paperrag-backend"]
+HEALTH_CONTAINERS = ["researchpilot-postgres", "researchpilot-redis", "milvus-standalone", "researchpilot-backend"]
 HOST_PORTS = {5432: "postgres", 6379: "redis", 19530: "milvus", 8000: "backend"}
 SECRET_PLACEHOLDERS = ("replace-with-strong-random-secret", "dev-only-insecure-jwt-secret")
 

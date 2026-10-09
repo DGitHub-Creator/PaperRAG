@@ -1,6 +1,6 @@
 """智能体服务层 —— 统一的 Agent 对话接口。
 
-本模块提供 PaperRAG 的对话核心接口，所有 Agent 相关的对外暴露均通过此模块。
+本模块提供 ResearchPilot 的对话核心接口，所有 Agent 相关的对外暴露均通过此模块。
 
 底层实现已统一到 backend.agent.core（LangGraph Agent with Intent Router），
 本模块仅负责向后兼容的接口封装。

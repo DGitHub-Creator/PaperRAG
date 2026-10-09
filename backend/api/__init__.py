@@ -1,1 +1,1 @@
-"""PaperRAG API 路由模块。"""
+"""ResearchPilot API 路由模块。"""

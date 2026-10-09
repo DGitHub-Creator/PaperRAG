@@ -1,4 +1,4 @@
-"""PaperRAG 入口 —— 直接运行 python main.py 启动服务。"""
+"""ResearchPilot 入口 —— 直接运行 python main.py 启动服务。"""
 
 import uvicorn
 

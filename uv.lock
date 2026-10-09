@@ -2759,7 +2759,7 @@ wheels = [
 ]
 
 [[package]]
-name = "paper-rag"
+name = "researchpilot"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
