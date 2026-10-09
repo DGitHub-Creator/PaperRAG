@@ -1,6 +1,12 @@
-# 06 — Milestone A0 任务清单（文件级）
+# 06 — Milestone A0 任务清单（文件级）【历史】
 
-> 目标：**让"旧系统可用"变成可机检的事实，并让 chunk 数据可信**。A0 不写任何 Go 代码、不引入新框架。
+> ⚠️ **本文件已被取代**：2026-10-09 用户《重构执行总纲》以原则①「端到端链路优先」推翻旧决策 Q1
+> （"Go 之前先做一轮完整基线修复"），路线改为 **P0 架构与契约先行**，见
+> [08-principles-and-conventions.md](08-principles-and-conventions.md) §2 与
+> [04-migration.md](04-migration.md) §0/§3。本文件的任务表与 E1–E10 **保留作历史记录与文件级细节来源**，
+> **不再作为排期依据**；每张卡的新归属见本文 §4。已完成项（A0-1 `2c3e583`、A0-3 `d8f1563`）不撤销。
+>
+> 原文目标：**让"旧系统可用"变成可机检的事实，并让 chunk 数据可信**。A0 不写任何 Go 代码、不引入新框架。
 > 规模：solo 15–20h/周，约 3–4 周。每个 `A0-x` 是一个独立提交（可含少量 fixup），提交信息前缀 `fix(a0):` / `feat(a0):` / `test(a0):` / `docs(a0):`。
 
 ## 0. 退出标准（全部必须机检通过）
@@ -123,3 +129,26 @@ A0-0 ──┬─→ A0-1 ──┐
 ## 3. A0 明确不做
 
 不写 Go 服务代码（A0 的建表只用 `server/migrations/` 纯 SQL + `migrate` CLI，见 05 §2）· 不删 `parent_chunks`/`multimodal.py`/`layout_analyzer.py` · 不激活 workspace（留给 Go `auth`）· 不重写 `upload_jobs`（由 Frontier 取代）· 不把 `≥95%/≥90%` 设成 CI 门禁 · 不做 `git mv backend→ai-core`（决策 Q2）· 不改前端框架 · 不做 A/B/C 三组实验与消融（决策 Q8，DEFER 到 C 之后）。
+
+## 4. 重映射到新阶段（2026-10-09，权威口径见 04 §3）
+
+| 旧卡 | 新归属 | 变化点 |
+| --- | --- | --- |
+| A0-0 可复现环境 | **P0-0** | 内容不变（`.env.example` 死键清理、启动序列实跑、pytest marker 注册），但提前到 P0：后续每条验收命令都依赖 `-m` 过滤 |
+| A0-1 前端故障 + typecheck 门禁 ✅ | 已完成 `2c3e583` | E1 已通过；作为 P0/P1 的前端基址切换前置 |
+| A0-2 Schema 与时间戳只读核查 | **P0-2 前置子项** | 由"为 A0-4 铺路"改为"为 Go 基线迁移铺路"；产出物不变（`audit_schema.py`、`schema-baseline.json`、`probe_timestamps.py`、`timestamp-audit.md`） |
+| A0-3 鉴权与运行安全 ✅ | 已完成 `d8f1563` | E6/E7/E8 已通过；现状语义成为 **P0-6 Go 侧认证的行为基线**（Go 必须复刻 token 分型、DB 角色为准、fail-fast 密钥校验） |
+| A0-4 Chunk 可信化 | **P2-1** | **两处改动**：① 建表从"Python 侧 alembic"改为 **Go 侧 `server/migrations/` 纯 SQL**（Q4/L3）；② 不再是 P0/P1 的前置阻塞。ORM 与链路改造清单（本文 §1 A0-4 的 ①–⑦）继续作为实施细节来源 |
+| A0-5 公式索引接通 | **P2-2** | 不变，但依赖关系改为依赖 P2-1 的 chunk 真相层；`formula_index_entries` DDL 同样出自 `server/migrations/` |
+| A0-6 真实链路测试与科研回归集 | **拆三块**：端到端 E2E 骨架 → **P1-6**；chunk/公式链路用例 → **P2-3**；10–15 题固定回归集 → **P2-4** | 原则①要求 P1 就拿出端到端证据，测试不能排在被测对象之后 |
+| A0-7 文档与状态修正 | **持续项** | README 三档口径第一轮已在 `6221147` 完成；每阶段收口时复核一次（`08` §4 第 5 条） |
+
+本文的 E1–E10 判据仍然有效，只是**归属阶段变了**：E1/E6/E7/E8/E9 已完成；E2/E3 属 P1；E4/E5 属 P2；E10 为持续项。
+
+## 5. 历史遗留（改版前记录，保留原文以便追溯）
+
+- §0.1 的状态记录截至 2026-10-09：E1/E6/E7/E8/E9 通过，E10 待人工复核，E2–E5 未开始。
+- E6/E7/E8 的判定命令带 `-m unit|integration`，依赖 P0-0 的 marker 注册；在此之前可用
+  `uv run pytest -k "init_db or token_type or rate_limit"` 复现同一批用例。
+- 用 `create_all` 建出、无 `alembic_version` 的存量库在 `d8f1563` 之后**拒绝启动**，需人工补基准版本；
+  该项并入 P0-2 的核查清单。

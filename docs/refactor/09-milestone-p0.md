@@ -1,0 +1,166 @@
+# 09 — P0 任务清单：架构骨架与契约（文件级）
+
+> **性质**：待你确认的实施计划。按 `08` §1 原则③，本文件获得确认后才动代码。
+> **目标**：搭起目标架构的骨架与契约，并跑通**第一条垂直切片**（浏览器 → Go 注册/登录/me）。
+> **不写业务功能迁移**（那是 P1），**不碰 chunk 可信化**（那是 P2）。
+> 基线：`main @ 6221147`（前端与鉴权安全修复已在 `2c3e583` / `d8f1563` 落地）。
+> 规模：solo 15–20h/周，P0 约 2–2.5 周（W1–W2）。每张卡一个独立提交，前缀 `feat(p0):` / `test(p0):` / `docs(p0):`。
+
+## 0. 退出标准（全部可机检；当前状态一律 `not_run`）
+
+| # | 标准 | 判定命令（仓库根执行，除非注明） | 期望输出 | 等级 |
+| --- | --- | --- | --- | --- |
+| X1 | 骨架能起来 | `docker compose up -d` 后 `curl http://localhost/api/v1/health` 与 `/api/v1/ready` | 两条均 200；`compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running | real |
+| X2 | Go 是唯一公开入口 | `docker compose exec nginx grep -R "proxy_pass" /etc/nginx/conf.d/`（或读 `nginx/nginx.conf`）+ 浏览器 Network 面板核对 | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location | e2e |
+| X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`；`ai-execution.schema.json` 被 Go/Python 两侧引用；错误码表每码有 `retryable` 与 HTTP 映射 | mock |
+| X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
+| X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
+| X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
+| X7 | 测试分层可用 | `uv run pytest -m unit -q` / `-m integration` / `-m chain` | 三条命令都能选中对应用例且无 `PytestUnknownMarkWarning`（marker 已在 `pyproject.toml` 注册） | mock |
+| X8 | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
+
+## 1. 任务卡
+
+### P0-0 统一命令入口与可复现环境（吸收旧 A0-0）
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`d8f1563` 后缺失即拒绝启动） |
+| 输出 | `scripts/dev.py`（新，跨平台统一入口：`up/down/logs/migrate/test/seed`）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `AICORE_INTERNAL_TOKEN`、`JWT_SECRET_KEY`、`APP_ENV`）、`.gitattributes`（新，`* text=auto eol=lf`）、`docs/refactor/p0-environment.md`（新，从零启动序列） |
+| 依赖 | 无 |
+| 验收 | X7；按 `p0-environment.md` 从空仓库到 `/health` 200 全程可复制执行 |
+| 等级 | real（启动序列必须**实跑**，不是照抄文档） |
+| 规模/风险 | S–M / 需要 Docker Desktop；Windows 上 bind mount 权限与换行是第一坑，故 `.gitattributes` 必进本卡 |
+
+### P0-1 Go 服务骨架
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | P0-0；`02` §1 目录律、`02` §2 进程表、`01` §6 兼容语义 |
+| 输出 | `server/go.mod`、`server/cmd/api/main.go`、`server/cmd/worker/main.go`（先只起健康检查与空循环）、`server/internal/httpapi/{router.go,middleware.go,envelope.go}`、`server/internal/observability/{logging.go,trace.go}`、`server/internal/config/config.go`、`server/Dockerfile`。行为：Chi 路由 + `log/slog` JSON + `trace_id` 注入 + `{"detail": ...}` 错误信封 + `/api/v1/health`、`/api/v1/ready`（PG ping） |
+| 依赖 | P0-0 |
+| 验收 | X1；`cd server && go vet ./... && go test ./...` 绿 |
+| 等级 | mock（单测）+ real（compose 起服务后 `/ready` 200） |
+| 规模/风险 | M / `/ready` 若沿用 Python 侧三依赖探活语义（PG/Redis/Milvus）需与 `01` #2 一致，别让前端或监控脚本发现语义漂移 |
+
+### P0-2 Schema 基线与非破坏性收编（吸收旧 A0-2 的只读核查）
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | 存量 PG 库（可能无 `alembic_version`）；`05` §1/§2/§4 |
+| 输出 | `scripts/audit_schema.py`（新，只读：表集合、时间列语义、有无 `alembic_version`）+ `docs/refactor/schema-baseline.json`、`scripts/probe_timestamps.py` + `docs/refactor/timestamp-audit.md`、`server/migrations/000001_baseline.up.sql`/`.down.sql`（把**现有**结构登记为基线，纯 `CREATE TABLE IF NOT EXISTS` 或 `-- 已存在，仅登记`，禁止 DROP）、`server/migrations/README.md`（后续 schema 唯一来源） |
+| 依赖 | P0-0（需容器） |
+| 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
+| 等级 | real |
+| 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`d8f1563` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
+
+### P0-3 Go 数据访问层
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | P0-2 基线；`users` 表结构 |
+| 输出 | `server/sql/queries/*.sql` + `server/sqlc.yaml` + 生成的 `server/internal/db/*`、pgx pool 初始化、`Makefile` 或 `scripts/dev.py gen` 保证 `sqlc generate` 可复现 |
+| 依赖 | P0-2 |
+| 验收 | `cd server && sqlc generate && git diff --exit-code`（生成物无漂移）+ `go test ./internal/db/...` |
+| 等级 | mock |
+| 规模/风险 | S / 生成物是否入库需决策：建议**入库**（CI 不装 sqlc 也能构建），以 `--check` 式 diff 保一致性 |
+
+### P0-4 契约目录（含 429 信封定案）
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | `01` §3 的 25 条对外契约表与"前端实际依赖 13 条"、`02` §3 端点与请求体 |
+| 输出 | `contracts/openapi.yaml`（Go 对浏览器：13 条在用 + `health/ready/metrics`）、`contracts/ai-execution.schema.json`（`execute`/`executions` 请求响应）、`contracts/error-codes.md`（9 个内部码 + `retryable` + HTTP 映射）、`contracts/table-acl.md`（`02` §6.2 表级写入矩阵的可校验形式）、`scripts/check_contracts.py`（新，结构校验：引用完整、路径与前端实调集合一致） |
+| 依赖 | P0-1（骨架形状） |
+| 验收 | X3；并**在本卡内定案** 429 用 `{"detail": ...}` 还是保持现实现（决策影响 `useChat.ts`/`AuthPanel`），结论写进 `openapi.yaml` 与本文件 §3 |
+| 等级 | mock |
+| 规模/风险 | M / 契约先于实现锁定，否则 P1 会变成"边写边改架构"（违反原则③） |
+
+### P0-5 跨语言契约测试骨架
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | P0-4 契约 |
+| 输出 | `tests/contract/test_go_vs_python.py`（新）：同一请求分别打 Python 现实现与 Go 骨架，比对错误信封形状、`/health` `/ready` 字段、JWT claims 集合；`tests/conftest.py` 增加 `chain` 级 fixture（compose 起服务、随机端口、函数级隔离，**不 mock**） |
+| 依赖 | P0-1、P0-4 |
+| 验收 | `uv run pytest -m chain -k contract` 绿（此时允许 Go 侧只有 health/auth 端点，其余以"未实现即跳过"的显式白名单标注，不伪装通过） |
+| 等级 | real |
+| 规模/风险 | M / 用例必须断言**结构与字段**，不断言业务文本 |
+
+### P0-6 认证垂直切片（P0 的唯一业务切片）
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | `backend/core/auth.py` 现状语义（`d8f1563`）：token `type` 分型、角色以 DB 为准、`ADMIN_INVITE_CODE` 未配置则禁 admin 注册、`JWT_SECRET_KEY` 无默认值；P0-3 数据层 |
+| 输出 | `server/internal/auth/{jwt.go,password.go,handler.go,service.go}`、`scripts/export_pbkdf2_golden.py`（新，从真实库导出 N 条哈希做 golden vectors，**不含密码与盐明文**）、`server/migrations/000002_auth_compat.*.sql`（仅在需要补列时） |
+| 依赖 | P0-3、P0-4 |
+| 验收 | X4、X5；`cd frontend && npm run typecheck` 仍 0 error（Go 侧响应形状与前端一致） |
+| 等级 | real（Python↔Go 互验 token 必须真实跑） |
+| 规模/风险 | L / 最高风险是 PBKDF2 编码差异（标准 vs urlsafe b64、盐长度、迭代数）。**Go 接管 `users` 的前置条件就是 X5 全绿**，未过则切片停在"只签发不接管"状态 |
+
+### P0-7 ai-core 内部执行面
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | `02` §3 端点与请求体、§3.4 幂等/取消/超时/租约语义、`backend/services/agent_runner.py` 等现有可复用能力 |
+| 输出 | `backend/internal_api/{router.py,schemas.py,registry.py,executions.py}`（新：`/internal/v1/ai/execute`、`POST /executions`、`GET /executions/{id}`、`GET /executions/{id}/result`、`POST /executions/{id}/cancel`、`healthz/readyz`）、`task_type` 注册表（P0 只接 `PARSE_PAPER`、`INDEX_PAPER` 两种，内部调用现有 `document_loader`/`milvus_writer`）、`AICORE_INTERNAL_TOKEN` 校验中间件、`ai_executions` 表迁移（出自 `server/migrations/`，Python 侧只读写自己那张表）、compose 中 `ai-core` **不发布宿主端口** |
+| 依赖 | P0-4 |
+| 验收 | `uv run pytest -m chain -k ai_executions`：提交→轮询→领取结果，重复 `task_id` 不重跑模型（幂等），`cancel` 后过期结果被丢弃；`GET /internal/v1/ai/healthz` 无 token 时 401 |
+| 等级 | real |
+| 规模/风险 | L / `PARSE_PAPER` 若走真实 LLM/embedding 需密钥；无密钥时以固定小 PDF + 本地 embedding 的降级路径验结构，并在 `progress.json` 标 `needs_secret: true` 与未验段落 |
+
+### P0-8 compose 与跨环境实跑
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | P0-1、P0-6、P0-7 |
+| 输出 | `docker-compose.yml`（新增 `go-api`/`go-worker`/`ai-core` 服务；`backend` 服务改为 `ai-core` 角色并去掉宿主端口）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `d8f1563` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为含 Go 的完整序列 |
+| 依赖 | P0-1、P0-6、P0-7 |
+| 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据） |
+| 等级 | real |
+| 规模/风险 | M / 切换 upstream 是 P0 里唯一会影响现网可用性的动作：保留"一条配置回退到 Python"的回滚路径（`04` §5），且必须在切换前后各跑一次 X2 与前端手测 |
+
+### P0-9 P0 端到端演示与退出复核
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | 上述全部 |
+| 输出 | `tests/e2e/p0-auth.spec.ts`（Playwright，新）+ `frontend/package.json` 的 `test:e2e` 脚本、`docs/refactor/p0-demo.md`（§2 的 30 秒演示脚本）、`docs/progress.json` 里 X1–X8 的状态与证据等级收口 |
+| 依赖 | P0-8 |
+| 验收 | X2、X8 + `cd frontend && npm run test:e2e` 在 Go 后端全绿；`uv run pytest -q` 原 307 项保持绿 |
+| 等级 | e2e |
+| 规模/风险 | M | 
+
+## 2. 依赖顺序与里程碑
+
+```
+P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
+  │      └→ P0-2 ─→ P0-3 ─→ P0-6 ─┐
+  └─────────────────→ P0-7 ───────┴→ P0-8 ─→ P0-9
+```
+
+| 里程碑 | 覆盖卡 | 到达时的可演示状态 |
+| --- | --- | --- |
+| M0.0 骨架可运行 | P0-0、P0-1 | `compose up` 后 Go 的 `/api/v1/health` 与 `/ready` 返回 200 |
+| M0.1 契约锁定 | P0-4、P0-5 | `check_contracts.py` 绿；跨语言契约测试跑在真实容器上 |
+| M0.2 数据基线 | P0-2、P0-3 | 基线迁移在空库与存量库上都幂等；`sqlc generate` 无 diff |
+| M0.3 第一条垂直切片 | P0-6 | 浏览器经 Go 完成注册/登录/me；旧密码哈希可被 Go 验证 |
+| M0.4 P0 收口 | P0-7、P0-8、P0-9 | X1–X8 全绿；`ai-core` 只内网可达；Playwright 演示通过 |
+
+可独立提交的顺序：**P0-0 → P0-1 → P0-4 → P0-2 → P0-3 → P0-5 → P0-6 → P0-7 → P0-8 → P0-9**。
+（P0-4 提前到 P0-2 之前：契约先于数据层，避免 P1 期间改契约。）
+
+## 3. 需要你在开工前拍板的三个决策
+
+| # | 决策 | 我的建议 |
+| --- | --- | --- |
+| K1 | 429 错误信封：统一到 `{"detail": ...}` 还是保留现实现的 `{"error": ...}` | **统一为 `detail`**，同时改前端两处错误处理（`useChat.ts`、`AuthPanel`）。理由：契约只有一种形状，P1 的跨语言测试不必带例外 |
+| K2 | `sqlc` 生成物是否入库 | **入库**。CI 不必装 sqlc，`--check` 式 diff 保证一致性 |
+| K3 | P0-8 切 nginx upstream 的时机 | **放在 P0-8 末、P0-9 之前**，且切前完成 P0-6 的 X5。理由：只有认证切片可用才谈得上"Go 是唯一入口"，否则 X2 无法演示 |
+
+## 4. P0 明确不做
+
+不迁移 13 条业务接口中的其余 12 条（属 P1）· 不做 chunk 可信化与 `paper_chunks`（属 P2）·
+不做 Frontier/ResearchRun/ResearchTask（属 P3）· 不动 `upload_jobs.py`（P1 由 Go 编排取代）·
+不做 `git mv backend → ai-core`（决策 Q2 + `08` §5）· 不改前端框架 · 不改 `backend/rag/*` 的算法实现 ·
+不把 `≥95%/≥90%` 设成门禁（决策 Q8）。
