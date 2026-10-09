@@ -20,6 +20,9 @@
 
 进度与日程：[../progress.json](../progress.json)（唯一真相）→ [../PROGRESS.md](../PROGRESS.md) / [../progress.html](../progress.html)（生成物，双击可开）。
 
+契约目录：[../../contracts/](../../contracts/)（`openapi.yaml` 对浏览器 · `ai-execution.schema.json` Go↔Python · `error-codes.md` · `table-acl.md`），
+由 `uv run python scripts/check_contracts.py` 机检并进 CI；改契约不改文档，改这里。
+
 ## 阅读顺序
 
 - **评审决策**：`08 → 00 → 03 → 02 → 04`

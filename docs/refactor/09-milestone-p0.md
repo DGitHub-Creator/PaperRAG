@@ -12,7 +12,7 @@
 | --- | --- | --- | --- | --- |
 | X1 | 骨架能起来 | `docker compose up -d` 后 `curl http://localhost/api/v1/health` 与 `/api/v1/ready` | 两条均 200；`compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running | real |
 | X2 | Go 是唯一公开入口 | `docker compose exec nginx grep -R "proxy_pass" /etc/nginx/conf.d/`（或读 `nginx/nginx.conf`）+ 浏览器 Network 面板核对 | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location | e2e |
-| X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`；`ai-execution.schema.json` 被 Go/Python 两侧引用；错误码表每码有 `retryable` 与 HTTP 映射 | mock |
+| X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K2/K3 仍未决，见 §3 | mock |
 | X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
 | X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
 | X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
@@ -77,6 +77,7 @@
 | 验收 | X3；并**在本卡内定案** 429 用 `{"detail": ...}` 还是保持现实现（决策影响 `useChat.ts`/`AuthPanel`），结论写进 `openapi.yaml` 与本文件 §3 |
 | 等级 | mock |
 | 规模/风险 | M / 契约先于实现锁定，否则 P1 会变成"边写边改架构"（违反原则③） |
+| 当前状态 | 2026-10-09：五件产物齐（`contracts/{openapi.yaml,ai-execution.schema.json,error-codes.md,table-acl.md}` + `scripts/check_contracts.py`），X3 本机 pass 且每条规则都有负向用例。契约按 **As-Is** 记录 429 的 `{"error": ...}` 并在 `info.x-pending-decisions` 里挂着 K1，**未擅自统一信封**（那是你的决策，不是我的）。抽取器现场数出前端实调恰为 13 条，与 `01` §3 口径一致；顺带查实 `01` #20 的出处行号已漂（文档写 `:207`，实为 `useDocuments.ts:192`）、#13 WS 已从 `useChat.ts` 移入 `useWebSocket.ts` |
 
 ### P0-5 跨语言契约测试骨架
 
@@ -152,13 +153,14 @@ P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
 可独立提交的顺序：**P0-0 → P0-1 → P0-4 → P0-2 → P0-3 → P0-5 → P0-6 → P0-7 → P0-8 → P0-9**。
 （P0-4 提前到 P0-2 之前：契约先于数据层，避免 P1 期间改契约。）
 
-## 3. 需要你在开工前拍板的三个决策
+## 3. 需要你在开工前拍板的决策
 
 | # | 决策 | 我的建议 |
 | --- | --- | --- |
-| K1 | 429 错误信封：统一到 `{"detail": ...}` 还是保留现实现的 `{"error": ...}` | **统一为 `detail`**，同时改前端两处错误处理（`useChat.ts`、`AuthPanel`）。理由：契约只有一种形状，P1 的跨语言测试不必带例外 |
+| K1 | 429 错误信封：统一到 `{"detail": ...}` 还是保留现实现的 `{"error": ...}` | **统一为 `detail`**。**2026-10-09 更正**：先前说"要改前端两处"是推测，现场核查后是**零改动**——全仓前端不读 `.error` 响应字段、不按 429 分支（`api.ts:19` 只特判 401，`useAuth.ts:40/51` 只读 `data.detail`）。所以统一信封只是后端一处 handler + 契约一行，比我原先报的更便宜 |
 | K2 | `sqlc` 生成物是否入库 | **入库**。CI 不必装 sqlc，`--check` 式 diff 保证一致性 |
 | K3 | P0-8 切 nginx upstream 的时机 | **放在 P0-8 末、P0-9 之前**，且切前完成 P0-6 的 X5。理由：只有认证切片可用才谈得上"Go 是唯一入口"，否则 X2 无法演示 |
+| K4 | 422 校验失败：Go 复刻 FastAPI 的 `{"detail": [ {loc,msg,type} ]}` 数组，还是降级为 400 + 字符串 `detail` | **降级为 400 + 字符串**。理由：chi 不会天然产生那个数组，为复刻它而写一套校验错误格式化器，正是原则④禁止的无关工作量；前端从不按 422 分支。**必须在 P0-6 之前定**，否则跨语言契约测试无法断言"校验失败"这一类用例 |
 
 ## 4. P0 明确不做
 

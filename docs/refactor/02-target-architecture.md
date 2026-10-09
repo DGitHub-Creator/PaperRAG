@@ -193,7 +193,10 @@ Run 级 `max_papers / max_fulltext_reads / max_planning_rounds / max_expansion_d
 | `knowledge_*` `exploration_*` `evidence_links` `research_claims` `report_*` | ● | ✗ | Python 只交候选（计划 §7.4） |
 | `ai_executions` | ○(只读状态) | ● | Python 独占 |
 
-○=只读，●=独占写，✗=禁止访问。矩阵由 `contracts/` 里的表权限清单在 CI 校验（Go 侧对 Python 只授予 `SELECT` + `ai_executions` 的 DML）。
+○=只读，●=独占写，✗=禁止访问。矩阵的机器可读版本是 [`../../contracts/table-acl.md`](../../contracts/table-acl.md)，
+由 `uv run python scripts/check_contracts.py` 在 CI 校验（规则：无双 W、`ai_executions` 必须 Python 独占、
+`research_*` 的 Python 侧必须 ✗、Python 可写表 ≤2 张）；两者冲突时以 `table-acl.md` 为准并回改本表。
+落实方式：Go 侧对 Python 只授予 `SELECT` + `ai_executions` 的 DML。
 
 ## 7. 前端与交付面
 

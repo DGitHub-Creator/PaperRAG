@@ -62,14 +62,14 @@ flowchart LR
 | 10 | DELETE | `/sessions/{id}` | Bearer | **✓** `:43` | PG 级联+Redis | `sessions.py:54` |
 | 11 | POST | `/chat` | Bearer | ✗ | LLM/Milvus/PG/Redis | `chat.py:20` |
 | 12 | POST | `/chat/stream` | Bearer | **✓** `useChat.ts:116` | 同上 | `chat.py:53` |
-| 13 | WS | `/ws/chat?token=` | query token | **✓** `useChat.ts:167` | 同上 | `ws.py:54` |
+| 13 | WS | `/ws/chat?token=` | query token | **✓** `useWebSocket.ts:14` | 同上 | `ws.py:54` |
 | 14 | GET | `/documents` | admin | **✓** `useDocuments.ts:84` | Milvus `limit=10000` | `documents.py:384` |
 | 15 | POST | `/documents/upload/async` | admin | **✓**（URL 缺前缀，坏的）`:143` | 磁盘+Milvus+PG+BM25 | `documents.py:410` |
 | 16 | GET | `/documents/upload/jobs/{id}` | admin | **✓** `:116` | job store | `documents.py:453` |
 | 17 | GET | `/documents/upload/jobs` | admin | ✗ | job store | `documents.py:461` |
 | 18 | POST | `/documents/upload`（同步） | admin | ✗ | 同 15 | `documents.py:468` |
 | 19 | DELETE | `/documents/delete/async/{filename}` | admin | **✓** `:226` | job store | `documents.py:543` |
-| 20 | GET | `/documents/delete/jobs/{id}` | admin | **✓** `:207` | job store | `documents.py:567` |
+| 20 | GET | `/documents/delete/jobs/{id}` | admin | **✓** `:192` | job store | `documents.py:567` |
 | 21 | DELETE | `/documents/{filename}`（同步） | admin | ✗ | Milvus+PG+BM25+`ingested.json` | `documents.py:575` |
 | 22 | POST | `/documents/ingest` | admin | ✗ | 目录扫描（仅 `*.pdf`） | `documents.py:599` |
 | 23 | POST | `/cache/clear` | admin | ✗ | **仅进程内 SemanticCache** | `cache.py:15` |
@@ -77,6 +77,9 @@ flowchart LR
 | 25 | DELETE | `/stats/usage` | admin | ✗ | 进程内存 | `stats.py:20` |
 
 **前端实际依赖 = 13 条**（#4、5、6、8、9、10、12、13、14、15、16、19、20）。其余 12 条无人调用 → 处置见 03-gap-analysis §5。
+
+> 13 条 = 12 个 REST 操作 + 1 条 WS。**2026-10-09 复核**：`scripts/check_contracts.py` 从 `frontend/src`
+> 现场抽取调用点，得到的集合与本表完全一致（不是照抄本表）；同时纠正了 #13、#20 两处的调用点行号。
 
 ## 4. 流式事件契约
 
