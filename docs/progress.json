@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "FE-1 前端结构重构 done（api/ 七件取代 services/api.ts，六个 composable 统一模块单例，check_frontend.py 机器执行 R1–R11 且每条规则都有负向用例；typecheck/build/契约三门禁全绿。浏览器级回归 FE-f 本机无 Docker/PG/LLM key，不冒充通过，如实留到 P0-9 的 X7）。P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
+  "current": "P0-7 ai-core 内部执行面推到 mock 级上限（`backend/internal_api/` 七件 + 29 条 HTTP 级用例）：§3.4 的三条语义都落在可断言的地方——幂等用「假 loader 调用次数恒为 1」证明，取消后过期结果被丢弃，过期 deadline 不起跑但仍写 usage；错误体是 `{\"detail\", \"errors[]}`，detail 保住全仓一种信封，errors[].code 让 Go 不解析文本就能区分同为 400/409 的不同原因，码表与契约逐码比对。P0-7 距 done 只差真实环境那两件：`ai_executions` 迁移（阻塞于 P0-2 的真库基线）与 compose 里 ai-core 不发布宿主端口（属 P0-8）。FE-1 前端结构重构 done（api/ 七件取代 services/api.ts，六个 composable 统一模块单例，check_frontend.py 机器执行 R1–R11 且每条规则都有负向用例）；P0-4 契约目录 done；P0-2/P0-3 同日停在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录，当前 sqlc 用的是 `server/sql/schema.sql` 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -234,15 +234,15 @@
         {
           "id": "P0-7",
           "title": "ai-core 内部执行面（/internal/v1/ai/execute + executions 异步 + task_type 注册表 + 内部令牌 + ai_executions 表）",
-          "status": "pending",
-          "evidence": "none",
+          "status": "in_progress",
+          "evidence": "mock",
           "requires": "real",
           "hours": 14,
           "deps": [
             "P0-4"
           ],
           "verify": "uv run pytest -m chain -k ai_executions",
-          "note": "P0 只接 PARSE_PAPER / INDEX_PAPER；无 LLM 密钥时走固定小 PDF 的降级路径并标注未验段落",
+          "note": "2026-10-09 推到本机 mock 级上限：`backend/internal_api/` 七件（router/schemas/registry/executions/codes/auth/__init__）挂上 7 条 `/internal/v1/ai` 路径；29 条 HTTP 级用例覆盖鉴权 401（含 healthz）、幂等重放不重跑 handler、取消后结果被丢弃、过期 deadline 不起跑但仍写 usage、目录穿越被夹在 UPLOAD_DIR 内、未注册类型 400 `UNSUPPORTED_TASK_TYPE`、多余字段 400（K4 只有字符串 detail）；另有 3 条机检把实现钉回契约（`x-endpoints` 的 7 条与真实注册路径一一对应、注册类型集合等于 `x-p0-registered-task-types`、`/internal/` 不出现在 openapi.yaml——内部面不被 `check_contracts.py` 看见，这三条是它唯一的门禁）；store 另有 6 项单测，码表由 2 项用例与 `contracts/error-codes.md` §1 + schema 的 `ErrorCode` 三方逐码比对。全仓 444 项 pytest 与 ruff 绿。**未 done 的两件事都要真环境**：`ai_executions` 迁移出自 `server/migrations/`（P0-2 必须先由实际库结构抄基线，禁止由 ORM 生成），compose 里「ai-core 不发布宿主端口」是 P0-8 的文件改动；因此 `uv run pytest -m chain -k ai_executions` 本机收集 0 项，如实 not_run。`BUDGET_EXCEEDED` 目前只存在于码表与契约，真正拦截随 P1 的 LLM 任务类型落地。",
           "needs_secret": true
         },
         {
