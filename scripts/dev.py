@@ -107,6 +107,17 @@ def cmd_doctor(_: argparse.Namespace) -> int:
             print("[ok] docker daemon 可用")
         else:
             problems.append("docker CLI 在 PATH 里，但 daemon 没在跑（Docker Desktop 未启动？）")
+
+    # compose 静态校验不需要 daemon：插值、字段拼写、端口形状在这里就能判。
+    # 分开报的目的是让"compose 写错了"和"环境没起来"成为两个不同的失败原因，
+    # 否则 daemon 没起时 up 只丢一句连不上，人要猜是哪种。
+    if COMPOSE_FILE.exists() and (_exec_ok(["docker", "compose", "version"]) or shutil.which("docker-compose")):
+        proc = subprocess.run(compose_cmd() + ["config", "--quiet"], cwd=str(ROOT), capture_output=True, text=True)
+        detail = (proc.stderr or proc.stdout).strip()
+        if proc.returncode == 0:
+            print("[ok] docker-compose.yml 静态校验通过（compose config，不依赖 daemon）")
+        else:
+            problems.append(f"docker-compose.yml 静态校验失败：{detail.splitlines()[0] if detail else '无输出'}")
     else:
         problems.append("未找到 docker CLI → 安装 Docker Desktop 后重跑 doctor")
 

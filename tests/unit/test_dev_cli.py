@@ -70,6 +70,28 @@ class TestEnvFileParsing:
             assert dev.cmd_doctor(None) == 1
             assert "JWT_SECRET_KEY" in capsys.readouterr().out
 
+    def test_doctor_reports_broken_compose_separately_from_a_stopped_daemon(self, tmp_path, monkeypatch, capsys):
+        """daemon 没起与 compose 写坏必须是两个可见的失败原因。
+
+        合成一样红的环境，实际坏的是另一样，比全不报更糟：人会先去找没启动的 Docker Desktop。
+        """
+        monkeypatch.setattr(dev.shutil, "which", lambda name: "/usr/bin/docker")
+        monkeypatch.setattr(dev, "_exec_ok", lambda cmd: cmd[:2] == ["docker", "compose"])  # compose 子命令在，daemon 不在
+        broken = tmp_path / "docker-compose.yml"
+        broken.write_text("services:\n  a:\n    image: x\n    ports: [8000, 8000]\n", encoding="utf-8")
+        monkeypatch.setattr(dev, "COMPOSE_FILE", broken)
+
+        class _Proc:
+            returncode = 1
+            stdout = ""
+            stderr = "services.a.ports Expected a string or a list of strings"
+
+        monkeypatch.setattr(dev.subprocess, "run", lambda *a, **k: _Proc())
+        capsys.readouterr()
+        assert dev.cmd_doctor(None) == 1
+        out = capsys.readouterr().out
+        assert "静态校验失败" in out and "daemon 没在跑" in out
+
 
 class TestGen:
     """`gen` 是 K2（生成物入库）的执行面，值得单独钉住三条。"""
