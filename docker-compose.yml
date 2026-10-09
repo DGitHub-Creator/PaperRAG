@@ -104,6 +104,9 @@ services:
       - MILVUS_HOST=standalone
       - MILVUS_PORT=19530
       - HF_HOME=/app/models
+      # JWT_SECRET_KEY 已无内置默认值，缺失即拒绝启动。此处仅给本地开发栈一个
+      # 可用值；生产用 docker-compose.prod.yml + .env.production，或在此注入真实密钥。
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-only-insecure-jwt-secret}
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/models:/app/models
       - ${DOCKER_VOLUME_DIRECTORY:-.}/data:/app/data

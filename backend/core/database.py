@@ -6,7 +6,7 @@
   - 提供 SessionLocal 会话工厂供 FastAPI 依赖注入使用
   - 提供 get_db 生成器函数（FastAPI Depends 标准用法）
   - 声明 Base（declarative_base），所有 ORM 模型统一继承
-  - 提供 init_db() 一键建表函数
+  - 提供 init_db()：只走 Alembic 迁移，失败即抛错（不再静默 create_all）
 
 所有配置值统一从 backend.core.config 导入。
 日志通过 backend.core.logging_config.get_logger 获取标准化 logger。
@@ -19,7 +19,7 @@
     def list_items(db: Session = Depends(get_db)):
         ...
 
-    # 应用启动时建表
+    # 应用启动时执行迁移
     init_db()
 """
 
@@ -84,38 +84,42 @@ def get_db():
 
 
 def init_db() -> None:
-    """Initialize database via Alembic migrations, falling back to create_all.
+    """Run Alembic migrations to head. Never falls back to create_all.
 
-    1. Try running `alembic upgrade head` to apply all pending migrations.
-    2. If that fails (no alembic setup, no DB connection, etc.), fall back to
-       `Base.metadata.create_all` for development/backward compatibility.
+    历史实现在 alembic 缺失或执行失败时回退 ``Base.metadata.create_all``，
+    结果是表被静默建出来、库里却没有 `alembic_version` 行，之后的迁移无法
+    安全叠加，schema 真实状态与迁移脚本从此分叉。这里改为直接抛错：
+    迁移跑不起来就拒绝启动，并把 alembic 的输出带进异常信息供排查。
 
-    This function should be called once at application startup.
+    Raises:
+        RuntimeError: alembic.ini 不存在、迁移命令失败或超时。
     """
     import subprocess
     import sys
     from pathlib import Path
 
     alembic_ini = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
-    if alembic_ini.exists():
-        logger.info("alembic.ini found — attempting alembic upgrade head")
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "alembic", "upgrade", "head"],
-                cwd=str(alembic_ini.parent),
-                capture_output=True, text=True, timeout=60,
-            )
-            if result.returncode == 0:
-                logger.info("Alembic migration applied successfully")
-                return
-            logger.warning(f"Alembic upgrade failed (rc={result.returncode}): {result.stderr.strip()}")
-        except Exception as e:
-            logger.warning(f"Alembic upgrade exception: {e}")
-    else:
-        logger.info("alembic.ini not found — using Base.metadata.create_all")
+    if not alembic_ini.exists():
+        raise RuntimeError(
+            f"未找到 {alembic_ini}，无法通过 Alembic 初始化数据库；"
+            "已拒绝以 create_all 静默建表（会产生没有版本记录的库）"
+        )
 
-    import backend.core.models as _models  # noqa: F401
+    logger.info("alembic.ini found — running alembic upgrade head")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=str(alembic_ini.parent),
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("alembic upgrade head 超时（60s），数据库或迁移脚本疑似阻塞") from e
 
-    logger.info("Falling back to Base.metadata.create_all")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created/verified")
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"alembic upgrade head 失败 (rc={result.returncode})\n"
+            f"--- stdout ---\n{result.stdout.strip()}\n"
+            f"--- stderr ---\n{result.stderr.strip()}"
+        )
+
+    logger.info("Alembic migration applied successfully")

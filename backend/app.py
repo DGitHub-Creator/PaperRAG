@@ -24,7 +24,6 @@ from backend.api.sessions import router as sessions_router
 from backend.api.ws import router as ws_router
 from backend.core.config import (
     ALLOWED_ORIGINS,
-    RATE_LIMIT,
     ensure_runtime_directories,
     validate_config,
     validate_runtime_security,
@@ -33,7 +32,7 @@ from backend.core.database import init_db
 from backend.core.exceptions import PaperRAGError, paper_rag_error_handler, unhandled_error_handler
 from backend.core.logging_config import setup_root_logger
 from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
-from backend.core.rate_limit import limiter
+from backend.core.rate_limit import default_limits, key_source, limiter, storage_backend
 from backend.core.stats import record_request
 
 # ── 初始化日志系统 ──────────────────────────────────────────────────
@@ -64,10 +63,20 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
-    if RATE_LIMIT:
-        logger.info("全局速率限制已启用: %s", RATE_LIMIT)
+    # 日志取自构造 limiter 时真正用到的量，避免"日志说开了、其实没配"
+    if default_limits:
+        logger.info(
+            "全局限流已启用: %s（存储=%s，计数键=%s）",
+            ", ".join(default_limits),
+            storage_backend,
+            key_source,
+        )
     else:
-        logger.warning("速率限制已禁用（RATE_LIMIT 未设置）")
+        logger.warning(
+            "全局限流未启用（RATE_LIMIT 为空），仅路由级 @limiter.limit 生效（存储=%s，计数键=%s）",
+            storage_backend,
+            key_source,
+        )
 
     # ── 统一异常处理 ─────────────────────────────────────────────
     app.add_exception_handler(PaperRAGError, paper_rag_error_handler)
@@ -76,9 +85,8 @@ def create_app() -> FastAPI:
     # ── 启动事件: 数据库初始化 ──────────────────────────────────
     @app.on_event("startup")
     async def _startup_init_db():
-        """应用启动时自动建表（如不存在）。"""
-        from dotenv import load_dotenv
-        load_dotenv()
+        """应用启动时执行数据库迁移与配置校验。"""
+        # .env 已在 backend.core.config 导入期载入，此处无需重复加载
         logger.info("正在初始化数据库...")
         ensure_runtime_directories()
         validate_config()

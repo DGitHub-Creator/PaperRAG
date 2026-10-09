@@ -1,8 +1,7 @@
-"""WebSocket 端点 —— 流式对话与上传进度推送。
+"""WebSocket 端点 —— 流式对话。
 
-本模块提供两个 WebSocket 路由：
-  - /ws/chat:      流式对话（替代 SSE /api/chat/stream）
-  - /ws/upload/{job_id}: 上传任务进度推送
+本模块提供的 WebSocket 路由：
+  - /api/v1/ws/chat: 流式对话（替代 SSE /api/v1/chat/stream）
 
 认证通过 URL 查询参数 ?token=<JWT> 完成，
 因为 WebSocket 协议不支持自定义 HTTP 请求头。
@@ -13,10 +12,11 @@ import time
 from collections import defaultdict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from jose import JWTError, jwt
 
-from backend.core.config import JWT_ALGORITHM, JWT_SECRET_KEY
+from backend.core.auth import get_user_from_bearer_token
+from backend.core.database import SessionLocal
 from backend.core.logging_config import get_logger
+from backend.core.models import User
 from backend.services.agent import chat_with_agent_stream
 
 logger = get_logger(__name__)
@@ -27,35 +27,33 @@ _WS_RATE_WINDOW = 60.0
 _ws_msg_counts: dict[str, list[float]] = defaultdict(list)
 
 
-async def get_user_from_ws_token(websocket: WebSocket) -> str | None:
-    """从 WebSocket 查询参数中提取并验证 JWT，返回用户名。
+async def get_user_from_ws_token(websocket: WebSocket) -> User | None:
+    """从 WebSocket 查询参数中的 JWT 认证用户，失败返回 None。
 
-    参数名: token（如 ws://host/ws/chat?token=xxx）
+    参数名: token（如 ws://host/api/v1/ws/chat?token=xxx）
+
+    与 HTTP 侧共用 ``get_user_from_bearer_token``：同样要求令牌类型正确、
+    未过期，并回查数据库确认用户存在；角色以数据库记录为准而非令牌声明。
 
     Returns:
-        用户名，验证失败返回 None。
+        通过认证的 User 实例，认证失败返回 None。
     """
     token = websocket.query_params.get("token")
     if not token:
         logger.warning("WebSocket 未提供 token")
         return None
+    db = SessionLocal()
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        username: str | None = payload.get("sub")
-        if not username:
-            logger.warning("JWT 缺少 sub 字段")
-            return None
-        return username
-    except JWTError:
-        logger.warning("WebSocket JWT 无效或已过期")
-        return None
+        return get_user_from_bearer_token(token, db)
+    finally:
+        db.close()
 
 
 @router.websocket("/ws/chat")
 async def websocket_chat_endpoint(websocket: WebSocket):
     """流式对话 WebSocket 端点。
 
-    认证方式: ws://host/ws/chat?token=<JWT>
+    认证方式: ws://host/api/v1/ws/chat?token=<JWT>
 
     WebSocket 消息格式（客户端 → 服务端）:
         {"message": "用户问题", "session_id": "可选会话ID"}
@@ -67,10 +65,11 @@ async def websocket_chat_endpoint(websocket: WebSocket):
         {"type": "done"}
         {"type": "error", "content": "错误信息"}
     """
-    username = await get_user_from_ws_token(websocket)
-    if not username:
+    user = await get_user_from_ws_token(websocket)
+    if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
+    username = user.username
 
     await websocket.accept()
     logger.info("WebSocket 连接已建立: user=%s", username)

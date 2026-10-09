@@ -1,20 +1,49 @@
 """PaperRAG 集中配置 —— 统一管理所有模块的配置读取。
 
-环境分层：
-  - config/dev.py:  开发环境预设（宽松 CORS、禁用限流、单 worker）
-  - config/prod.py: 生产环境预设（Redis 任务管理、限流、安全校验）
-  - 本模块:         基础配置（所有环境共享）
+环境分层由 ``APP_ENV`` 决定，预设在本模块顶部一次性应用：
+  - development（默认）：不启用全局限流，其余取各子模块的安全默认值。
+  - production：额外把 ``RATE_LIMIT`` 预设为 60/minute。
+所有预设都用 ``setdefault``，显式环境变量始终优先。
 
 用法：
-  1. 直接使用环境变量（推荐）：export LLM_API_KEY=xxx
-  2. 导入环境预设：import backend.core.config.dev 或 import backend.core.config.prod
-  3. 常量从本模块导入：from backend.core.config import LLM_API_KEY
+  1. 直接使用环境变量：export LLM_API_KEY=xxx
+  2. 常量从本模块导入：from backend.core.config import LLM_API_KEY
 
 向后兼容：所有配置常量从子模块重新导出到此命名空间。
-新代码推荐直接从子模块导入（如 from backend.core.config.llm import LLM_API_KEY）。
 """
 
 import logging
+import os
+
+# .env 必须在任何 os.getenv 之前载入：子配置模块都在 import 期读环境变量。
+# 原先 load_dotenv() 挂在 app 的 startup 事件里，那时本模块早已导入完毕，
+# .env 对配置层实际无效（只对进程内后续直接读 os.environ 的代码生效）。
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv 未安装时退回纯环境变量
+
+# APP_ENV 只依赖 os，可先于环境预设导入；其余子模块必须在预设之后导入，
+# 因为它们在 import 期就读取 os.environ。
+from backend.core.config.llm import APP_ENV
+
+
+def env_presets(app_env: str) -> dict[str, str]:
+    """该环境需要补齐的默认环境变量；显式设置的变量始终优先。
+
+    开发环境不启用全局限流（RATE_LIMIT 的代码默认值即为空）。各子模块已有的
+    安全默认值（USE_REDIS_JOB_MANAGER 按 APP_ENV 推导、ENABLE_CACHE/ENABLE_HYDE
+    为 true、MAX_UPLOAD_SIZE_MB 为 100）不在此重复。
+    """
+    if app_env in {"prod", "production"}:
+        return {"RATE_LIMIT": "60/minute"}
+    return {}
+
+
+for _preset_key, _preset_value in env_presets(APP_ENV).items():
+    os.environ.setdefault(_preset_key, _preset_value)
 
 from backend.core.config.paths import (  # noqa: F401
     DATA_DIR,
@@ -97,6 +126,7 @@ from backend.core.config.auth import (  # noqa: F401
     MIN_PASSWORD_LENGTH,
     PASSWORD_PBKDF2_ROUNDS,
     RATE_LIMIT,
+    TRUST_PROXY_HEADERS,
 )
 from backend.core.config.paths import BM25_STATE_PATH  # noqa: F401
 
@@ -131,18 +161,31 @@ def validate_config() -> None:
 
 
 def validate_runtime_security() -> None:
-    """Validate security-sensitive runtime settings."""
+    """Validate security-sensitive runtime settings.
+
+    ``JWT_SECRET_KEY`` 缺失在**所有**环境下都拒绝启动：令牌签名密钥没有安全的
+    兜底值可用（空密钥 python-jose 会静默接受，比可猜测的默认值更危险）。
+    其余项在生产环境拒绝启动，在开发环境只告警。
+    """
+    if not JWT_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY 未配置，拒绝启动。生成一个强随机值后重试: "
+            'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+
     issues = []
     if JWT_SECRET_KEY == "replace-with-strong-random-secret":
         issues.append("JWT_SECRET_KEY is still using the default placeholder")
     if ADMIN_INVITE_CODE == "paperrag-admin-2026":
-        issues.append("ADMIN_INVITE_CODE is still using the default value")
+        issues.append("ADMIN_INVITE_CODE is still using the leaked default value")
     if ALLOWED_ORIGINS == ["*"]:
         issues.append("ALLOWED_ORIGINS allows every origin")
     if is_production() and not USE_REDIS_JOB_MANAGER:
         issues.append("USE_REDIS_JOB_MANAGER should be enabled for production job recovery")
 
     if not issues:
+        if not ADMIN_INVITE_CODE:
+            logger.info("ADMIN_INVITE_CODE 未配置，注册接口不能创建管理员账户")
         return
 
     message = "; ".join(issues)

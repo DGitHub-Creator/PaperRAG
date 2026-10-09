@@ -56,6 +56,11 @@ logger = get_logger(__name__)
 # tokenUrl 对应前端登录接口 POST /auth/login
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
+# 令牌用途声明（payload 的 type 字段）。历史 access token 不带该字段，
+# 因此校验时"缺失"等同于 "access"。
+TOKEN_TYPE_ACCESS = "access"
+TOKEN_TYPE_REFRESH = "refresh"
+
 
 # ══════════════════════════════════════════════════════════════════════
 # 密码哈希与验证
@@ -163,6 +168,7 @@ def create_access_token(username: str, role: str) -> str:
     JWT payload 包含:
       - sub: 用户名（subject）
       - role: 用户角色（"user" 或 "admin"）
+      - type: "access" （与 refresh token 区分）
       - exp: 过期时间戳（UTC）
 
     Args:
@@ -176,6 +182,7 @@ def create_access_token(username: str, role: str) -> str:
     payload = {
         "sub": username,
         "role": role,
+        "type": TOKEN_TYPE_ACCESS,
         "exp": expire,
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
@@ -203,7 +210,7 @@ def create_refresh_token(username: str, role: str) -> str:
     payload = {
         "sub": username,
         "role": role,
-        "type": "refresh",
+        "type": TOKEN_TYPE_REFRESH,
         "exp": expire,
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
@@ -241,17 +248,58 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
 # ══════════════════════════════════════════════════════════════════════
 
 
+def get_user_from_bearer_token(token: str, db: Session) -> User | None:
+    """校验访问令牌并回查数据库用户，任何一步失败都返回 None（原因记入日志）。
+
+    HTTP 的 ``get_current_user`` 与 WebSocket 认证共用本函数，以保证两侧
+    完全相同的准入语义。校验项:
+      1. JWT 签名有效且未过期。
+      2. payload 含 ``sub``。
+      3. ``type`` 缺失（历史令牌）或为 "access" —— refresh token 不能当访问凭证。
+      4. ``sub`` 对应的用户仍存在于数据库。
+
+    角色一律取自数据库记录，不采信令牌里的 ``role`` 声明，避免降级/改名后
+    旧令牌继续持有旧权限。
+
+    Args:
+        token: Bearer Token 字符串（HTTP 头或 WebSocket 查询参数）。
+        db: 数据库会话。
+
+    Returns:
+        通过全部校验的 User ORM 实例，否则 None。
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        logger.warning("JWT 解码失败或已过期")
+        return None
+
+    username: str | None = payload.get("sub")
+    if not username:
+        logger.warning("JWT 有效但缺少 'sub' 字段")
+        return None
+
+    token_type = payload.get("type")
+    if token_type not in (None, TOKEN_TYPE_ACCESS):
+        logger.warning("令牌类型不符: 需要 access，实际为 '%s'", token_type)
+        return None
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        logger.warning(f"JWT 中的用户 '{username}' 在数据库中不存在")
+        return None
+
+    logger.debug(f"当前用户: '{user.username}' (角色: {user.role})")
+    return user
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """FastAPI 依赖注入: 从请求的 Authorization 头中提取 JWT 并解析当前用户。
 
-    流程:
-      1. 从 Authorization: Bearer <token> 头中提取 token。
-      2. 使用 JWT_SECRET_KEY 解码，提取 payload 中的 sub（用户名）。
-      3. 根据用户名查询数据库，返回完整的 User 对象。
-      4. token 无效、过期、或用户不存在时，抛出 401 Unauthorized。
+    实际校验逻辑见 :func:`get_user_from_bearer_token`。
 
     Args:
         token: FastAPI 自动从请求头提取的 Bearer Token。
@@ -261,32 +309,15 @@ def get_current_user(
         当前登录用户的 User ORM 实例。
 
     Raises:
-        HTTPException(401): token 无效、过期或用户不存在。
+        HTTPException(401): token 无效、过期、类型不符或用户不存在。
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效或过期的认证令牌",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    # ── 解码 JWT ──
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        username: str | None = payload.get("sub")
-        if not username:
-            logger.warning("JWT 有效但缺少 'sub' 字段")
-            raise credentials_exception
-    except JWTError:
-        logger.warning("JWT 解码失败或已过期")
-        raise credentials_exception
-
-    # ── 查询数据库中的用户 ──
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        logger.warning(f"JWT 中的用户 '{username}' 在数据库中不存在")
-        raise credentials_exception
-
-    logger.debug(f"当前用户: '{user.username}' (角色: {user.role})")
+    user = get_user_from_bearer_token(token, db)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效或过期的认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
@@ -331,7 +362,8 @@ def resolve_role(requested_role: str | None, admin_code: str | None) -> str:
     规则:
       - 未指定角色或指定非 "admin" 角色 → 返回 "user"。
       - 指定 "admin" 角色时:
-          * 如果系统配置了 ADMIN_INVITE_CODE，且用户提交的 admin_code 匹配 → 返回 "admin"。
+          * 系统未配置 ADMIN_INVITE_CODE → 403（管理员注册通道关闭）。
+          * 配置了 ADMIN_INVITE_CODE 且用户提交的 admin_code 匹配 → 返回 "admin"。
           * 否则抛出 403 Forbidden（管理员邀请码错误）。
 
     Args:
@@ -342,18 +374,23 @@ def resolve_role(requested_role: str | None, admin_code: str | None) -> str:
         "user" 或 "admin"。
 
     Raises:
-        HTTPException(403): 请求管理员角色但邀请码不匹配。
+        HTTPException(403): 请求管理员角色但系统未配置邀请码，或邀请码不匹配。
     """
     role = (requested_role or "user").strip().lower()
     if role != "admin":
         return "user"
 
+    if not ADMIN_INVITE_CODE:
+        logger.warning("收到管理员注册请求，但系统未配置 ADMIN_INVITE_CODE")
+        raise HTTPException(status_code=403, detail="系统未配置管理员邀请码，管理员注册已关闭")
+
     # 请求管理员角色 → 验证邀请码
-    if ADMIN_INVITE_CODE and admin_code == ADMIN_INVITE_CODE:
+    if admin_code == ADMIN_INVITE_CODE:
         logger.info("管理员邀请码验证通过，分配 admin 角色")
         return "admin"
 
-    logger.warning(f"管理员邀请码验证失败: 收到 '{admin_code}'")
+    # 不回显收到的邀请码，避免凭据进入日志
+    logger.warning("管理员邀请码验证失败")
     raise HTTPException(status_code=403, detail="管理员邀请码错误")
 
 

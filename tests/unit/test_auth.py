@@ -1,6 +1,7 @@
 """认证模块单元测试 —— 密码哈希、JWT 令牌、用户验证、权限校验。"""
 
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from backend.core.auth import (
     create_refresh_token,
     get_current_user,
     get_password_hash,
+    get_user_from_bearer_token,
     require_admin,
     resolve_role,
     verify_password,
@@ -71,8 +73,8 @@ class TestJWTTokens:
             payload = jwt.decode(token, TEST_SECRET, algorithms=["HS256"])
             assert payload["sub"] == "alice"
             assert payload["role"] == "user"
-            assert "exp" in payload
-            assert payload.get("type") is None
+            assert payload["exp"] is not None
+            assert payload["type"] == "access"
 
     def test_create_refresh_token(self):
         with _patch_auth():
@@ -90,8 +92,8 @@ class TestJWTTokens:
             assert access != refresh
             a_payload = jwt.decode(access, TEST_SECRET, algorithms=["HS256"])
             r_payload = jwt.decode(refresh, TEST_SECRET, algorithms=["HS256"])
-            assert a_payload.get("type") is None
-            assert r_payload.get("type") == "refresh"
+            assert a_payload["type"] == "access"
+            assert r_payload["type"] == "refresh"
 
     def test_admin_token_has_admin_role(self):
         with _patch_auth():
@@ -171,8 +173,56 @@ class TestGetCurrentUser:
             assert exc.value.status_code == 401
 
 
-# ── 管理员权限校验 ───────────────────────────────────────────────────
+# ── 令牌类型校验（E7: refresh token 不能当 access token）─────────────
 
+
+class TestTokenTypeEnforcement:
+    def _db_with_user(self):
+        user = MagicMock()
+        user.username = "alice"
+        user.role = "user"
+        db = MagicMock()
+        db.query().filter().first.return_value = user
+        return db
+
+    def test_token_type_refresh_rejected_by_http_dep(self):
+        with _patch_auth():
+            refresh = create_refresh_token("alice", "user")
+            with pytest.raises(HTTPException) as exc:
+                get_current_user(token=refresh, db=self._db_with_user())
+            assert exc.value.status_code == 401
+
+    def test_token_type_refresh_rejected_by_bearer_helper(self):
+        """WebSocket 与 HTTP 共用同一个解析函数，语义必须一致。"""
+        with _patch_auth():
+            refresh = create_refresh_token("alice", "user")
+            assert get_user_from_bearer_token(refresh, self._db_with_user()) is None
+
+    def test_token_type_legacy_access_accepted(self):
+        """改动前签发的 access token 不带 type，需继续可用。"""
+        legacy = jwt.encode(
+            {"sub": "alice", "role": "user", "exp": datetime.now(UTC) + timedelta(minutes=5)},
+            TEST_SECRET,
+            algorithm="HS256",
+        )
+        with patch.multiple("backend.core.auth", JWT_SECRET_KEY=TEST_SECRET, JWT_ALGORITHM="HS256"):
+            assert get_user_from_bearer_token(legacy, self._db_with_user()) is not None
+
+    def test_token_type_unknown_value_rejected(self):
+        with patch.multiple("backend.core.auth", JWT_SECRET_KEY=TEST_SECRET, JWT_ALGORITHM="HS256"):
+            weird = jwt.encode(
+                {
+                    "sub": "alice",
+                    "type": "session",
+                    "exp": datetime.now(UTC) + timedelta(minutes=5),
+                },
+                TEST_SECRET,
+                algorithm="HS256",
+            )
+            assert get_user_from_bearer_token(weird, self._db_with_user()) is None
+
+
+# ── 管理员权限校验 ───────────────────────────────────────────────────
 
 class TestRequireAdmin:
     def test_admin_user_passes(self):
@@ -207,3 +257,27 @@ class TestResolveRole:
             with pytest.raises(HTTPException) as exc:
                 resolve_role("admin", "wrong")
             assert exc.value.status_code == 403
+
+    def test_admin_blocked_when_invite_code_unset(self):
+        """ADMIN_INVITE_CODE 不再有默认值：未配置即关闭管理员注册通道。"""
+        with patch("backend.core.auth.ADMIN_INVITE_CODE", ""):
+            with pytest.raises(HTTPException) as exc:
+                resolve_role("admin", "guessed-code")
+            assert exc.value.status_code == 403
+            assert "未配置" in exc.value.detail
+
+    def test_unset_invite_code_does_not_affect_normal_users(self):
+        with patch("backend.core.auth.ADMIN_INVITE_CODE", ""):
+            assert resolve_role("user", None) == "user"
+            assert resolve_role(None, None) == "user"
+
+    def test_invite_code_not_echoed_in_logs(self):
+        """失败日志不得回显提交的邀请码。"""
+        with (
+            patch("backend.core.auth.ADMIN_INVITE_CODE", "secret"),
+            patch("backend.core.auth.logger") as mock_logger,
+        ):
+            with pytest.raises(HTTPException):
+                resolve_role("admin", "guessed-code")
+        for call in mock_logger.warning.call_args_list:
+            assert "guessed-code" not in str(call)
