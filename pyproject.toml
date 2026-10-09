@@ -63,6 +63,9 @@ test = [
     "pytest-cov>=5.0.0",
     "httpx>=0.28.0",
     "ruff>=0.6.0",
+    # contracts/openapi.yaml 是手写的，check_contracts.py 需要解析它；
+    # 现在靠 langchain 的传递依赖能用，但门禁不能建在别人的依赖树上
+    "pyyaml>=6.0",
 ]
 
 [tool.pytest.ini_options]

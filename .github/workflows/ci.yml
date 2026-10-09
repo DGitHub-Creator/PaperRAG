@@ -24,6 +24,9 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check backend/ tests/ scripts/
 
+      - name: Check API contracts
+        run: uv run python scripts/check_contracts.py
+
       - name: Run tests
         run: uv run pytest -q --tb=short
 

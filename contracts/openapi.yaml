@@ -1,0 +1,945 @@
+# ResearchHub 对浏览器的 HTTP 契约（Go 为唯一公开入口）
+#
+# 依据：docs/refactor/01-current-architecture.md §3（25 条 As-Is，其中 13 条前端在调）、
+#       §6（三个必须保持形状的语义）、docs/refactor/02-target-architecture.md §2/§3.5。
+# 版本选择 3.0.3 而非 3.1：本文件是**手写的人读契约**，3.0.3 的 `nullable` 无歧义，
+# 且 P0-5 的跨语言测试只需比对结构与字段，不需要和服务器的自动导出做字节级 diff。
+#
+# 契约哲学（原则②：完成=可验证行为）：
+#   只锁「前端确实读取的字段」——它们必须存在、类型必须稳定；
+#   其余字段允许 Python 侧透传（additionalProperties 不设 false）。
+#   理由：01 §6.3 记录的老坑是给 rag_trace 加了字段白名单导致两种形状漂移，
+#   把 41 个字段全抄进 YAML 只会让这份契约在第一次加字段时就开始腐烂。
+
+openapi: 3.0.3
+info:
+  title: ResearchHub browser-facing API
+  version: 0.1.0-draft
+  description: |
+    Go (`go-api`) 是唯一面向浏览器的入口（02 §0 律 1、X2）。
+    本契约覆盖 13 条前端在用接口 + 3 条探针接口；其余 12 条 As-Is 接口无人调用，
+    处置见 03-gap-analysis §5，**不在本契约内**——Go 不实现它们，直到 P1 有需求。
+  x-pending-decisions:
+    - id: K1
+      topic: "429 信封：统一为 {\"detail\": ...} 还是保留 slowapi 的 {\"error\": ...}"
+      status: open
+      interim: "按 As-Is 记录为 RateLimitError（error 字段），见 /components/responses/TooManyRequests"
+      affects: [frontend/src/composables/useChat.ts, frontend/src/components/AuthPanel.vue]
+    - id: K2
+      topic: "sqlc 生成物是否入库"
+      status: open
+      interim: "P0-3 前不影响本文件"
+    - id: K3
+      topic: "nginx upstream 切 Go 的时机"
+      status: open
+      interim: "P0-8 末、P0-9 之前；本文件的 basePath 假设切换已完成"
+
+servers:
+  - url: /
+    description: nginx 同源；dev 下由 Vite 代理到 8000（vite.config.js:10）
+
+# 默认全部需要 Bearer；公开接口逐个用 `security: []` 覆盖（register/login/探针）。
+# check_contracts.py 依赖这个约定判定「需鉴权却没声明 401」。
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: sessions
+  - name: chat
+  - name: documents
+  - name: probes
+
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: 注册并直接返回 token（As-Is：注册即登录）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      summary: 校验 token 并回显身份（前端启动时探测登录态）
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions:
+    get:
+      tags: [sessions]
+      operationId: listSessions
+      summary: 会话列表，**无分页**（01 §6.2：全仓无 offset/page_size/total）
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions/{sessionId}:
+    get:
+      tags: [sessions]
+      operationId: getSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionMessagesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [sessions]
+      operationId: deleteSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      description: |
+        前端目前只看 res.ok 不解析 body（useSessions.ts:43），但响应形状仍是 As-Is 的
+        {session_id, message}，Go 不得为了省事改成 204 —— 会让复用同一 endpoint 的脚本失配。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDeleteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chat/stream:
+    post:
+      tags: [chat]
+      operationId: chatStream
+      summary: SSE 流式问答
+      description: |
+        响应是 text/event-stream，不是 JSON：每帧 `data: <json>\n\n`，终止帧字面量
+        `data: [DONE]`（非 JSON，01 §4）。WS 通道剥掉 `data: ` 前缀后透传同一批事件，
+        并把流结束改写为 {"type":"done"}。
+        必须保留的响应头：Cache-Control: no-cache, no-store, must-revalidate、
+        Connection: keep-alive、X-Accel-Buffering: no（nginx 缓冲会让 SSE 变成一次性返回）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/StreamEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /api/v1/documents:
+    get:
+      tags: [documents]
+      operationId: listDocuments
+      summary: 文档列表，**无分页**（As-Is 由 Milvus limit=10000 兜住）
+      description: |
+        As-Is 语义坑：DocumentInfo.uploaded_at 声明了但后端从未赋值
+        （documents.py:396-402 只构造 filename/file_type/chunk_count 三个键），
+        线上恒为 null。Go 接管后要么补上真实值、要么删掉字段——**不能默默改成有值**，
+        前端排序逻辑依赖它恒 null 的现状。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/documents/upload/async:
+    post:
+      tags: [documents]
+      operationId: startUploadJob
+      summary: multipart 上传并返回 job_id（前端唯一的长任务入口）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStartResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /api/v1/documents/upload/jobs/{jobId}:
+    get:
+      tags: [documents]
+      operationId: getUploadJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: 任务快照
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/documents/delete/async/{filename}:
+    delete:
+      tags: [documents]
+      operationId: startDeleteJob
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 文件名（As-Is 用名字而非 id 定位；含特殊字符需 URL 编码）
+      responses:
+        "200":
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStartResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/documents/delete/jobs/{jobId}:
+    get:
+      tags: [documents]
+      operationId: getDeleteJob
+      description: 与上传任务**同一响应形状**（As-Is 里 DocumentDeleteJobResponse 是空壳子类）
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: 任务快照
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/ws/chat:
+    get:
+      tags: [chat]
+      operationId: wsChat
+      summary: WebSocket 问答通道
+      description: |
+        OpenAPI 对 WebSocket 没有正式表达，此处以「GET + 101」占位，
+        真正约束是：鉴权走 **query 参数 `token`**（浏览器 WebSocket 不能带 Authorization 头），
+        入站消息 {"message": str, "session_id": str}，出站帧是 StreamEvent 的 JSON 本体
+        （无 `data: ` 前缀），流结束额外发 {"type":"done"}。
+        路径由 useWebSocket.ts:14 从 location.host 拼接，**不走 services/api.ts 的 BASE 常量**，
+        所以 basePath 变更必须同时改这一处。
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: 升级成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/health:
+    get:
+      tags: [probes]
+      operationId: health
+      summary: 存活探针
+      security: []
+      responses:
+        "200":
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /health:
+    get:
+      tags: [probes]
+      operationId: healthRootAlias
+      summary: 存活探针的根路径别名
+      description: |
+        As-Is 的 health/ready 挂在根（app.py:130-137），compose healthcheck 与监控脚本打的是根路径。
+        Go 同时提供 /api/v1/* 与根别名，nginx upstream 切换时不能让它们变 404。
+      security: []
+      responses:
+        "200":
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/ready:
+    get:
+      tags: [probes]
+      operationId: ready
+      summary: 就绪探针（依赖逐项探测，单项超时不拖垮整体）
+      security: []
+      responses:
+        "200":
+          description: 全部依赖就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: 有依赖未就绪；失败时整体包在 detail 信封里（HTTPException 语义）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyUnhealthyResponse"
+
+  /ready:
+    get:
+      tags: [probes]
+      operationId: readyRootAlias
+      summary: 就绪探针的根路径别名
+      security: []
+      responses:
+        "200":
+          description: 全部依赖就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: 有依赖未就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyUnhealthyResponse"
+
+  /metrics:
+    get:
+      tags: [probes]
+      operationId: metrics
+      summary: Prometheus 文本格式
+      security: []
+      responses:
+        "200":
+          description: 指标
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: As-Is 的 access token；Go 接管签发后 claims 集合必须与 Python 互验（X4）
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: 请求非法
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    Unauthorized:
+      description: 缺 token / token 失效 / 角色不符
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    Forbidden:
+      description: 权限不足（含 ADMIN_INVITE_CODE 不匹配）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    Conflict:
+      description: 用户名已存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    PayloadTooLarge:
+      description: 超过 MAX_UPLOAD_SIZE_MB
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    BadGateway:
+      description: 上游模型限流/配额耗尽（As-Is 由 chat.py 转成 502，不是 429）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DetailError"
+    ValidationError:
+      description: FastAPI 请求体校验失败——**形状是数组，不是 detail 字符串**
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FastAPIValidationError"
+    TooManyRequests:
+      description: |
+        本服务自己的限流（slowapi）。As-Is 形状是 {"error": "..."}，与统一信封不一致 ——
+        是否改为 {"detail": ...} 是决策 K1，未决前 Go 照 As-Is 实现，别在 P1 造出第三种形状。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitError"
+
+  schemas:
+    DetailError:
+      type: object
+      required: [detail]
+      description: 全局统一错误信封（01 §6.1）
+      properties:
+        detail:
+          type: string
+
+    FastAPIValidationError:
+      type: object
+      required: [detail]
+      description: |
+        422 的 detail 是数组而非字符串（01 §6.1）。Go 侧用 chi 时不会天然产生这个形状，
+        故 P0-6 起对浏览器暴露的请求体校验要么复刻，要么明确降级为 400 + detail 字符串；
+        本契约先按 As-Is 记形状，降级决策随 K1 一起拍。
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required: [loc, msg, type]
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string
+
+    RateLimitError:
+      type: object
+      required: [error]
+      description: K1 未决前的 As-Is 形状
+      properties:
+        error:
+          type: string
+
+    Role:
+      type: string
+      enum: [user, admin]
+      description: 角色以 DB 为准；core/auth.py 把非 admin 一律折叠为 user
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        role:
+          allOf:
+            - $ref: "#/components/schemas/Role"
+          nullable: true
+          default: user
+        admin_code:
+          type: string
+          nullable: true
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [access_token, refresh_token, username, role]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          default: bearer
+        username:
+          type: string
+        role:
+          allOf:
+            - $ref: "#/components/schemas/Role"
+
+    CurrentUserResponse:
+      type: object
+      required: [username, role]
+      properties:
+        username:
+          type: string
+        role:
+          allOf:
+            - $ref: "#/components/schemas/Role"
+
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+          default: default_session
+
+    RagTrace:
+      type: object
+      description: |
+        As-Is 在 backend/schemas/schemas.py:167 声明 41 个字段。本契约**只锁两个必有字段**，
+        其余允许透传：01 §6.3 记录的坑正是 REST 走 pydantic 白名单过滤、SSE/WS 直发原始 dict，
+        造成同一份数据两种形状。Go 的职责是原样转发，不做字段筛选。
+      required: [tool_used, tool_name]
+      properties:
+        tool_used:
+          type: boolean
+        tool_name:
+          type: string
+
+    StreamEvent:
+      description: |
+        SSE/WS 共用的事件帧本体。一支一型，discriminator 是 type 字段（01 §4）。
+        注意 content 是**整段最终答案一次性下发**，不是 token 增量——别按流式渲染做假设。
+      discriminator:
+        propertyName: type
+        mapping:
+          content: "#/components/schemas/StreamContentEvent"
+          rag_step: "#/components/schemas/StreamRagStepEvent"
+          citations: "#/components/schemas/StreamCitationsEvent"
+          trace: "#/components/schemas/StreamTraceEvent"
+          error: "#/components/schemas/StreamErrorEvent"
+          done: "#/components/schemas/StreamDoneEvent"
+      oneOf:
+        - $ref: "#/components/schemas/StreamContentEvent"
+        - $ref: "#/components/schemas/StreamRagStepEvent"
+        - $ref: "#/components/schemas/StreamCitationsEvent"
+        - $ref: "#/components/schemas/StreamTraceEvent"
+        - $ref: "#/components/schemas/StreamErrorEvent"
+        - $ref: "#/components/schemas/StreamDoneEvent"
+
+    StreamContentEvent:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          type: string
+          enum: [content]
+        content:
+          type: string
+
+    StreamRagStepEvent:
+      type: object
+      required: [type, step]
+      properties:
+        type:
+          type: string
+          enum: [rag_step]
+        step:
+          type: object
+          required: [icon, label, detail]
+          properties:
+            icon:
+              type: string
+            label:
+              type: string
+            detail:
+              type: string
+
+    StreamCitationsEvent:
+      type: object
+      required: [type, citations, unsupported]
+      description: 数组元素形状不锁（claim/source_label/supported 等由 Python 侧演进），只锁键名与是数组
+      properties:
+        type:
+          type: string
+          enum: [citations]
+        citations:
+          type: array
+          items:
+            type: object
+        unsupported:
+          type: array
+          items:
+            type: object
+
+    StreamTraceEvent:
+      type: object
+      required: [type]
+      description: rag_trace 与 source_map 均「仅在非空时才发」，所以两者都是可选键
+      properties:
+        type:
+          type: string
+          enum: [trace]
+        rag_trace:
+          allOf:
+            - $ref: "#/components/schemas/RagTrace"
+          nullable: true
+        source_map:
+          type: object
+          additionalProperties:
+            type: object
+
+    StreamErrorEvent:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          type: string
+          enum: [error]
+        content:
+          type: string
+
+    StreamDoneEvent:
+      type: object
+      required: [type]
+      description: 仅 WS 存在；SSE 靠流结束与字面量 [DONE] 帧
+      properties:
+        type:
+          type: string
+          enum: [done]
+
+    MessageInfo:
+      type: object
+      required: [type, content, timestamp]
+      description: timestamp 是 ISO-8601 **字符串**不是 datetime（As-Is 如此，Go 别自作主张改）
+      properties:
+        type:
+          type: string
+          description: 实测 human/ai/system；后端声明为裸 str，不校验
+        content:
+          type: string
+        timestamp:
+          type: string
+        rag_trace:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/RagTrace"
+
+    SessionInfo:
+      type: object
+      required: [session_id, updated_at, message_count]
+      properties:
+        session_id:
+          type: string
+        updated_at:
+          type: string
+        message_count:
+          type: integer
+      additionalProperties: true
+
+    SessionListResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInfo"
+
+    SessionMessagesResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageInfo"
+
+    SessionDeleteResponse:
+      type: object
+      required: [session_id, message]
+      properties:
+        session_id:
+          type: string
+        message:
+          type: string
+
+    DocumentInfo:
+      type: object
+      required: [filename, file_type, chunk_count]
+      properties:
+        filename:
+          type: string
+        file_type:
+          type: string
+        chunk_count:
+          type: integer
+        uploaded_at:
+          type: string
+          nullable: true
+
+    DocumentListResponse:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentInfo"
+
+    JobStartResponse:
+      type: object
+      required: [job_id, filename, message]
+      properties:
+        job_id:
+          type: string
+        filename:
+          type: string
+        message:
+          type: string
+
+    JobStepStatus:
+      type: string
+      enum: [pending, running, completed, failed]
+
+    JobStep:
+      type: object
+      required: [key, label, percent, status]
+      properties:
+        key:
+          type: string
+          description: upload/cleanup/parse/parent_store/vector_store、scan、prepare/bm25/milvus
+        label:
+          type: string
+          description: 中文展示串，契约不锁其值
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        status:
+          $ref: "#/components/schemas/JobStepStatus"
+        message:
+          type: string
+          default: ""
+
+    JobStatusResponse:
+      type: object
+      required: [job_id, status, message, steps]
+      description: |
+        上传与删除任务共用此形状。As-Is 内部字典还有个 completion_step 键被 response_model
+        丢掉，故**不进契约**。前端在 15 与 6 两处都按 steps 渲染。
+      properties:
+        job_id:
+          type: string
+        filename:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStepStatus"
+        current_step:
+          type: string
+        message:
+          type: string
+        total_chunks:
+          type: integer
+          default: 0
+        processed_chunks:
+          type: integer
+          default: 0
+        error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobStep"
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+
+    CheckStatus:
+      type: object
+      required: [status, detail]
+      description: |
+        checks 是「依赖名 → 状态对象」的映射，键集随服务而异，故契约不锁键名只锁值形状：
+        ai-core 报 database/redis/milvus（backend/api/health.py:137-140），
+        go-api 只报 database —— 它不依赖 Redis/Milvus，报一个假的 ok 或恒 error 都是说谎。
+        监控脚本按值解析即可，别写死 .checks.redis。
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        detail:
+          type: string
+
+    ReadyResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/CheckStatus"
+
+    ReadyUnhealthyResponse:
+      type: object
+      required: [detail]
+      description: 503 走 HTTPException，故整体包在 detail 里——与 200 的形状**不同构**，客户端两种都要能读
+      properties:
+        detail:
+          type: object
+          required: [status, checks]
+          properties:
+            status:
+              type: string
+              enum: [unhealthy]
+            version:
+              type: string
+            checks:
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/CheckStatus"

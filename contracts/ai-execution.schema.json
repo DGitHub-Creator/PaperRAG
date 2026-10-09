@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://researchhub.local/contracts/ai-execution.schema.json",
+  "title": "Go ↔ ai-core 内部执行面契约",
+  "description": "对应 02-target-architecture.md §3.1–§3.4。Go 是唯一调度方，Python 只被动执行并如实上报；proposed_tasks 与 evidence_candidates 对 Go 是输入建议，不携带任何写权限。",
+  "x-endpoints": [
+    "POST /internal/v1/ai/execute",
+    "POST /internal/v1/ai/executions",
+    "GET /internal/v1/ai/executions/{id}",
+    "GET /internal/v1/ai/executions/{id}/result",
+    "POST /internal/v1/ai/executions/{id}/cancel",
+    "GET /internal/v1/ai/healthz",
+    "GET /internal/v1/ai/readyz"
+  ],
+  "x-auth": "Authorization: Bearer $AICORE_INTERNAL_TOKEN（02 §3.5；ai-core 不发布宿主端口）",
+  "x-semantics": "至少一次执行；不宣称跨 HTTP+PG+LLM 的 exactly-once（02 §3.4）",
+  "x-p0-registered-task-types": ["PARSE_PAPER", "INDEX_PAPER"],
+  "$defs": {
+    "TaskType": {
+      "type": "string",
+      "enum": [
+        "PLAN_RESEARCH",
+        "SEARCH_PAPERS",
+        "SCREEN_PAPERS",
+        "PARSE_PAPER",
+        "INDEX_PAPER",
+        "READ_PAPER",
+        "EXTRACT_KNOWLEDGE",
+        "COMPARE_PAPERS",
+        "EXPLORE_GAPS",
+        "VERIFY_EVIDENCE",
+        "GENERATE_REPORT"
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "INVALID_PAYLOAD",
+        "UNSUPPORTED_TASK_TYPE",
+        "BUDGET_EXCEEDED",
+        "MODEL_TIMEOUT",
+        "MODEL_RATE_LIMIT",
+        "PARSE_FAILED",
+        "INDEX_UNAVAILABLE",
+        "CANCELLED",
+        "INTERNAL"
+      ],
+      "description": "取值集合必须与 contracts/error-codes.md §1 的表完全一致，由 check_contracts.py 比对"
+    },
+    "Usage": {
+      "type": "object",
+      "description": "两侧超时/失败都要写 usage，Go 是唯一记账方（02 §6.2：model_usage_records 由 Go 写）",
+      "required": ["calls", "tokens", "cost"],
+      "properties": {
+        "calls": { "type": "integer", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "cost": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "required": ["code", "retryable", "detail"],
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "retryable": { "type": "boolean" },
+        "detail": { "type": "string" },
+        "trace_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Budget": {
+      "type": "object",
+      "description": "沿用现有 backend/services/budget.py 语义，不另造一套",
+      "properties": {
+        "max_llm_calls": { "type": "integer", "minimum": 0 },
+        "max_cost_usd": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "ExecuteRequest": {
+      "type": "object",
+      "required": ["task_id", "task_type", "idempotency_key", "deadline"],
+      "properties": {
+        "task_id": { "type": "string", "description": "Python 侧以此建 ai_executions 行并做幂等" },
+        "run_id": { "type": "string" },
+        "task_type": { "$ref": "#/$defs/TaskType" },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[^:]+:[^:]+:.+$",
+          "description": "canonical 形式 run_id:task_type:canonical_target（02 §3.4），重复提交返回既有 execution_id"
+        },
+        "payload": { "type": "object" },
+        "inputs": {
+          "type": "object",
+          "properties": {
+            "object_ids": { "type": "array", "items": { "type": "string" } }
+          },
+          "description": "只传引用不传字节"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "temperature": { "type": "number" },
+            "max_output_tokens": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "budget": { "$ref": "#/$defs/Budget" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "trace_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Status": {
+      "type": "string",
+      "enum": ["queued", "running", "succeeded", "failed", "cancelled"],
+      "description": "AIExecution 状态机（02 §4.3），Python 独占写"
+    },
+    "SubmitResponse": {
+      "type": "object",
+      "required": ["execution_id", "status"],
+      "properties": {
+        "execution_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/Status" },
+        "replayed": {
+          "type": "boolean",
+          "description": "true 表示命中幂等键返回的既有执行，没有重跑模型"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StatusResponse": {
+      "type": "object",
+      "required": ["execution_id", "status"],
+      "properties": {
+        "execution_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/Status" },
+        "usage": { "$ref": "#/$defs/Usage" },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Error" }
+        },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "ResultResponse": {
+      "type": "object",
+      "required": ["execution_id", "status"],
+      "description": "result 与 result_ref 二选一：大输出走对象存储引用，不内联（02 §3.1）",
+      "oneOf": [
+        { "required": ["result"] },
+        { "required": ["result_ref"] }
+      ],
+      "properties": {
+        "execution_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/Status" },
+        "result": { "type": "object" },
+        "result_ref": { "type": "string" },
+        "proposed_tasks": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "对 Go 是建议，不携带写权限"
+        },
+        "evidence_candidates": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "同上；Python 永远不直接写 evidence_links/research_claims（02 §6.2）"
+        },
+        "usage": { "$ref": "#/$defs/Usage" },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Error" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
