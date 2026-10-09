@@ -31,7 +31,7 @@
 | 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
 | 等级 | real（启动序列必须**实跑**，不是照抄文档） |
 | 规模/风险 | S–M / 需要 Docker Desktop；Windows 上 bind mount 权限与换行是第一坑，故 `.gitattributes` 必进本卡 |
-| 当前状态 | 2026-10-09：脚本与分层已落且过单元级验证（9 项新增用例）；**本机未安装 Docker Desktop**，`dev.py doctor` 实测 exit=1，§2 的 up/health/migrate 尚未实跑，故 `status=in_progress`、`evidence=mock`，不标 done |
+| 当前状态 | 2026-10-09：脚本与分层已落且过单元级验证（10 项新增用例）。**本机环境实况更正**：Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（per-user）都在，daemon 起不来是因为 WSL2 可选组件装完待重启，per-user 安装又用不了 Hyper-V 后端——所以缺的不是安装，是一次重启。`dev.py doctor` 现在把两件事分开报：compose 自身的错走 `docker compose config`（**不需要 daemon**，本机已实跑通过），环境没起来另说；实测 exit=1 且只列两条阻塞（daemon、缺 `.env`）。§2 的 up/health/migrate 尚未实跑，故 `status=in_progress`、`evidence=mock`，不标 done |
 
 ### P0-1 Go 服务骨架
 

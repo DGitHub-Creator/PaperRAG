@@ -68,18 +68,21 @@ P0-1 之后会多出 `go-api` / `go-worker` / `ai-core` 三个服务，以及 ng
 
 | # | 步骤 | 主机 / 环境 | 日期 | 结果 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `dev.py doctor` | — | — | ⬜ not_run | 期望：无密钥时 exit=1 并列出阻塞项 |
+| 1 | `dev.py doctor` | Windows / docker CLI 29.8.2 | 2026-10-09 | ✅ pass | 实测 exit=1，且**只**报两条：daemon 没在跑、缺 `.env`。这正是期望——阻塞项列得出来才叫自检 |
+| 1b | `docker compose config --quiet` | 同上（daemon 停着） | 2026-10-09 | ✅ pass | 这条**不需要 daemon**：插值、字段拼写、端口形状纯客户端就能判。已接进 `doctor`，让"compose 写坏了"和"环境没起来"分成两个原因 |
 | 2 | `dev.py up` + `ps` | — | — | ⬜ not_run | 记录首拉耗时 |
 | 3 | `curl :8000/health` | — | — | ⬜ not_run | 期望 200 |
 | 3b | `gofmt` + `go vet` + `go test` | Windows / go1.25.1 | 2026-10-09 | ✅ pass | 16 项 Go 用例全绿，无需容器 |
 | 4 | `dev.py migrate` | — | — | ⬜ not_run | 存量库无 `alembic_version` 时见 §4 第 4 条 |
-| 5 | `test -m unit` / `-m integration` | — | — | ⬜ not_run | 期望 310 / 23 通过（本地已跑通，容器环境需复现） |
-| 6 | 全量 `uv run pytest -q` | — | — | ⬜ not_run | 期望 333 通过（2026-10-09 本地基线） |
+| 5 | `test -m unit` / `-m integration` | Windows | 2026-10-09 | ✅ pass | 391 / 57 通过；容器环境需复现一次 |
+| 6 | 全量 `uv run pytest -q` | Windows | 2026-10-09 | ✅ pass | 448 通过（2026-10-09 本机基线）；`-m chain` 当前收集 0 项、exit=5，不是绿 |
 
-**2026-10-09 状态**：本机（Windows）**未安装 Docker Desktop**，`dev.py doctor` 实测返回
-exit=1 并给出"未找到 docker CLI"。因此 §2 的 4-8 步与 X1/X6/X7 的容器部分尚未实跑，
-P0-0 的证据等级停在 mock（脚本与分层的单元级验证 9 项通过），不标 done。
-3b 的 Go 自检不依赖容器，已在本机实跑通过。
+**2026-10-09 状态更正**（先前这里写的是"本机未安装 Docker Desktop"，已被现场核查推翻）：
+Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（**per-user 安装**，在
+`（per-user 安装目录）`）都在。daemon 起不来的唯一原因是 **WSL2 的 Windows
+可选组件装完还没重启**，而 per-user 安装用不了 Hyper-V 后端，所以没有绕开重启的第二条路。
+因此 §2 的 4/6/8 步与 X1/X6/X7 的容器部分仍未实跑，P0-0 的证据等级停在 mock；
+能实跑的三条（1、1b、3b）都已跑过并记在上面。重启后按本序列从第 4 步继续。
 
 ## 4. 已知坑（按踩到的顺序）
 
@@ -100,8 +103,14 @@ P0-0 的证据等级停在 mock（脚本与分层的单元级验证 9 项通过�
    `go env -w GOPROXY=https://goproxy.cn,direct`，或单条命令带 `GOPROXY=https://goproxy.cn,direct go mod tidy`。
    注意 `go mod tidy` 比 `go build` 要得多——它连依赖自己的测试依赖（testify 等）一起解析，
    所以首次 tidy 失败不代表代码有问题。容器构建用 `--build-arg GOPROXY=...`，仓库不写死镜像。
-8. **容器运行时缺失**：本机 2026-10-09 未装 Docker Desktop，`dev.py doctor` 直接 exit=1。
-   §3 里凡涉及 up/health 的行都填不了，别据此推断"链路是好的"——那正是 `08` §1 ②禁止的事。
+8. **daemon 起不来的时候，`docker info` 不给原因**：本机实况是 Docker Desktop 已装但
+   `docker info` 只回一句 "Docker Desktop is unable to start"。真正的原因在
+   `（Docker 配置目录）\log\host\com.docker.backend.exe.log`——这次读到的是
+   `Wsl/WSL_E_WSL_OPTIONAL_COMPONENT_REQUIRED` + "A reboot is required to complete the WSL
+   installation"。**per-user 安装只能用 WSL2 后端**（日志里 Hyper-V 选项写着
+   "Per-user installations can't run the Hyper-V backend"），所以没有绕开重启的替代配置。
+   另有一条能立刻用：`docker compose config` **不需要 daemon**，compose 自身的错先在停机状态下判掉。
+   凡涉及 up/health 的行都填不了时，别据此推断"链路是好的"——那正是 `08` §1 ②禁止的事。
 9. **`uv sync` 会重写整个 `uv.lock` 的下载源**：本机的 PyPI 镜像只活在当时的环境变量里
    （仓库没有 `uv.toml`，`env` 里也没有 `UV_INDEX_URL`），一旦不带镜像就跑
    `uv sync`/`uv lock`，3265 条 URL 会从 `pypi.tuna.tsinghua.edu.cn` 翻成 `pypi.org`，
