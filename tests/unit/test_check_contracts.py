@@ -154,13 +154,39 @@ def test_normalization_of_templated_paths():
 
 
 def test_method_comes_from_the_call_statement(tmp_path, monkeypatch):
-    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, 'authFetch(`/sessions/${sid}`, { method: "DELETE" })\n'))
+    monkeypatch.setattr(
+        cc,
+        "FRONTEND_SRC",
+        make_frontend(tmp_path, 'request<SessionDeleteResponse>(`/sessions/${sid}`, { method: "DELETE" })\n'),
+    )
     calls = cc.extract_frontend_calls(cc.FRONTEND_SRC)
     assert calls == {("delete", "/api/v1/sessions/{}")}
 
 
+def test_generic_free_call_defaults_to_get(tmp_path, monkeypatch):
+    """`request<T>(...)` 的泛型参数不能被当成路径的一部分——真实 client.ts 全是这个形状。"""
+    monkeypatch.setattr(
+        cc,
+        "FRONTEND_SRC",
+        make_frontend(tmp_path, 'return request<CurrentUserResponse>("/auth/me")\n'),
+    )
+    assert cc.extract_frontend_calls(cc.FRONTEND_SRC) == {("get", "/api/v1/auth/me")}
+
+
+def test_stream_and_upload_helpers_are_recognised(tmp_path, monkeypatch):
+    body = (
+        'const r = await openStream("/chat/stream", { method: "POST", body: input, signal })\n'
+        'return uploadFile<JobStartResponse>("/documents/upload/async", file, { method: "POST" })\n'
+    )
+    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, body))
+    assert cc.extract_frontend_calls(cc.FRONTEND_SRC) == {
+        ("post", "/api/v1/chat/stream"),
+        ("post", "/api/v1/documents/upload/async"),
+    }
+
+
 def test_frontend_call_missing_from_contract(contracts, tmp_path, monkeypatch):
-    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, 'authFetch("/ghost/endpoint")\n'))
+    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, 'request("/ghost/endpoint")\n'))
     errors: list[str] = []
     surface, _ = cc.check_openapi(errors)
     cc.check_surface(errors, surface)
@@ -169,7 +195,8 @@ def test_frontend_call_missing_from_contract(contracts, tmp_path, monkeypatch):
 
 def test_contract_declares_uncalled_operation(contracts, tmp_path, monkeypatch):
     """契约只能覆盖前端真在用的：多进一条没人调的接口，就是 01 §3 那 12 条僵尸契约的复发。"""
-    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, 'authFetch("/auth/me")\napiFetch("/auth/login", { method: "POST" })\n'))
+    body = 'return request<AuthResponse>("/auth/login", { method: "POST" })\n'
+    monkeypatch.setattr(cc, "FRONTEND_SRC", make_frontend(tmp_path, body))
     errors: list[str] = []
     surface, _ = cc.check_openapi(errors)
     cc.check_surface(errors, surface)

@@ -90,6 +90,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # 结构门禁：唯一请求出口、token 单一所有者、状态层不碰 DOM 这些约定不靠人盯。
+      # 脚本只用标准库，所以这里用 runner 自带的 python3，不为它引 uv。
+      - name: Check frontend structure
+        run: python3 ../scripts/check_frontend.py
+
   docker:
     name: Docker image build
     runs-on: ubuntu-latest

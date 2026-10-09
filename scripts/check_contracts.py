@@ -38,7 +38,12 @@ PROBE_PATHS = {
 }
 
 METHOD_RE = re.compile(r"""method\s*:\s*["'](GET|POST|PUT|PATCH|DELETE)["']""", re.I)
-CALL_RE = re.compile(r"""(?:authFetch|apiFetch|fetch)\s*\(\s*(?P<q>["`])(?P<path>(?:\\.|[^\\])*?)(?P=q)""")
+# 请求层的三个出口就是前端实调集合的唯一来源（api/client.ts 集中路径字面量）：
+# request/openStream/uploadFile 都吃 (path, { method, ... })，动词在同一对括号里找。
+CALL_RE = re.compile(
+    r"""(?:request|openStream|uploadFile|fetch)\s*(?:<[^<>()]*>)?\s*\(\s*"""
+    r"""(?P<q>["`])(?P<path>(?:\\.|[^\\])*?)(?P=q)"""
+)
 XHR_RE = re.compile(r"""\.open\s*\(\s*["'](?P<method>GET|POST|PUT|PATCH|DELETE)["']\s*,\s*(?P<q>["`])(?P<path>(?:\\.|[^\\])*?)(?P=q)""")
 WS_RE = re.compile(r"(?P<path>/api/v1/ws/[A-Za-z0-9_/-]+|/ws/[A-Za-z0-9_/-]+)")
 TEMPLATE_RE = re.compile(r"""\$\{[^}]*\}""")
@@ -51,7 +56,7 @@ WRITE_TOKENS = {"W", "R", "X"}
 def normalize_path(raw: str) -> str:
     """把前端字面量转成与 openapi 路径可比的形状。
 
-    `${BASE}` 丢掉并补回 `/api/v1` 前缀（BASE 常量就是它，见 services/api.ts:3）；
+    `${BASE}` 丢掉并补回 `/api/v1` 前缀（BASE 常量就是它，见 api/http.ts）；
     `${encodeURIComponent(jobId)}` → `{}`（一个路径段占位）；查询串剥掉
     （WS 的 `?token=` 不是路径的一部分）。
     """
