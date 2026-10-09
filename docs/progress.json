@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0-4 契约目录 done（2026-10-09）：contracts/ 四件产物 + scripts/check_contracts.py 进 CI 门禁，X3 本机 mock 级 pass（16 项用例含 11 项负向篡改），抽取器从 frontend/src 现场数出的实调集合恰为 13 条。K1–K4 已全部定案：K1（429 统一 detail）与 K4（422 降级 400+字符串）当日落进 backend/core/exceptions.py 并有用例；K2（sqlc 生成物入库）落 P0-3、K3（nginx 切换时机）落 P0-8。剩 D1/D2/D3 三项待拍，均不阻塞 P0-2/P0-3/P0-5。P0-0/P0-1 卡在 real 级（本机无 Docker Desktop）；P0-5 用本机直跑 Go/Python 进程取 real 证据，不需容器",
+  "current": "P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -157,28 +157,28 @@
         {
           "id": "P0-2",
           "title": "Schema 基线与非破坏性收编（audit_schema.py + probe_timestamps.py + migrations/000001_baseline）",
-          "status": "pending",
-          "evidence": "none",
+          "status": "in_progress",
+          "evidence": "mock",
           "requires": "real",
           "hours": 8,
           "deps": [
             "P0-0"
           ],
           "verify": "uv run python scripts/audit_schema.py --check-baseline",
-          "note": "含 create_all 建出的无 alembic_version 存量库的人工补版本步骤"
+          "note": "含 create_all 建出的无 alembic_version 存量库的人工补版本步骤。2026-10-09：scripts/audit_schema.py 落地（离线 --check-baseline + 只读 --live 两模式，判定逻辑 19 项单测），本机 --check-baseline 现在如实返回 1（migrations/ 还空着）。剩下的都必须有真库：基线 DDL 由实际结构抄录而非 ORM 声明（05 §1 末、§2.2），故 X6 仍 not_run"
         },
         {
           "id": "P0-3",
           "title": "Go 数据访问层（sqlc + pgx pool，生成物入库并以 diff 校验一致性）",
-          "status": "pending",
-          "evidence": "none",
+          "status": "in_progress",
+          "evidence": "mock",
           "requires": "mock",
           "hours": 4,
           "deps": [
             "P0-2"
           ],
-          "verify": "cd server && sqlc generate && git diff --exit-code",
-          "note": "决策 K2"
+          "verify": "uv run python scripts/dev.py gen --check",
+          "note": "决策 K2 已落地：生成物入库，dev.py gen --check 作为漂移门禁（sqlc 版本钉 v1.30.0，不匹配就拒绝生成）。2026-10-09 已完成 users 认证切片的 queries + 生成物 + pgx 池 + 8 项 Go 用例；未 done 的原因只有一个——schema 源是 server/sql/schema.sql 这份**临时参照**（形状取自 ORM 声明，本机无 PG 无法核查），P0-2 出真基线后要把 sqlc.yaml 指到 migrations/ 并重跑 gen，字段有变就是那次 diff 的内容"
         },
         {
           "id": "P0-4",

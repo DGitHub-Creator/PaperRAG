@@ -55,6 +55,7 @@
 | 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
 | 等级 | real |
 | 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`d8f1563` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
+| 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测，含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论 |
 
 ### P0-3 Go 数据访问层
 
@@ -66,6 +67,7 @@
 | 验收 | `cd server && sqlc generate && git diff --exit-code`（生成物无漂移）+ `go test ./internal/db/...` |
 | 等级 | mock |
 | 规模/风险 | S / 生成物是否入库需决策：建议**入库**（CI 不装 sqlc 也能构建），以 `--check` 式 diff 保一致性 |
+| 当前状态 | 2026-10-09：**K2 已落地**——`server/sql/queries/users.sql`（3 条）+ `server/sqlc.yaml` + 生成的 `internal/db/{db,models,users.sql}.go` 全部入库；`internal/db/pool.go` 手写连接池（启动即 Ping，空串拒绝，`PoolOptions` 故意不放没人执行的 timeout 旋钮）；入口是 `uv run python scripts/dev.py gen [--check]`，sqlc 版本钉 `v1.30.0`，本机版本对不上就拒绝生成（跨版本重生成会让 diff 门禁以"你的改动有问题"的名义红）。8 项 Go 用例锁住三类可机检的东西：SQL 文本、参数顺序与个数、生成字段集合；其中 `GetUserByID` 不选 `password_hash` 这条是安全边界，不靠 handler 记得剔除。**未 done 的原因只有一条**：schema 源是 `server/sql/schema.sql` 这份临时参照（形状来自 ORM 声明，本机无 PG 无法核查），P0-2 出真基线后要把 `sqlc.yaml` 的 schema 指到 `migrations/` 并重跑 gen——字段真有变，那次 diff 就是答案 |
 
 ### P0-4 契约目录（含 429 信封定案）
 
