@@ -102,6 +102,16 @@ P0-0 的证据等级停在 mock（脚本与分层的单元级验证 9 项通过�
    所以首次 tidy 失败不代表代码有问题。容器构建用 `--build-arg GOPROXY=...`，仓库不写死镜像。
 8. **容器运行时缺失**：本机 2026-10-09 未装 Docker Desktop，`dev.py doctor` 直接 exit=1。
    §3 里凡涉及 up/health 的行都填不了，别据此推断"链路是好的"——那正是 `08` §1 ②禁止的事。
+9. **`uv sync` 会重写整个 `uv.lock` 的下载源**：本机的 PyPI 镜像只活在当时的环境变量里
+   （仓库没有 `uv.toml`，`env` 里也没有 `UV_INDEX_URL`），一旦不带镜像就跑
+   `uv sync`/`uv lock`，3265 条 URL 会从 `pypi.tuna.tsinghua.edu.cn` 翻成 `pypi.org`，
+   在中国网络下等于把可复现安装打断。更坏的是重解析会顺手丢掉 `nvidia-*`/`cuda-pathfinder`
+   上的 `sys_platform != 'win32'` marker——这台 Windows 开发机随后就会去抓 CUDA wheel。
+   规避：只改 `pyproject.toml` 的依赖声明、手工把对应两行插进 `uv.lock`
+   （`[package.optional-dependencies]` 与 `[package.metadata].requires-dist` 各一条，按字典序落位），
+   再用 `uv sync --extra test --locked` 验证（`--locked` 只校验不重解析）；
+   确实要重解析时带 `uv lock --default-index https://pypi.tuna.tsinghua.edu.cn/simple`。
+   **diff 只看增删行数不够**——这种整文件重写统计数看着正常，内容却全变了。
 
 ## 5. 与本卡之外的关系
 - `dev.py seed` 不在本卡：种开发数据需要先跑通上传→入库链路（属 P1），
