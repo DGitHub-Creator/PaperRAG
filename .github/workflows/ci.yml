@@ -27,6 +27,16 @@ jobs:
       - name: Run tests
         run: uv run pytest -q --tb=short
 
+  progress:
+    name: Progress (plan/schedule sync gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 只用标准库，故不起 uv/依赖
+      - name: Check progress artifacts match source
+        run: python3 scripts/sync_progress.py --check
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest

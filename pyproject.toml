@@ -100,4 +100,8 @@ line-length = 200
 select = ["E", "F", "W"]
 ignore = ["E402", "W291"]
 
+[tool.ruff.lint.per-file-ignores]
+# 内嵌的 HTML/JS 看板模板：长行是产物结构，拆开反而更难维护
+"scripts/sync_progress.py" = ["E501"]
+
 
