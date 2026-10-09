@@ -5,20 +5,20 @@
 
 ## 一句话现状
 
-- **完成了多少**：6%（按工时加权；21/360 小时，任务完成 3/37，验收 3/24 通过）
-- **现在在哪**：P0-4 契约目录已落地并通过 X3（本机 mock 级，16 项用例含 11 项负向篡改）：contracts/ 四件产物 + scripts/check_contracts.py 已进 CI 门禁，抽取器从 frontend/src 现场数出的实调集合恰为 13 条，与 01 §3 口径一致。P0-0/P0-1 仍卡在 real 级（本机无 Docker Desktop）。原则③：K1（429 信封）、K2（sqlc 生成物）、K3（nginx 切换时机）、K4（422 是否降级为 400）由你拍板后，P0-5 跨语言契约测试与 P0-6 认证切片才开工。K1 的代价已核实比原先报的低：前端不读 .error、不按 429 分支，统一信封是后端一处 handler
-- **还差多少**：待办 31 项 / 318 小时（约 15.9-21.2 周），进行中 3 项；可立即开工：无
+- **完成了多少**：8%（按工时加权；29/360 小时，任务完成 4/37，验收 3/24 通过）
+- **现在在哪**：P0-4 契约目录 done（2026-10-09）：contracts/ 四件产物 + scripts/check_contracts.py 进 CI 门禁，X3 本机 mock 级 pass（16 项用例含 11 项负向篡改），抽取器从 frontend/src 现场数出的实调集合恰为 13 条。K1–K4 已全部定案：K1（429 统一 detail）与 K4（422 降级 400+字符串）当日落进 backend/core/exceptions.py 并有用例；K2（sqlc 生成物入库）落 P0-3、K3（nginx 切换时机）落 P0-8。剩 D1/D2/D3 三项待拍，均不阻塞 P0-2/P0-3/P0-5。P0-0/P0-1 卡在 real 级（本机无 Docker Desktop）；P0-5 用本机直跑 Go/Python 进程取 real 证据，不需容器
+- **还差多少**：待办 31 项 / 318 小时（约 15.9-21.2 周），进行中 2 项；可立即开工：P0-7
 
 ## 阶段进度
 
 | 阶段 | 目标 | 状态 | 完成度 | 验收 | 工时 | 周次 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | █░░░░ 20% | 3/8 | 21/106h | W1–W2 |
+| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | █░░░░ 27% | 3/8 | 29/106h | W1–W2 |
 | **P1** 后端迁移与最小原型 | Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go | 待办 | ░░░░░ 0% | 0/6 | 0/80h | W3–W6 |
 | **P2** 功能拓展与数据可信化 | 正文真相进 PG、公式检索真实生效、事件可续传、预算持久化、引用可回溯到 PDF 位置 | 待办 | ░░░░░ 0% | 0/5 | 0/92h | W7 起（预计超 6 周日程） |
 | **P3** 多 Agent 自主探索 | ResearchRun + Frontier + Planner/Discovery/Reader/Writer，产出可信带引用报告且崩溃可恢复 | 待办 | ░░░░░ 0% | 0/5 | 0/82h | P2 之后（未排具体周次） |
 
-## P0 — 架构与契约（20%）
+## P0 — 架构与契约（27%）
 
 **可演示状态**：docker compose up → 前端注册 → 登录 → 侧栏显示用户名 → curl Go /api/v1/auth/me 返回同一用户；ai-core 只内网可达
 
@@ -46,7 +46,7 @@
 | P0-1 | Go 服务骨架（cmd/api + cmd/worker + Chi 路由 + slog + trace_id + detail 错误信封 + health/ready） | 进行中 | mock（要求 real） | 8h | P0-0 | `cd server && gofmt -l . && go vet ./... && go test ./...` | 16 项 Go 用例绿：/ready 失败用 {"detail":{...}} 信封、成功平铺；探测键名 database 与超时文案 "timeout after Ns" 逐字对齐 backend/api/health.py；404/405/500 都走 FastAPI 同款信封；trace_id 生成与透传；panic 兜底；生产缺 DATABASE_URL 拒绝启动。real 部分（compose 起服务后 /ready 200、Dockerfile 能否构建）本机无 Docker → 未验，不标 done |
 | P0-2 | Schema 基线与非破坏性收编（audit_schema.py + probe_timestamps.py + migrations/000001_baseline） | 待办 | 未验证（要求 real） | 8h | P0-0 | `uv run python scripts/audit_schema.py --check-baseline` | 含 create_all 建出的无 alembic_version 存量库的人工补版本步骤 |
 | P0-3 | Go 数据访问层（sqlc + pgx pool，生成物入库并以 diff 校验一致性） | 待办 | 未验证（要求 mock） | 4h | P0-2 | `cd server && sqlc generate && git diff --exit-code` | 决策 K2 |
-| P0-4 | 契约目录（openapi.yaml + ai-execution.schema.json + error-codes.md + table-acl.md + check_contracts.py）含 429 信封定案 | 进行中 | mock（要求 mock） | 8h | P0-1 | `uv run python scripts/check_contracts.py` | 五件产物齐且 X3 本机 pass；差 429/422 定案（K1、K4）才算 done——卡上写的验收含定案，未定不标 done |
+| P0-4 | 契约目录（openapi.yaml + ai-execution.schema.json + error-codes.md + table-acl.md + check_contracts.py）含 429 信封定案 | 完成 | mock（要求 mock） | 8h | — | `uv run python scripts/check_contracts.py` | 五件产物齐且 X3 本机 pass；K1/K4 已于 2026-10-09 落地（backend/core/exceptions.py 两个 handler + tests/integration/{test_error_envelope,test_rate_limit_enforcement}.py），契约里不再有 As-Is 例外，故 done。原先挂的 deps:[P0-1] 已摘除：本卡只取 P0-1 的 detail 错误信封形状，该形状已在 server/internal/httpapi/envelope.go 落地并有 Go 单测，不要求 P0-1 整体（real 级 compose 证据）先完成——P0-1 的 real 缺口由 Docker Desktop 决定，与契约内容无关 |
 | P0-5 | 跨语言契约测试骨架 + chain 级真实容器 fixture | 待办 | 未验证（要求 real） | 6h | P0-1、P0-4 | `uv run pytest -m chain -k contract` | 未实现端点走显式白名单跳过，不伪装通过 |
 | P0-6 | 认证垂直切片（Go register/login/me + PBKDF2 golden vectors + JWT claims 兼容） | 待办 | 未验证（要求 real） | 16h | P0-3、P0-4、A0-3 | `cd server && go test -run TestVerifyLegacyHash` | P0 的唯一业务切片；X5 未全绿前 Go 不接管 users |
 | P0-7 | ai-core 内部执行面（/internal/v1/ai/execute + executions 异步 + task_type 注册表 + 内部令牌 + ai_executions 表） | 待办 | 未验证（要求 real） | 14h | P0-4 | `uv run pytest -m chain -k ai_executions` | P0 只接 PARSE_PAPER / INDEX_PAPER；无 LLM 密钥时走固定小 PDF 的降级路径并标注未验段落 （需密钥） |
@@ -157,10 +157,6 @@
 
 ## 待你拍板
 
-- **K1** 429 错误信封统一到 {"detail": ...} 还是保留现实现的 {"error": ...}？ → 建议：统一为 detail。**代价已现场核实为「前端零改动」**：全仓前端不读 .error 字段、不按 429 分支（api.ts:19 只特判 401，useAuth.ts:40/51 只读 data.detail）；只需后端一处 handler + 契约一行（P0-4 定案（契约已按 As-Is 记录，不阻塞 P0-2/P0-3））
-- **K2** sqlc 生成物是否入库？ → 建议：入库，CI 不装 sqlc，用 diff 校验一致性（P0-3）
-- **K3** nginx upstream 切到 Go 的时机？ → 建议：P0-8 末、P0-9 之前，且必须先过 X5（P0-8）
-- **K4** 422 校验失败：Go 复刻 FastAPI 的 {"detail": [数组]} 还是降级为 400 + 字符串 detail？ → 建议：降级为 400 + 字符串。chi 不会天然产生那个数组，为复刻它专门写格式化器属原则④禁止的无关工作量；前端从不按 422 分支（P0-6 之前的跨语言契约断言）
 - **D1** 总纲要求 ai-core/ 独立目录，路线建议保留 backend/ 物理目录、ai-core 只作角色名，是否接受？ → 建议：接受（决策 Q2 + 原则④），改名留到 P2 后作为可单独回滚的提交（P0 目录结构）
 - **D2** 13 条在用接口在 P1 迁完、其余 12 条在 P1 末统一 Deprecation，是否符合总纲 P0 完成标准里「旧接口必须迁移或标记 deprecated」？ → 建议：符合原则①；若要求 P0 内完成则 P0 估时翻倍（P0 退出标准 X2）
 - **D3** chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？ → 建议：接受；证据级引用属 P2 的 Z1/Z3（P1 演示口径与 README 表述）

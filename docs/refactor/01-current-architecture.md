@@ -110,7 +110,7 @@ SSE 帧格式 `data: <json>\n\n`，终止 `data: [DONE]\n\n`（`agent/core.py:39
 
 三个必须在迁移期保持形状的语义：
 
-1. 错误信封：正常统一 `{"detail": ...}`；**429 例外**为 `{"error": "Rate limit exceeded: ..."}`（slowapi）；422 为 FastAPI 校验数组。
+1. 错误信封：As-Is 为"正常统一 `{"detail": ...}`，**429 例外**发 `{"error": "Rate limit exceeded: ..."}`（slowapi 默认 handler），422 发 FastAPI 校验数组"。两处例外已由决策 K1/K4 消除（2026-10-09 落地 `backend/core/exceptions.py`），现在全仓只剩 `{"detail": "<字符串>"}` 一种；定案后的表见 `contracts/error-codes.md` §2。
 2. **无分页**：全仓无 `offset/page_size/total/has_more`，列表全量返回。
 3. `rag_trace` **同一数据两种形状**：REST 经 pydantic `RagTrace`（`schemas.py:167`）过滤，SSE/WS 直发原始 dict（`rag_pipeline.py:183`）；且 `ChatResponse`（`schemas.py:251`）会丢弃 `run_agent` 返回的 `source_map`/`citations`/`unsupported`（`core.py:325-331`）。
 

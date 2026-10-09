@@ -26,24 +26,30 @@
   两处不一致时 `check_contracts.py` 报错。
 - `retryable=true` 不等于无限重试：次数由 Go 的 `max_attempts` + `next_retry_at` 指数退避封顶。
 - `detail` 面向人，**面向机器的只有 code**；Go 不得对 `detail` 做字符串匹配。
+- 本表的 422（`BUDGET_EXCEEDED`/`PARSE_FAILED`）只在**内部面** `/internal/v1/ai/*` 出现，
+  与决策 K4 无关：K4 降级的是 FastAPI 对浏览器的请求体校验，Go 转发给浏览器时按 §2 折算。
 
-## 2. 对浏览器的错误信封（As-Is，Go 必须保持）
+## 2. 对浏览器的错误信封（Go 必须保持；K1/K4 落地后只剩一种形状）
 
-| http | 信封形状 | As-Is 来源 | Go 侧实现要点 |
+| http | 信封形状 | 来源 | Go 侧实现要点 |
 | --- | --- | --- | --- |
 | 400/401/403/404/409/413/502 | `{"detail": "<字符串>"}` | FastAPI `HTTPException` | 统一由 `WriteError` 产生，别在各 handler 手拼 |
-| 422 | `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` | FastAPI 请求体校验 | chi 不会天然产生；要么复刻，要么随 K1 一起决定降级为 400+字符串 |
-| 429 | `{"error": "Rate limit exceeded: ..."}` | slowapi 默认 handler | **决策 K1 未决前照此实现**；不得出现第三种形状 |
+| 400（原 422） | `{"detail": "<字符串>"}` | `request_validation_error_handler`（决策 K4） | 由 422+数组降级而来：`loc` 拼字段名、`msg` 拼原因、多条 `"; "` 连接。Go 用 chi 时对结构校验失败直接发 400 + 一句话即可 |
+| 429 | `{"detail": "Rate limit exceeded: <表达式>"}` | `rate_limit_exceeded_handler`（决策 K1） | 必须带 `X-RateLimit-{Limit,Remaining,Reset}` 与 `Retry-After`；Python 侧注意 handler **不能写成协程**，否则 `SlowAPIMiddleware` 会退回 slowapi 自带的 `{"error": ...}` handler |
 | 405 | `{"detail": "Method Not Allowed"}` | Starlette | 已在 `server/internal/httpapi/envelope.go` 落地 |
 | 404 路由未命中 | `{"detail": "Not Found"}` | Starlette 默认 | 同上，文案逐字对齐 |
 | 500 未捕获异常 | `{"detail": "Internal Server Error"}` | FastAPI ServerErrorMiddleware | Go 的 `Recover` 中间件产出同形状 |
 
 > 01 §6.1 记录的三个必须保持形状的语义里，本表只覆盖第 1 个（信封）；
 > 第 2 个（无分页）与第 3 个（`rag_trace` 两种形状）写在 `contracts/openapi.yaml` 的对应 schema 注释里。
+> 断言这批形状的用例：`tests/integration/test_error_envelope.py`（401/400）、
+> `tests/integration/test_rate_limit_enforcement.py`（429 信封 + 表头）。
 
-## 3. 未决项
+## 3. 已定案（原未决项）
 
-| # | 事项 | 当前处置 |
+| # | 事项 | 结论与落点 |
 | --- | --- | --- |
-| K1 | 429 是否统一为 `detail` | 按 As-Is 记 `{"error": ...}`；统一则同时改 `useChat.ts` 与 `AuthPanel` |
-| — | 422 是否降级为 400+字符串 | 随 K1 一起拍；P0-6（Go 接管注册/登录）之前必须定，否则跨语言契约测试无法断言校验失败用例 |
+| K1 | 429 统一为 `detail` | 已落地 `backend/core/exceptions.py`。前端零改动：实调代码从不读 `.error`，也不按 429 分支（见 01 §6.1 复核） |
+| K4 | 422 降级为 400+字符串 | 已落地同上文件的 `request_validation_error_handler`；`openapi.yaml` 删掉 `FastAPIValidationError`/`RateLimitError` |
+
+仍待拍的契约相关项见 `docs/progress.json` 的 `decisions_pending`（D1/D2/D3）。

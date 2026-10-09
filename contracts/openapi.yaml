@@ -1,4 +1,4 @@
-# ResearchHub 对浏览器的 HTTP 契约（Go 为唯一公开入口）
+# ResearchPilot 对浏览器的 HTTP 契约（Go 为唯一公开入口）
 #
 # 依据：docs/refactor/01-current-architecture.md §3（25 条 As-Is，其中 13 条前端在调）、
 #       §6（三个必须保持形状的语义）、docs/refactor/02-target-architecture.md §2/§3.5。
@@ -13,26 +13,34 @@
 
 openapi: 3.0.3
 info:
-  title: ResearchHub browser-facing API
-  version: 0.1.0-draft
+  title: ResearchPilot browser-facing API
+  version: 0.1.0
   description: |
     Go (`go-api`) 是唯一面向浏览器的入口（02 §0 律 1、X2）。
-    本契约覆盖 13 条前端在用接口 + 3 条探针接口；其余 12 条 As-Is 接口无人调用，
-    处置见 03-gap-analysis §5，**不在本契约内**——Go 不实现它们，直到 P1 有需求。
-  x-pending-decisions:
+    本契约覆盖 13 条前端在用接口 + 5 条探针接口（共 18 个操作）；其余 12 条 As-Is
+    接口无人调用，处置见 03-gap-analysis §5，**不在本契约内**——Go 不实现它们，
+    直到 P1 有需求。
+  x-decisions:
+    # 2026-10-09 拍板，K1/K4 已落进代码（backend/core/exceptions.py）与本草稿。
+    # 留这份记录是为了让"为什么 429 不是 slowapi 的形状"有据可查，不是待办。
     - id: K1
-      topic: "429 信封：统一为 {\"detail\": ...} 还是保留 slowapi 的 {\"error\": ...}"
-      status: open
-      interim: "按 As-Is 记录为 RateLimitError（error 字段），见 /components/responses/TooManyRequests"
-      affects: [frontend/src/composables/useChat.ts, frontend/src/components/AuthPanel.vue]
+      topic: "429 信封统一为 {\"detail\": ...}"
+      status: decided
+      landed: "backend/core/exceptions.py:rate_limit_exceeded_handler（同步 handler，见 §2 注释）"
+      evidence: tests/integration/test_rate_limit_enforcement.py
     - id: K2
-      topic: "sqlc 生成物是否入库"
-      status: open
-      interim: "P0-3 前不影响本文件"
+      topic: "sqlc 生成物入库"
+      status: decided
+      landed: "P0-3：server/sqlc.yaml + 生成代码提交，CI 用 `sqlc generate --diff` 门禁"
     - id: K3
       topic: "nginx upstream 切 Go 的时机"
-      status: open
-      interim: "P0-8 末、P0-9 之前；本文件的 basePath 假设切换已完成"
+      status: decided
+      landed: "P0-8 末、P0-9 之前，且必须先过 X5（compose 起全栈）"
+    - id: K4
+      topic: "422 降级为 400 + 字符串 detail"
+      status: decided
+      landed: "backend/core/exceptions.py:request_validation_error_handler"
+      evidence: tests/integration/test_error_envelope.py
 
 servers:
   - url: /
@@ -76,8 +84,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
-        "422":
-          $ref: "#/components/responses/ValidationError"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -101,8 +107,8 @@ paths:
                 $ref: "#/components/schemas/AuthResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "422":
-          $ref: "#/components/responses/ValidationError"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -496,61 +502,43 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/DetailError"
-    ValidationError:
-      description: FastAPI 请求体校验失败——**形状是数组，不是 detail 字符串**
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/FastAPIValidationError"
     TooManyRequests:
       description: |
-        本服务自己的限流（slowapi）。As-Is 形状是 {"error": "..."}，与统一信封不一致 ——
-        是否改为 {"detail": ...} 是决策 K1，未决前 Go 照 As-Is 实现，别在 P1 造出第三种形状。
+        本服务自己的限流（slowapi）。决策 K1：与其余错误共用 detail 信封，
+        Python 侧由 backend/core/exceptions.py:rate_limit_exceeded_handler 产出，
+        Go 侧 P1 复刻同一条形状。响应头带 X-RateLimit-{Limit,Remaining,Reset} 与 Retry-After。
+      headers:
+        X-RateLimit-Limit:
+          description: 当前窗口的配额
+          schema:
+            type: string
+        X-RateLimit-Remaining:
+          description: 当前窗口剩余额度
+          schema:
+            type: string
+        X-RateLimit-Reset:
+          description: 窗口重置的 Unix 秒
+          schema:
+            type: string
+        Retry-After:
+          description: 建议重试等待秒数
+          schema:
+            type: string
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/RateLimitError"
+            $ref: "#/components/schemas/DetailError"
 
   schemas:
     DetailError:
       type: object
       required: [detail]
-      description: 全局统一错误信封（01 §6.1）
-      properties:
-        detail:
-          type: string
-
-    FastAPIValidationError:
-      type: object
-      required: [detail]
       description: |
-        422 的 detail 是数组而非字符串（01 §6.1）。Go 侧用 chi 时不会天然产生这个形状，
-        故 P0-6 起对浏览器暴露的请求体校验要么复刻，要么明确降级为 400 + detail 字符串；
-        本契约先按 As-Is 记形状，降级决策随 K1 一起拍。
+        全局唯一错误信封（01 §6.1，决策 K1/K4 之后不再有第二种形状）。
+        422 已被降级为 400 + 本信封（K4）：FastAPI 默认的 detail 数组带 pydantic
+        决定的 ctx/url 字段，Go 用 chi 复刻不起，前端也只把 detail 当字符串显示。
       properties:
         detail:
-          type: array
-          items:
-            type: object
-            required: [loc, msg, type]
-            properties:
-              loc:
-                type: array
-                items:
-                  oneOf:
-                    - type: string
-                    - type: integer
-              msg:
-                type: string
-              type:
-                type: string
-
-    RateLimitError:
-      type: object
-      required: [error]
-      description: K1 未决前的 As-Is 形状
-      properties:
-        error:
           type: string
 
     Role:

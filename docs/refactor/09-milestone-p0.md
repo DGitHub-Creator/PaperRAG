@@ -12,7 +12,7 @@
 | --- | --- | --- | --- | --- |
 | X1 | 骨架能起来 | `docker compose up -d` 后 `curl http://localhost/api/v1/health` 与 `/api/v1/ready` | 两条均 200；`compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running | real |
 | X2 | Go 是唯一公开入口 | `docker compose exec nginx grep -R "proxy_pass" /etc/nginx/conf.d/`（或读 `nginx/nginx.conf`）+ 浏览器 Network 面板核对 | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location | e2e |
-| X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K2/K3 仍未决，见 §3 | mock |
+| X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K4 已定案落地，契约只剩 `{"detail": ...}` 一种信封；K2/K3 已定案，落点分别在 P0-3/P0-8，见 §3 | mock |
 | X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
 | X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
 | X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
@@ -73,11 +73,11 @@
 | --- | --- |
 | 输入 | `01` §3 的 25 条对外契约表与"前端实际依赖 13 条"、`02` §3 端点与请求体 |
 | 输出 | `contracts/openapi.yaml`（Go 对浏览器：13 条在用 + `health/ready/metrics`）、`contracts/ai-execution.schema.json`（`execute`/`executions` 请求响应）、`contracts/error-codes.md`（9 个内部码 + `retryable` + HTTP 映射）、`contracts/table-acl.md`（`02` §6.2 表级写入矩阵的可校验形式）、`scripts/check_contracts.py`（新，结构校验：引用完整、路径与前端实调集合一致） |
-| 依赖 | P0-1（骨架形状） |
+| 依赖 | ~~P0-1（骨架形状）~~ → 无（2026-10-09 摘除：本卡只取 P0-1 的 detail 信封形状，该形状已在 `server/internal/httpapi/envelope.go` 落地并有 Go 单测；把 P0-1 的 real 级缺口（Docker）算成契约的阻塞项，会让一张已验完的卡永远不能 done） |
 | 验收 | X3；并**在本卡内定案** 429 用 `{"detail": ...}` 还是保持现实现（决策影响 `useChat.ts`/`AuthPanel`），结论写进 `openapi.yaml` 与本文件 §3 |
 | 等级 | mock |
 | 规模/风险 | M / 契约先于实现锁定，否则 P1 会变成"边写边改架构"（违反原则③） |
-| 当前状态 | 2026-10-09：五件产物齐（`contracts/{openapi.yaml,ai-execution.schema.json,error-codes.md,table-acl.md}` + `scripts/check_contracts.py`），X3 本机 pass 且每条规则都有负向用例。契约按 **As-Is** 记录 429 的 `{"error": ...}` 并在 `info.x-pending-decisions` 里挂着 K1，**未擅自统一信封**（那是你的决策，不是我的）。抽取器现场数出前端实调恰为 13 条，与 `01` §3 口径一致；顺带查实 `01` #20 的出处行号已漂（文档写 `:207`，实为 `useDocuments.ts:192`）、#13 WS 已从 `useChat.ts` 移入 `useWebSocket.ts` |
+| 当前状态 | **done（2026-10-09）**：五件产物齐（`contracts/{openapi.yaml,ai-execution.schema.json,error-codes.md,table-acl.md}` + `scripts/check_contracts.py`），X3 本机 pass 且每条规则都有负向用例。抽取器现场数出前端实调恰为 13 条，与 `01` §3 口径一致；顺带查实 `01` #20 的出处行号已漂（文档写 `:207`，实为 `useDocuments.ts:192`）、#13 WS 已从 `useChat.ts` 移入 `useWebSocket.ts`。K1/K4 同日定案并落进代码，契约里的 As-Is 例外（429 `{"error": ...}`、422 数组）已删除，`info.x-pending-decisions` 改为 `info.x-decisions` 记录 |
 
 ### P0-5 跨语言契约测试骨架
 
@@ -153,14 +153,16 @@ P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
 可独立提交的顺序：**P0-0 → P0-1 → P0-4 → P0-2 → P0-3 → P0-5 → P0-6 → P0-7 → P0-8 → P0-9**。
 （P0-4 提前到 P0-2 之前：契约先于数据层，避免 P1 期间改契约。）
 
-## 3. 需要你在开工前拍板的决策
+## 3. 决策记录（K1–K4 已于 2026-10-09 定案，D1–D3 待拍）
 
-| # | 决策 | 我的建议 |
-| --- | --- | --- |
-| K1 | 429 错误信封：统一到 `{"detail": ...}` 还是保留现实现的 `{"error": ...}` | **统一为 `detail`**。**2026-10-09 更正**：先前说"要改前端两处"是推测，现场核查后是**零改动**——全仓前端不读 `.error` 响应字段、不按 429 分支（`api.ts:19` 只特判 401，`useAuth.ts:40/51` 只读 `data.detail`）。所以统一信封只是后端一处 handler + 契约一行，比我原先报的更便宜 |
-| K2 | `sqlc` 生成物是否入库 | **入库**。CI 不必装 sqlc，`--check` 式 diff 保证一致性 |
-| K3 | P0-8 切 nginx upstream 的时机 | **放在 P0-8 末、P0-9 之前**，且切前完成 P0-6 的 X5。理由：只有认证切片可用才谈得上"Go 是唯一入口"，否则 X2 无法演示 |
-| K4 | 422 校验失败：Go 复刻 FastAPI 的 `{"detail": [ {loc,msg,type} ]}` 数组，还是降级为 400 + 字符串 `detail` | **降级为 400 + 字符串**。理由：chi 不会天然产生那个数组，为复刻它而写一套校验错误格式化器，正是原则④禁止的无关工作量；前端从不按 422 分支。**必须在 P0-6 之前定**，否则跨语言契约测试无法断言"校验失败"这一类用例 |
+| # | 决策 | 结论与落点 | 状态 |
+| --- | --- | --- | --- |
+| K1 | 429 错误信封：统一到 `{"detail": ...}` 还是保留现实现的 `{"error": ...}` | **统一为 `detail`**。落点 `backend/core/exceptions.py:rate_limit_exceeded_handler`。**2026-10-09 更正**：先前说"要改前端两处"是推测，现场核查后是**零改动**——全仓前端不读 `.error` 响应字段、不按 429 分支（`api.ts:19` 只特判 401，`useAuth.ts:40/51` 只读 `data.detail`）。踩到的坑：handler **必须写成同步**，`SlowAPIMiddleware` 走 `sync_check_limits()`，一遇协程 handler 就退回 slowapi 自带的 `{"error": ...}`；且 429 路径不执行 `_inject_headers()`，`X-RateLimit-*` 得在 handler 里自己拼 | 已落地，用例 `tests/integration/test_rate_limit_enforcement.py` |
+| K2 | `sqlc` 生成物是否入库 | **入库**：`server/sql/queries/*.sql` + `sqlc.yaml` + 生成代码一起提交，CI 用 `sqlc generate` 后的 `git diff --exit-code` 保证一致性，不要求 CI 装 sqlc | 定案，落点在 P0-3 |
+| K3 | P0-8 切 nginx upstream 的时机 | **放在 P0-8 末、P0-9 之前**，且切前完成 X5。理由：只有认证切片可用才谈得上"Go 是唯一入口"，否则 X2 无法演示 | 定案，落点在 P0-8 |
+| K4 | 422 校验失败：Go 复刻 FastAPI 的 `{"detail": [ {loc,msg,type} ]}` 数组，还是降级为 400 + 字符串 `detail` | **降级为 400 + 字符串**。落点 `request_validation_error_handler`。理由：chi 不会天然产生那个数组，为复刻它而写一套校验错误格式化器，正是原则④禁止的无关工作量；前端从不按 422 分支 | 已落地，用例 `tests/integration/test_error_envelope.py` |
+
+> `contracts/openapi.yaml` 的 `info.x-decisions` 是本表的机器可读副本；两处不一致时以本表为准（K 项属流程决策，不属响应 schema）。
 
 ## 4. P0 明确不做
 

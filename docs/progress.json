@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0-4 契约目录已落地并通过 X3（本机 mock 级，16 项用例含 11 项负向篡改）：contracts/ 四件产物 + scripts/check_contracts.py 已进 CI 门禁，抽取器从 frontend/src 现场数出的实调集合恰为 13 条，与 01 §3 口径一致。P0-0/P0-1 仍卡在 real 级（本机无 Docker Desktop）。原则③：K1（429 信封）、K2（sqlc 生成物）、K3（nginx 切换时机）、K4（422 是否降级为 400）由你拍板后，P0-5 跨语言契约测试与 P0-6 认证切片才开工。K1 的代价已核实比原先报的低：前端不读 .error、不按 429 分支，统一信封是后端一处 handler",
+  "current": "P0-4 契约目录 done（2026-10-09）：contracts/ 四件产物 + scripts/check_contracts.py 进 CI 门禁，X3 本机 mock 级 pass（16 项用例含 11 项负向篡改），抽取器从 frontend/src 现场数出的实调集合恰为 13 条。K1–K4 已全部定案：K1（429 统一 detail）与 K4（422 降级 400+字符串）当日落进 backend/core/exceptions.py 并有用例；K2（sqlc 生成物入库）落 P0-3、K3（nginx 切换时机）落 P0-8。剩 D1/D2/D3 三项待拍，均不阻塞 P0-2/P0-3/P0-5。P0-0/P0-1 卡在 real 级（本机无 Docker Desktop）；P0-5 用本机直跑 Go/Python 进程取 real 证据，不需容器",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -44,7 +44,7 @@
           "expect": "退出 0：OpenAPI 覆盖 13 条前端在用接口 + 5 条探针（共 18 个操作）；schema 的 code 枚举与 error-codes.md 逐字一致；表写入矩阵无未标过渡期的双写；前端实调集合与契约双向吻合",
           "level": "mock",
           "result": "pass",
-          "evidence_note": "2026-10-09 本地实跑 pass；tests/unit/test_check_contracts.py 16 项（11 项负向篡改，逐条证明规则会红）。CI backend job 已挂本门禁。K1/K4 仍未决：契约按 As-Is 记录 429 的 {\"error\": ...}，未擅自统一信封"
+          "evidence_note": "2026-10-09 本地实跑 pass；tests/unit/test_check_contracts.py 16 项（11 项负向篡改，逐条证明规则会红）。CI backend job 已挂本门禁。K1/K4 同日定案并落地：429 与降级后的 400 都走 detail 信封，契约不再按 As-Is 记 {\"error\": ...} 例外"
         },
         {
           "id": "X4",
@@ -183,15 +183,13 @@
         {
           "id": "P0-4",
           "title": "契约目录（openapi.yaml + ai-execution.schema.json + error-codes.md + table-acl.md + check_contracts.py）含 429 信封定案",
-          "status": "in_progress",
+          "status": "done",
           "evidence": "mock",
           "requires": "mock",
           "hours": 8,
-          "deps": [
-            "P0-1"
-          ],
+          "deps": [],
           "verify": "uv run python scripts/check_contracts.py",
-          "note": "五件产物齐且 X3 本机 pass；差 429/422 定案（K1、K4）才算 done——卡上写的验收含定案，未定不标 done"
+          "note": "五件产物齐且 X3 本机 pass；K1/K4 已于 2026-10-09 落地（backend/core/exceptions.py 两个 handler + tests/integration/{test_error_envelope,test_rate_limit_enforcement}.py），契约里不再有 As-Is 例外，故 done。原先挂的 deps:[P0-1] 已摘除：本卡只取 P0-1 的 detail 错误信封形状，该形状已在 server/internal/httpapi/envelope.go 落地并有 Go 单测，不要求 P0-1 整体（real 级 compose 证据）先完成——P0-1 的 real 缺口由 Docker Desktop 决定，与契约内容无关"
         },
         {
           "id": "P0-5",
@@ -875,30 +873,6 @@
     }
   ],
   "decisions_pending": [
-    {
-      "id": "K1",
-      "question": "429 错误信封统一到 {\"detail\": ...} 还是保留现实现的 {\"error\": ...}？",
-      "recommendation": "统一为 detail。**代价已现场核实为「前端零改动」**：全仓前端不读 .error 字段、不按 429 分支（api.ts:19 只特判 401，useAuth.ts:40/51 只读 data.detail）；只需后端一处 handler + 契约一行",
-      "blocking": "P0-4 定案（契约已按 As-Is 记录，不阻塞 P0-2/P0-3）"
-    },
-    {
-      "id": "K2",
-      "question": "sqlc 生成物是否入库？",
-      "recommendation": "入库，CI 不装 sqlc，用 diff 校验一致性",
-      "blocking": "P0-3"
-    },
-    {
-      "id": "K3",
-      "question": "nginx upstream 切到 Go 的时机？",
-      "recommendation": "P0-8 末、P0-9 之前，且必须先过 X5",
-      "blocking": "P0-8"
-    },
-    {
-      "id": "K4",
-      "question": "422 校验失败：Go 复刻 FastAPI 的 {\"detail\": [数组]} 还是降级为 400 + 字符串 detail？",
-      "recommendation": "降级为 400 + 字符串。chi 不会天然产生那个数组，为复刻它专门写格式化器属原则④禁止的无关工作量；前端从不按 422 分支",
-      "blocking": "P0-6 之前的跨语言契约断言"
-    },
     {
       "id": "D1",
       "question": "总纲要求 ai-core/ 独立目录，路线建议保留 backend/ 物理目录、ai-core 只作角色名，是否接受？",
