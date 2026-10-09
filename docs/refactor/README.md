@@ -15,6 +15,7 @@
 | [05-database-migration.md](05-database-migration.md) | Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量文献重建 | 实施 |
 | [09-milestone-p0.md](09-milestone-p0.md) | **P0 文件级任务卡 P0-0…P0-9、依赖顺序、X1–X8 退出标准、待拍板决策 K1–K3** | 实施（待确认） |
 | [07-e2e-test-plan.md](07-e2e-test-plan.md) | 最小真实 E2E 方案：分层、断言纪律、T1–T8 用例、契约测试、CI 分工 | 实施 |
+| [p0-environment.md](p0-environment.md) | P0-0 产物：从零到 `/health` 200 的可复制启动序列 + §3 实跑记录表 + 已知坑 | 实施 |
 | [06-milestone-a0.md](06-milestone-a0.md) | 【历史】旧 Milestone A0 任务清单与 E1–E10；§4 给出卡片到新阶段的重映射 | 历史 |
 
 进度与日程：[../progress.json](../progress.json)（唯一真相）→ [../PROGRESS.md](../PROGRESS.md) / [../progress.html](../progress.html)（生成物，双击可开）。

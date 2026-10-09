@@ -16,7 +16,7 @@
 | X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
 | X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
 | X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
-| X7 | 测试分层可用 | `uv run pytest -m unit -q` / `-m integration` / `-m chain` | 三条命令都能选中对应用例且无 `PytestUnknownMarkWarning`（marker 已在 `pyproject.toml` 注册） | mock |
+| X7 | 测试分层可用 | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test tests/unit/test_pytest_layering.py -q` | unit/integration 两条都选中用例且无 `PytestUnknownMarkWarning`；分层机检 5 项绿（marker 注册、`--strict-markers`、目录→层映射）。chain/e2e 层用例自 P0-5 起出现，现在为 0 条属预期 | mock |
 | X8 | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
 
 ## 1. 任务卡
@@ -26,11 +26,12 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`d8f1563` 后缺失即拒绝启动） |
-| 输出 | `scripts/dev.py`（新，跨平台统一入口：`up/down/logs/migrate/test/seed`）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `AICORE_INTERNAL_TOKEN`、`JWT_SECRET_KEY`、`APP_ENV`）、`.gitattributes`（新，`* text=auto eol=lf`）、`docs/refactor/p0-environment.md`（新，从零启动序列） |
+| 输出 | `scripts/dev.py`（新，跨平台统一入口：`doctor/up/down/ps/logs/migrate/test`；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/refactor/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
 | 依赖 | 无 |
-| 验收 | X7；按 `p0-environment.md` 从空仓库到 `/health` 200 全程可复制执行 |
+| 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
 | 等级 | real（启动序列必须**实跑**，不是照抄文档） |
 | 规模/风险 | S–M / 需要 Docker Desktop；Windows 上 bind mount 权限与换行是第一坑，故 `.gitattributes` 必进本卡 |
+| 当前状态 | 2026-10-09：脚本与分层已落且过单元级验证（9 项新增用例）；**本机未安装 Docker Desktop**，`dev.py doctor` 实测 exit=1，§2 的 up/health/migrate 尚未实跑，故 `status=in_progress`、`evidence=mock`，不标 done |
 
 ### P0-1 Go 服务骨架
 

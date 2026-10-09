@@ -5,15 +5,15 @@
 
 ## 一句话现状
 
-- **完成了多少**：6%（按工时加权；21/360 小时，任务完成 3/37，验收 1/24 通过）
-- **现在在哪**：P0 计划（09 文档 + 本进度源）已成型，等待你确认原则③要求的四元组后开工 Go 代码；P0 的三项前置（旧 A0-1、A0-3、spec 重排与进度机制）已完成
-- **还差多少**：待办 34 项 / 339 小时（约 16.9-22.6 周），进行中 0 项；可立即开工：P0-0
+- **完成了多少**：6%（按工时加权；21/360 小时，任务完成 3/37，验收 2/24 通过）
+- **现在在哪**：P0-0 的脚本与测试分层已落且 X7 通过（unit 310 / integration 23）；但本机没有 Docker Desktop，p0-environment.md §3 的实跑记录为空，P0-0 停在 in_progress（要求 real）。原则③：等你确认 K1–K3 与 D1–D3 后再写 Go 代码
+- **还差多少**：待办 33 项 / 334 小时（约 16.7-22.3 周），进行中 1 项；可立即开工：无
 
 ## 阶段进度
 
 | 阶段 | 目标 | 状态 | 完成度 | 验收 | 工时 | 周次 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | █░░░░ 20% | 1/8 | 21/106h | W1–W2 |
+| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | █░░░░ 20% | 2/8 | 21/106h | W1–W2 |
 | **P1** 后端迁移与最小原型 | Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go | 待办 | ░░░░░ 0% | 0/6 | 0/80h | W3–W6 |
 | **P2** 功能拓展与数据可信化 | 正文真相进 PG、公式检索真实生效、事件可续传、预算持久化、引用可回溯到 PDF 位置 | 待办 | ░░░░░ 0% | 0/5 | 0/92h | W7 起（预计超 6 周日程） |
 | **P3** 多 Agent 自主探索 | ResearchRun + Frontier + Planner/Discovery/Reader/Writer，产出可信带引用报告且崩溃可恢复 | 待办 | ░░░░░ 0% | 0/5 | 0/82h | P2 之后（未排具体周次） |
@@ -32,17 +32,17 @@
 | X4 | 认证垂直切片可用且跨语言互验 token | `cd server && go test ./internal/auth/... && uv run pytest -m chain -k go_auth` | 真实链路 | ⬜ 未跑 |
 | X5 | Go 能验旧密码哈希（接管 users 的前置条件） | `uv run python scripts/export_pbkdf2_golden.py && cd server && go test -run TestVerifyLegacyHash` | 真实链路 | ⬜ 未跑 |
 | X6 | Go 不重复建表，基线迁移非破坏性且幂等 | `uv run python scripts/audit_schema.py --check-baseline` | 真实链路 | ⬜ 未跑 |
-| X7 | 测试分层可用（marker 已注册） | `uv run pytest -m unit -q && uv run pytest -m integration -q && uv run pytest -m chain -q --collect-only` | mock | ⬜ 未跑 |
+| X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit && uv run python scripts/dev.py test -m integration && uv run python scripts/dev.py test -- tests/unit/test_pytest_layering.py` | mock | ✅ pass |
 | X8 | 进度产物与真相源一致（每次提交的同步门禁） | `uv run python scripts/sync_progress.py --check` | mock | ✅ pass |
 
 ### 任务
 
 | # | 任务 | 状态 | 证据 | 工时 | 依赖 | 验收命令 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A0-1 | 前端故障修复 + typecheck 进 CI 门禁（旧 A0-1） | 完成 | mock（要求 mock） | 3h | — | `cd frontend && npm run typecheck` | 漂移测试 |
+| A0-1 | 前端故障修复 + typecheck 进 CI 门禁（旧 A0-1） | 完成 | mock（要求 mock） | 3h | — | `cd frontend && npm run typecheck` | 提交 2c3e583；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁 |
 | A0-3 | 鉴权与运行安全修复（旧 A0-3） | 完成 | mock（要求 mock） | 10h | — | `uv run pytest -q` | 提交 d8f1563；307 项全绿。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1 |
 | SPEC-1 | spec 按四条原则重排 + 进度与可视化机制（08/09/04/06/README + progress.json/html/sync_progress.py） | 完成 | mock（要求 mock） | 8h | — | `uv run python scripts/sync_progress.py --check` | 路线改为 P0–P3；旧 Q1 与 Q5 的排期含义被取代，技术决策 Q2–Q8 沿用 |
-| P0-0 | 统一命令入口与可复现环境（scripts/dev.py、marker 注册、.env.example 死键清理、.gitattributes） | 待办 | 未验证（要求 real） | 5h | — | `uv run pytest -m unit -q` | 吸收旧 A0-0；必须在 Windows + Docker Desktop 上实跑一遍 |
+| P0-0 | 统一命令入口与可复现环境（scripts/dev.py + marker 分层 + .env.example 清理 + .gitattributes + p0-environment.md） | 进行中 | mock（要求 real） | 5h | — | `uv run python scripts/dev.py test -m unit` | 吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass，但 p0-environment.md §3 的实跑记录表全空：本机未安装 Docker Desktop，doctor 实测 exit=1，up/health/migrate 未实跑 → 等级 real 达不到，不标 done |
 | P0-1 | Go 服务骨架（cmd/api + cmd/worker + Chi 路由 + slog + trace_id + detail 错误信封 + health/ready） | 待办 | 未验证（要求 real） | 8h | P0-0 | `cd server && go vet ./... && go test ./...` |  |
 | P0-2 | Schema 基线与非破坏性收编（audit_schema.py + probe_timestamps.py + migrations/000001_baseline） | 待办 | 未验证（要求 real） | 8h | P0-0 | `uv run python scripts/audit_schema.py --check-baseline` | 含 create_all 建出的无 alembic_version 存量库的人工补版本步骤 |
 | P0-3 | Go 数据访问层（sqlc + pgx pool，生成物入库并以 diff 校验一致性） | 待办 | 未验证（要求 mock） | 4h | P0-2 | `cd server && sqlc generate && git diff --exit-code` | 决策 K2 |
@@ -51,7 +51,7 @@
 | P0-6 | 认证垂直切片（Go register/login/me + PBKDF2 golden vectors + JWT claims 兼容） | 待办 | 未验证（要求 real） | 16h | P0-3、P0-4、A0-3 | `cd server && go test -run TestVerifyLegacyHash` | P0 的唯一业务切片；X5 未全绿前 Go 不接管 users |
 | P0-7 | ai-core 内部执行面（/internal/v1/ai/execute + executions 异步 + task_type 注册表 + 内部令牌 + ai_executions 表） | 待办 | 未验证（要求 real） | 14h | P0-4 | `uv run pytest -m chain -k ai_executions` | P0 只接 PARSE_PAPER / INDEX_PAPER；无 LLM 密钥时走固定小 PDF 的降级路径并标注未验段落 （需密钥） |
 | P0-8 | compose 与 Windows 实跑（新增 go-api/go-worker/ai-core，nginx upstream 切 Go，ai-core 不发布宿主端口） | 待办 | 未验证（要求 real） | 8h | P0-1、P0-6、P0-7 | `uv run python scripts/dev.py up && curl http://localhost/api/v1/health` | P0 里唯一影响现网可用性的动作；保留一条配置回退 Python 的路径 |
-| P0-9 | P0 端到端演示与退出复核（Playwright p0-auth.spec + p0-demo.md + 状态收口） | 待办 | 未验证（要求 e2e） | 8h | P0-8 | `cd frontend && npm run test:e2e` | 同时要求 uv run pytest -q 的 307 项保持绿 |
+| P0-9 | P0 端到端演示与退出复核（Playwright p0-auth.spec + p0-demo.md + 状态收口） | 待办 | 未验证（要求 e2e） | 8h | P0-8 | `cd frontend && npm run test:e2e` | 同时要求全量 uv run pytest -q 保持绿（2026-10-09 基线 333 项） |
 
 **本阶段不做**：不迁移其余 12 条业务接口（P1）· 不做 chunk 可信化与 paper_chunks（P2）· 不做 Frontier/ResearchRun（P3）· 不 git mv backend → ai-core（决策 Q2）· 不改前端框架，不改 backend/rag 算法实现
 
@@ -166,6 +166,7 @@
 
 ## 风险登记（前 8）
 
+- **开发机没有容器运行时，P0 的 real 级验收整体阻塞** ｜触发：本机未安装 Docker Desktop（2026-10-09 `where docker` 无结果、daemon 不存在） ｜缓解：P0-0 的 p0-environment.md §3 需要实跑记录；装上 Docker Desktop（WSL2 后端，宿主内存 ≥12GB）后按 §2 走一遍，X1/X6/X7 的容器部分与 P0-2/P0-8 才能开工
 - **Go 验不了旧密码，接管后用户登录全挂** ｜触发：PBKDF2 base64 编码差异（标准 vs urlsafe）、盐长度、迭代数 ｜缓解：先导出 golden vectors，X5 全绿前 Go 不接管 users
 - **SSE 形状漂移导致前端流式显示异常** ｜触发：Go 侧缓冲/flush 策略、nginx X-Accel-Buffering ｜缓解：P1 契约测试比对 Python 与 Go 的字节级帧序列
 - **同一份业务状态被双写** ｜触发：切换窗口内 Python 仍在写 chat_messages ｜缓解：单写者原则 + feature flag + 写路径断言，接口逐个切换
@@ -173,7 +174,6 @@
 - **6 周日程与 solo 投入不匹配** ｜触发：总纲按全职强度估 6 周；solo 15–20h/周下 P0+P1≈5–6.5 周，P2 落在 W7 后 ｜缓解：不可压缩项固定（P0 骨架/契约/认证、P1 E2E），日程在 progress.json 里显式标 overtime 而非偷改日期
 - **存量库拒绝启动导致开发中断** ｜触发：d8f1563 删除静默 create_all 后，无 alembic_version 的库启动失败 ｜缓解：P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md
 - **Windows + Docker Desktop 上跑不通** ｜触发：bind mount 权限、CRLF、宿主端口占用、路径长度 ｜缓解：命令只走 scripts/*.py + compose；.gitattributes 固定 eol=lf；P0-0/P0-8 必须在 Windows 实跑
-- **真实链路与浏览器验证缺环境** ｜触发：本机当前无 PG/Redis/Milvus 运行实例、无 LLM 密钥 ｜缓解：P0-0 把启动序列实跑作为退出标准；证据等级由 sync_progress.py --check 强制，禁止 mock 冒充完成
 
 ## 图例
 

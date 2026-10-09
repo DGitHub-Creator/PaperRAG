@@ -7,12 +7,40 @@
 
 import os
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Ensure backend is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+_LAYERS = {"unit", "integration", "chain", "e2e", "slow"}
+# tests/ 根下的历史用例里只有 test_health 走 TestClient（应用级），其余是纯模块单测
+_APP_LEVEL_ROOT_TESTS = {"test_health.py"}
+
+
+def layer_for(dirname: str, filename: str) -> str:
+    """目录即分层：tests/<层>/ 下的用例归该层，tests/ 根下的历史用例默认 unit。"""
+    if dirname in {"integration", "chain", "e2e"}:
+        return dirname
+    if not dirname and filename in _APP_LEVEL_ROOT_TESTS:
+        return "integration"
+    return "unit"
+
+
+def pytest_collection_modifyitems(config, items):
+    """给没显式声明层级 marker 的用例按目录补一个（P0-0 X7）。
+
+    显式 `pytestmark` 优先，因此 P0-5 新增 tests/chain/ 时直接在文件里标 chain 即可，
+    不会被这里改写成 unit。
+    """
+    tests_dir = Path(__file__).resolve().parent
+    for item in items:
+        if _LAYERS & {mark.name for mark in item.iter_markers()}:
+            continue
+        rel = Path(str(item.fspath)).resolve().relative_to(tests_dir)
+        item.add_marker(getattr(pytest.mark, layer_for(rel.parts[0] if len(rel.parts) > 1 else "", rel.name)))
 
 
 @pytest.fixture(autouse=True)

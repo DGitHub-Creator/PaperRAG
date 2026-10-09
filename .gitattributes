@@ -1,5 +1,25 @@
-# Ignore large model files
-models/
-*.bin
-*.safetensors
+# 换行与文本属性：容器里的 shell 脚本 / Dockerfile 带 CRLF 会直接起不来，
+# 而 Windows 上 core.autocrlf 默认把检出改成 CRLF。这里按仓库既有 blob（全 LF）钉死。
+* text=auto eol=lf
+
+# 二进制不做任何转换
+*.bin -text
+*.safetensors -text
+*.pdf -text
+*.png -text
+*.jpg -text
+*.gif -text
+*.ico -text
+*.woff -text
+*.woff2 -text
+*.ttf -text
+*.mp4 -text
+*.zip -text
+
+# LFS（models/ 已被 .gitignore 排除，这条留给确实走 LFS 的资产）
 models/** filter=lfs diff=lfs merge=lfs -text
+
+# 文档与代码 diffs 保持可读
+*.md text diff=markdown
+*.py text diff=python
+*.go text diff=golang

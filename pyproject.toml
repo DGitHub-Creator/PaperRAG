@@ -69,6 +69,15 @@ test = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--strict-markers"
+# 分层含义见 docs/refactor/08-principles-and-conventions.md §4（证据等级 none<mock<real<e2e）
+# 未显式声明 marker 的用例由 tests/conftest.py 按所在目录补齐
+markers = [
+    "unit: 纯内存单测，不打真实服务（mock 级）",
+    "integration: 应用级测试，TestClient 或真实 PG/Redis（mock/real 级）",
+    "chain: Go↔Python 真实链路契约测试，需 docker compose 起栈（real 级）",
+    "e2e: 浏览器端到端（Playwright），需完整栈与 LLM 密钥（e2e 级）",
+    "slow: 耗时长，不进默认门禁，按需手动跑",
+]
 
 [tool.coverage.run]
 source = ["backend"]
