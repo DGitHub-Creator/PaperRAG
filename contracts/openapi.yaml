@@ -336,10 +336,11 @@ paths:
       description: |
         OpenAPI 对 WebSocket 没有正式表达，此处以「GET + 101」占位，
         真正约束是：鉴权走 **query 参数 `token`**（浏览器 WebSocket 不能带 Authorization 头），
+        URL 由前端 `api/ws.ts` 从 `location.host` 与 `api/http.ts` 的 `BASE` 拼出（换前缀只改一处），
         入站消息 {"message": str, "session_id": str}，出站帧是 StreamEvent 的 JSON 本体
         （无 `data: ` 前缀），流结束额外发 {"type":"done"}。
-        路径由 useWebSocket.ts:14 从 location.host 拼接，**不走 services/api.ts 的 BASE 常量**，
-        所以 basePath 变更必须同时改这一处。
+        URL 在前端由 api/ws.ts 用 BASE + location.host 现场拼装（wsChatUrl），
+        所以 basePath 变更只需要改 api/http.ts 的 BASE 一处，SSE 与 WS 同源。
       parameters:
         - name: token
           in: query

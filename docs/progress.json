@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
+  "current": "FE-1 前端结构重构 done（api/ 七件取代 services/api.ts，六个 composable 统一模块单例，check_frontend.py 机器执行 R1–R11 且每条规则都有负向用例；typecheck/build/契约三门禁全绿。浏览器级回归 FE-f 本机无 Docker/PG/LLM key，不冒充通过，如实留到 P0-9 的 X7）。P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -129,6 +129,17 @@
           "deps": [],
           "verify": "uv run python scripts/sync_progress.py --check",
           "note": "路线改为 P0–P3；旧 Q1 与 Q5 的排期含义被取代，技术决策 Q2–Q8 沿用"
+        },
+        {
+          "id": "FE-1",
+          "title": "前端结构重构：唯一请求出口 api/ + 模块单例状态层 + R1–R11 机检门禁（docs/refactor/10）",
+          "status": "done",
+          "evidence": "mock",
+          "requires": "mock",
+          "hours": 12,
+          "deps": [],
+          "verify": "cd frontend && npm run typecheck && npm run build && uv run python scripts/check_frontend.py && uv run python scripts/check_contracts.py",
+          "note": "2026-10-09 指令「前端要重构，先按核心原则把前端结构做完整做完善」。api/ 七件（types/token/events/http/sse/ws/client）取代 services/api.ts；六个 composable 统一为模块级单例并把 DOM/对话框外移 utils/dialog；DTO 按契约纠形（rag_trace 是对象不是数组，此前 trace 面板恒空白即 F7）；axios 与 style.css、MessageBubble.vue 删除。check_frontend.py 执行 R1–R11，配套 tests/unit/test_check_frontend.py 每条规则一负一正，证明门禁会红不是恒过。浏览器级回归（FE-f）本机无 Docker/PG/LLM key，如实留到 P0-9 的 X7。"
         },
         {
           "id": "P0-0",

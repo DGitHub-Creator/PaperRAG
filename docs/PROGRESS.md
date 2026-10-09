@@ -5,20 +5,20 @@
 
 ## 一句话现状
 
-- **完成了多少**：8%（按工时加权；29/360 小时，任务完成 4/37，验收 3/24 通过）
-- **现在在哪**：P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作
+- **完成了多少**：11%（按工时加权；41/372 小时，任务完成 5/38，验收 3/24 通过）
+- **现在在哪**：FE-1 前端结构重构 done（api/ 七件取代 services/api.ts，六个 composable 统一模块单例，check_frontend.py 机器执行 R1–R11 且每条规则都有负向用例；typecheck/build/契约三门禁全绿。浏览器级回归 FE-f 本机无 Docker/PG/LLM key，不冒充通过，如实留到 P0-9 的 X7）。P0-4 契约目录 done；P0-2/P0-3 同日推到 mock 级上限：audit_schema.py（离线 --check-baseline + 只读 --live，19 项判定单测）与 Go 数据访问层（sqlc 生成物入库 + dev.py gen --check 漂移门禁 + 8 项 Go 用例）都已落地并有负向用例。两卡剩下的都锁在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录（05 §1 末明确禁止由 ORM 生成），当前 sqlc 用的是 server/sql/schema.sql 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作
 - **还差多少**：待办 29 项 / 306 小时（约 15.3-20.4 周），进行中 4 项；可立即开工：P0-7
 
 ## 阶段进度
 
 | 阶段 | 目标 | 状态 | 完成度 | 验收 | 工时 | 周次 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | █░░░░ 27% | 3/8 | 29/106h | W1–W2 |
+| **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 进行中 | ██░░░ 35% | 3/8 | 41/118h | W1–W2 |
 | **P1** 后端迁移与最小原型 | Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go | 待办 | ░░░░░ 0% | 0/6 | 0/80h | W3–W6 |
 | **P2** 功能拓展与数据可信化 | 正文真相进 PG、公式检索真实生效、事件可续传、预算持久化、引用可回溯到 PDF 位置 | 待办 | ░░░░░ 0% | 0/5 | 0/92h | W7 起（预计超 6 周日程） |
 | **P3** 多 Agent 自主探索 | ResearchRun + Frontier + Planner/Discovery/Reader/Writer，产出可信带引用报告且崩溃可恢复 | 待办 | ░░░░░ 0% | 0/5 | 0/82h | P2 之后（未排具体周次） |
 
-## P0 — 架构与契约（27%）
+## P0 — 架构与契约（35%）
 
 **可演示状态**：docker compose up → 前端注册 → 登录 → 侧栏显示用户名 → curl Go /api/v1/auth/me 返回同一用户；ai-core 只内网可达
 
@@ -42,6 +42,7 @@
 | A0-1 | 前端故障修复 + typecheck 进 CI 门禁（旧 A0-1） | 完成 | mock（要求 mock） | 3h | — | `cd frontend && npm run typecheck` | 提交 2c3e583；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁 |
 | A0-3 | 鉴权与运行安全修复（旧 A0-3） | 完成 | mock（要求 mock） | 10h | — | `uv run pytest -q` | 提交 d8f1563；307 项全绿。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1 |
 | SPEC-1 | spec 按四条原则重排 + 进度与可视化机制（08/09/04/06/README + progress.json/html/sync_progress.py） | 完成 | mock（要求 mock） | 8h | — | `uv run python scripts/sync_progress.py --check` | 路线改为 P0–P3；旧 Q1 与 Q5 的排期含义被取代，技术决策 Q2–Q8 沿用 |
+| FE-1 | 前端结构重构：唯一请求出口 api/ + 模块单例状态层 + R1–R11 机检门禁（docs/refactor/10） | 完成 | mock（要求 mock） | 12h | — | `cd frontend && npm run typecheck && npm run build && uv run python scripts/check_frontend.py && uv run python scripts/check_contracts.py` | 2026-10-09 指令「前端要重构，先按核心原则把前端结构做完整做完善」。api/ 七件（types/token/events/http/sse/ws/client）取代 services/api.ts；六个 composable 统一为模块级单例并把 DOM/对话框外移 utils/dialog；DTO 按契约纠形（rag_trace 是对象不是数组，此前 trace 面板恒空白即 F7）；axios 与 style.css、MessageBubble.vue 删除。check_frontend.py 执行 R1–R11，配套 tests/unit/test_check_frontend.py 每条规则一负一正，证明门禁会红不是恒过。浏览器级回归（FE-f）本机无 Docker/PG/LLM key，如实留到 P0-9 的 X7。 |
 | P0-0 | 统一命令入口与可复现环境（scripts/dev.py + marker 分层 + .env.example 清理 + .gitattributes + p0-environment.md） | 进行中 | mock（要求 real） | 5h | — | `uv run python scripts/dev.py test -m unit` | 吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass，但 p0-environment.md §3 的实跑记录表全空：本机未安装 Docker Desktop，doctor 实测 exit=1，up/health/migrate 未实跑 → 等级 real 达不到，不标 done |
 | P0-1 | Go 服务骨架（cmd/api + cmd/worker + Chi 路由 + slog + trace_id + detail 错误信封 + health/ready） | 进行中 | mock（要求 real） | 8h | P0-0 | `cd server && gofmt -l . && go vet ./... && go test ./...` | 16 项 Go 用例绿：/ready 失败用 {"detail":{...}} 信封、成功平铺；探测键名 database 与超时文案 "timeout after Ns" 逐字对齐 backend/api/health.py；404/405/500 都走 FastAPI 同款信封；trace_id 生成与透传；panic 兜底；生产缺 DATABASE_URL 拒绝启动。real 部分（compose 起服务后 /ready 200、Dockerfile 能否构建）本机无 Docker → 未验，不标 done |
 | P0-2 | Schema 基线与非破坏性收编（audit_schema.py + probe_timestamps.py + migrations/000001_baseline） | 进行中 | mock（要求 real） | 8h | P0-0 | `uv run python scripts/audit_schema.py --check-baseline` | 含 create_all 建出的无 alembic_version 存量库的人工补版本步骤。2026-10-09：scripts/audit_schema.py 落地（离线 --check-baseline + 只读 --live 两模式，判定逻辑 19 项单测），本机 --check-baseline 现在如实返回 1（migrations/ 还空着）。剩下的都必须有真库：基线 DDL 由实际结构抄录而非 ORM 声明（05 §1 末、§2.2），故 X6 仍 not_run |

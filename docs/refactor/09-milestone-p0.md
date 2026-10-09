@@ -136,6 +136,18 @@
 | 等级 | e2e |
 | 规模/风险 | M | 
 
+**FE-1（2026-10-09 指令插入，不在原 P0 序列里）**：前端结构重构。它不改后端也不改契约，
+所以不进下面的依赖图；契约的「前端实调集合」在重构前后都是同一批 18 个操作。
+
+| 字段 | 内容 |
+| --- | --- |
+| 输入 | 指令「前端要重构，先按核心原则把前端结构做完整做完善」+ `10-frontend-structure.md` §1 缺陷表 F1–F11 |
+| 输出 | `frontend/src/api/` 七件（types/token/events/http/sse/ws/client）、六个 `composables/*` 统一模块单例、`utils/{dialog,errors,fileIcon}.ts`、`scripts/check_frontend.py` 与其负向用例；删除 `services/`、`MessageBubble.vue`、`frontend/style.css`、axios |
+| 依赖 | 无 |
+| 验收 | `10` §4 的 FE-a…FE-e：`npm run typecheck`、`npm run build`、`check_frontend.py`、`check_contracts.py`、`sync_progress.py --check` 全部退出 0 |
+| 等级 | mock。浏览器级 FE-f 属 P0-9 的 X7；本机无 Docker/PG/LLM key，不拿静态检查冒充端到端 |
+| 规模/风险 | L / 中：一次性替换请求边界与状态层，风险全在运行时等价性，只能由 P0-9 收口 |
+
 ## 2. 依赖顺序与里程碑
 
 ```

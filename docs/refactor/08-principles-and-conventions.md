@@ -104,7 +104,8 @@ requires: mock | real | e2e                 # 宣称 done 所需的最低等级
 **禁止**：
 
 - `git mv backend → ai-core` 之类目录大迁移（决策 Q2 有效；改名推迟到 P2 之后作为独立提交，且必须能单独回滚）。
-- 为"顺手统一"而改动与本轮目标无关的文件（例如把 `authFetch`/`apiFetch` 全量替换）。
+- 为"顺手统一"而改动与本轮目标无关的文件（例：本轮目标是契约与后端，却顺手动前端的请求层）。
+  前端请求层的整体替换是 `10-frontend-structure.md` 的**被指令任务**，不属于本条禁止范围；判据是每条机检都能回溯到该文的一句规定。
 - 引入 Kafka/RabbitMQ/Neo4j/微服务注册中心（`02` §9）。
 - 在旧 Python 侧新建第二套调度器（违反 L1）。
 - 删除 `parent_chunks`/`multimodal.py`/`layout_analyzer.py` 等未接线代码——只降级口径，不删。
@@ -122,7 +123,7 @@ requires: mock | real | e2e                 # 宣称 done 所需的最低等级
 | 配置 | 只从环境变量读取（沿用 `backend/core/config/` 的分层）；密钥无默认值、缺失即拒绝启动；`.env` 不提交；示例只进 `.env.example` |
 | 安全底线 | API Key 只在后端使用；PDF 存储路径可配置且文件不入 Git；不把外部文本直接拼进系统提示；鉴权一律以 DB 中的角色为准 |
 | 测试 | marker 固定 `unit / integration / chain / e2e / slow`（`--strict-markers` 已开，注册属 P0-0）；端到端断言只针对**结构与可追溯性**，不断言模型文本内容 |
-| 前端 | 所有请求经 `services/api.ts` 的 `BASE`；`npm run typecheck` 是 CI 门禁 |
+| 前端 | 分层单向 `components → composables → api → (browser)`；请求出口只有 `src/api/http.ts`，路径字面量只有 `src/api/client.ts`，登录态持久化只有 `src/api/token.ts`，状态层只允许模块级单例。具体十一条（R1–R11）与其理由见 `10-frontend-structure.md` §3，由 `scripts/check_frontend.py` 执行。门禁：`npm run typecheck` + `npm run build` + `check_frontend.py`（CI `frontend` job） |
 | Go | `gofmt` + `go vet`；查询一律走 `sqlc`，不在业务代码里手写拼接 SQL |
 | 提交 | Conventional Commits + 阶段前缀：`feat(p0):` / `fix(p1):` / `test(p0):` / `docs(p0):`。按关注点分批，一个提交一件事；统一 push 前先 `git fetch` |
 | 同步 | 每个提交必须同时更新 `docs/progress.json`（§8） |
