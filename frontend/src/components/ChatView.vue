@@ -1,11 +1,11 @@
 <template>
-  <div v-show="activeNav !== 'settings'" class="chat-area">
+  <div class="chat-area">
     <header class="chat-header">
       <div class="header-info"><div class="status-dot"></div><span>{{ $t("chat.online") }}</span></div>
-      <div class="header-actions"><button class="icon-btn" title="更多"><i class="fas fa-ellipsis-h"></i></button></div>
+      <div class="header-actions"><button class="icon-btn" :title="$t('chat.more')"><i class="fas fa-ellipsis-h"></i></button></div>
     </header>
 
-    <div class="chat-container" ref="chatContainer">
+    <div ref="chatContainer" class="chat-container">
       <div v-if="!messages.length" class="welcome-screen">
         <div class="big-avatar">🐱</div>
         <h3>{{ $t("chat.welcome_title") }}</h3>
@@ -16,19 +16,19 @@
         <div v-if="!msg.isUser && msg.isThinking && !msg.text" class="message-content thinking-content">
           <div class="thinking-header">
             <div class="thinking-dots"><span class="tdot"></span><span class="tdot"></span><span class="tdot"></span></div>
-            <span class="thinking-text">{{ msg.ragSteps?.length ? msg.ragSteps[msg.ragSteps.length - 1].label : $t('chat.thinking') }}</span>
+            <span class="thinking-text">{{ msg.ragSteps.length ? msg.ragSteps[msg.ragSteps.length - 1].label : $t('chat.thinking') }}</span>
           </div>
-          <div v-if="msg.ragSteps?.length" class="thinking-trace-lines">
+          <div v-if="msg.ragSteps.length" class="thinking-trace-lines">
             <div v-for="(step, sIdx) in msg.ragSteps" :key="sIdx" class="thinking-trace-line">
-              <span class="thinking-trace-icon">{{ step.icon || '▶' }}</span>
+              <span class="thinking-trace-icon">{{ step.icon }}</span>
               <span class="thinking-trace-label">{{ step.label }}</span>
               <span v-if="step.detail" class="thinking-trace-detail">{{ step.detail }}</span>
             </div>
           </div>
         </div>
         <div v-else class="message-content" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
-        <CitationChips 
-          v-if="!msg.isUser && (msg.citations?.length || msg.unsupported?.length)"
+        <CitationChips
+          v-if="!msg.isUser && (msg.citations.length || msg.unsupported.length)"
           :citations="msg.citations"
           :unsupported="msg.unsupported"
         />
@@ -69,18 +69,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue"
+import { nextTick, onBeforeUnmount, ref, watch } from "vue"
 import RagTracePanel from "./RagTracePanel.vue"
 import CitationChips from "./CitationChips.vue"
 import { useChat } from "../composables/useChat"
-import { parseMarkdown, escapeHtml } from "../utils/markdown"
+import { escapeHtml, parseMarkdown } from "../utils/markdown"
 
-const { messages, isLoading, send, stop } = useChat()
+const { messages, isLoading, revision, send, stop } = useChat()
 
-defineProps({ activeNav: { type: String, default: "newChat" } })
 const userInput = ref("")
 const isComposing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const chatContainer = ref<HTMLElement | null>(null)
+
+// 状态层只递增 revision，"滚到底"这件事只有持有容器元素的组件说得清
+let scrollFrame = 0
+watch(revision, () => {
+  if (scrollFrame) return
+  scrollFrame = requestAnimationFrame(async () => {
+    scrollFrame = 0
+    await nextTick()
+    const el = chatContainer.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+})
+onBeforeUnmount(() => {
+  if (scrollFrame) cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+})
 
 function handleKeyDown(e: KeyboardEvent): void {
   if (e.key === "Enter" && !e.shiftKey && !isComposing.value) {
@@ -93,7 +109,7 @@ function handleSend(): void {
   const text = userInput.value.trim()
   if (!text || isLoading.value || isComposing.value) return
   userInput.value = ""
-  send(text)
+  void send(text)
 }
 
 function autoResize(e: Event): void {

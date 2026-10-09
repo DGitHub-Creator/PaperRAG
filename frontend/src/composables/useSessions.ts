@@ -1,51 +1,28 @@
+// 会话列表状态（模块级单例，`docs/refactor/10` R3/R4）：不 catch、不弹窗，错误由组件决定怎么显示。
 import { ref } from "vue"
-import { authFetch } from "../services/api"
-import { t } from "../i18n"
+import * as api from "../api/client"
+import type { SessionInfo } from "../api/types"
 
-export interface SessionRecord {
-  session_id: string
-  message_count?: number
-  updated_at?: string
-}
-
-interface SessionMessagesResponse {
-  messages?: Array<{
-    content: string
-    type: string
-    rag_trace?: unknown
-  }>
-}
+const sessions = ref<SessionInfo[]>([])
 
 export function useSessions() {
-  const sessions = ref<SessionRecord[]>([])
-  const showHistorySidebar = ref(false)
-
-  async function list(): Promise<void> {
-    try {
-      const res = await authFetch("/sessions")
-      if (!res.ok) throw new Error("加载失败")
-      const data = await res.json()
-      sessions.value = data.sessions || []
-    } catch (e: unknown) { alert(t("history.load_failed") + (e instanceof Error ? e.message : String(e))) }
+  async function refresh(): Promise<void> {
+    const data = await api.listSessions()
+    sessions.value = data.sessions || []
   }
 
-  async function loadMessages(sessionId: string): Promise<SessionMessagesResponse | null> {
-    try {
-      const res = await authFetch(`/sessions/${encodeURIComponent(sessionId)}`)
-      if (!res.ok) throw new Error("加载失败")
-      return await res.json()
-    } catch (e: unknown) { alert(t("history.load_session_failed") + (e instanceof Error ? e.message : String(e))); return null }
+  function load(sessionId: string) {
+    return api.getSession(sessionId)
   }
 
-  async function remove(sessionId: string): Promise<boolean> {
-    if (!confirm(t("history.delete_confirm"))) return false
-    try {
-      const res = await authFetch(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("删除失败")
-      sessions.value = sessions.value.filter((s) => s.session_id !== sessionId)
-      return true
-    } catch (e: unknown) { alert(t("history.delete_failed") + (e instanceof Error ? e.message : String(e))); return false }
+  async function remove(sessionId: string): Promise<void> {
+    await api.deleteSession(sessionId)
+    sessions.value = sessions.value.filter((s) => s.session_id !== sessionId)
   }
 
-  return { sessions, showHistorySidebar, list, loadMessages, remove }
+  function reset(): void {
+    sessions.value = []
+  }
+
+  return { sessions, refresh, load, remove, reset }
 }

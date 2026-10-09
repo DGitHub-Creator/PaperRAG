@@ -1,60 +1,58 @@
-import { ref, computed } from "vue"
-import { authFetch, apiFetch } from "../services/api"
+// 登录态的唯一所有者：反应式状态在这里，持久化委托给 api/token.ts（`docs/refactor/10` R2）。
+import { computed, ref } from "vue"
+import * as api from "../api/client"
+import { clearSession, readStoredUser, readToken, writeSession, writeUser } from "../api/token"
+import type { AuthResponse, CurrentUserResponse, Role } from "../api/types"
 
-interface UserInfo {
+const token = ref(readToken())
+const currentUser = ref<CurrentUserResponse | null>(readStoredUser())
+
+export type AuthMode = "login" | "register"
+
+/** AuthPanel 提交上来的载荷：mode 由组件持有，状态层只管"按 mode 走哪条接口" */
+export interface AuthSubmit {
+  mode: AuthMode
   username: string
-  role: string
+  password: string
+  role: Role
+  admin_code: string | null
 }
 
-const token = ref<string>(localStorage.getItem("accessToken") || "")
-const currentUser = ref<UserInfo | null>(null)
+function applySession(nextToken: string, user: CurrentUserResponse | null): void {
+  token.value = nextToken
+  currentUser.value = user
+  if (nextToken && user) writeSession(nextToken, user)
+  else clearSession()
+}
+
+function toUser(auth: AuthResponse): CurrentUserResponse {
+  return { username: auth.username, role: auth.role }
+}
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!token.value && !!currentUser.value)
   const isAdmin = computed(() => currentUser.value?.role === "admin")
   const username = computed(() => currentUser.value?.username || "")
+  const role = computed<string>(() => currentUser.value?.role || "")
 
-  function _persist(t: string, u: UserInfo | null) {
-    token.value = t
-    currentUser.value = u
-    if (t) localStorage.setItem("accessToken", t)
-    else localStorage.removeItem("accessToken")
-    if (u) localStorage.setItem("currentUser", JSON.stringify(u))
-    else localStorage.removeItem("currentUser")
-  }
-
+  /** 启动时用本地 token 探测登录态；失败由调用方决定怎么收尾（401 已经广播过 auth-expired） */
   async function fetchMe(): Promise<void> {
-    const res = await authFetch("/auth/me")
-    if (!res.ok) throw new Error("认证失败")
-    currentUser.value = await res.json()
-    localStorage.setItem("currentUser", JSON.stringify(currentUser.value))
+    const user = await api.me()
+    currentUser.value = user
+    writeUser(user)
   }
 
-  async function login(username: string, password: string): Promise<void> {
-    const res = await apiFetch("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.detail || "登录失败")
-    _persist(data.access_token, { username: data.username, role: data.role })
-  }
-
-  async function register(username: string, password: string, role = "user", admin_code: string | null = null): Promise<void> {
-    const res = await apiFetch("/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, role, admin_code }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.detail || "注册失败")
-    _persist(data.access_token, { username: data.username, role: data.role })
+  async function submit(input: AuthSubmit): Promise<void> {
+    const auth =
+      input.mode === "login"
+        ? await api.login({ username: input.username, password: input.password })
+        : await api.register({ username: input.username, password: input.password, role: input.role, admin_code: input.admin_code })
+    applySession(auth.access_token, toUser(auth))
   }
 
   function logout(): void {
-    _persist("", null)
+    applySession("", null)
   }
 
-  return { token, currentUser, isAuthenticated, isAdmin, username, fetchMe, login, register, logout }
+  return { token, currentUser, isAuthenticated, isAdmin, username, role, fetchMe, submit, logout }
 }

@@ -1,41 +1,39 @@
 <template>
-  <div class="citations-section" v-if="citations.length > 0 || unsupported.length > 0">
+  <div class="citations-section">
     <div class="citations-header">
       <span class="citations-icon">📎</span>
-      <span class="citations-title">引用来源</span>
+      <span class="citations-title">{{ $t("chat.citations_title") }}</span>
     </div>
-    <div class="citation-chips" v-if="citations.length > 0">
-      <span 
-        v-for="(cite, idx) in citations" 
-        :key="idx"
-        class="citation-chip verified"
-      >
-        {{ cite }}
-      </span>
+    <div class="citation-chips" v-if="citations.length">
+      <span v-for="(cite, idx) in citations" :key="idx" class="citation-chip verified">{{ chipText(cite) }}</span>
     </div>
-    <div class="unsupported-section" v-if="unsupported.length > 0">
-      <span class="unsupported-label">未验证引用:</span>
+    <div class="unsupported-section" v-if="unsupported.length">
+      <span class="unsupported-label">{{ $t("chat.unsupported_label") }}</span>
       <div class="citation-chips unsupported">
-        <span 
-          v-for="(cite, idx) in unsupported" 
-          :key="idx"
-          class="citation-chip unsupported"
-        >
-          {{ cite }}
-        </span>
+        <span v-for="(cite, idx) in unsupported" :key="idx" class="citation-chip unsupported">{{ chipText(cite) }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { CitationItem } from "../api/types"
+
 withDefaults(defineProps<{
-  citations?: string[]
-  unsupported?: string[]
+  citations?: CitationItem[]
+  unsupported?: CitationItem[]
 }>(), {
   citations: () => [],
   unsupported: () => [],
 })
+
+// 引用帧的元素是对象（backend/agent/verify.py:_format_citation），不是字符串
+function chipText(cite: CitationItem): string {
+  const parts = [cite.source_label || ""]
+  if (cite.filename) parts.push(cite.filename)
+  if (cite.page !== null && cite.page !== undefined) parts.push(`p.${cite.page}`)
+  return parts.filter(Boolean).join(" · ")
+}
 </script>
 
 <style scoped>

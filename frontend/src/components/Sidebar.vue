@@ -31,12 +31,14 @@
 </template>
 
 <script setup lang="ts">
+import type { NavKey } from "../composables/useNav"
+
 defineProps<{
   isAdmin: boolean
   isAuthenticated: boolean
   username: string
   role: string
-  activeNav: string
+  activeNav: NavKey
 }>()
 defineEmits<{
   newChat: []

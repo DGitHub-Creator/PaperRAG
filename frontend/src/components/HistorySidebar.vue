@@ -12,11 +12,11 @@
             <div class="session-title">{{ s.session_id }}</div>
             <div class="session-meta">
               <span>{{ s.message_count }} {{ $t("history.messages") }}</span>
-              <span>{{ s.updated_at ? new Date(s.updated_at).toLocaleString() : '' }}</span>
+              <span>{{ new Date(s.updated_at).toLocaleString() }}</span>
             </div>
           </div>
         </div>
-        <button class="history-delete-btn" title="删除" @click.stop="$emit('delete', s.session_id)">
+        <button class="history-delete-btn" :title="$t('history.delete')" @click.stop="$emit('delete', s.session_id)">
           <i class="fas fa-trash"></i>
         </button>
       </div>
@@ -25,10 +25,10 @@
 </template>
 
 <script setup lang="ts">
-import type { SessionRecord } from "../composables/useSessions"
+import type { SessionInfo } from "../api/types"
 
 defineProps<{
-  sessions: SessionRecord[]
+  sessions: SessionInfo[]
   currentSessionId: string
 }>()
 defineEmits<{

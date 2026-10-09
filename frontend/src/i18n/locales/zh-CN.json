@@ -47,9 +47,14 @@
     "error_prefix": "错误：",
     "error_msg": "喵呜... 出了点问题：",
     "retrieval_process": "检索过程",
-    "footer_hint": "AI 生成的内容可能包含错误，请仔细甄别。"
+    "footer_hint": "AI 生成的内容可能包含错误，请仔细甄别。",
+    "citations_title": "引用来源",
+    "unsupported_label": "未验证引用:",
+    "trace_count": "{count} 项",
+    "more": "更多"
   },
   "history": {
+    "delete": "删除会话",
     "title": "历史会话",
     "empty": "暂无历史记录",
     "messages": "条消息",
@@ -90,9 +95,17 @@
     "load_failed": "加载文档列表失败：",
     "upload_failed_prefix": "上传失败：",
     "query_failed": "进度查询失败：",
-    "delete_failed_prefix": "删除失败："
+    "delete_failed_prefix": "删除失败：",
+    "chunk_count": "{count} 个文本片段",
+    "delete": "删除"
   },
   "ws": {
     "error": "WebSocket 连接错误"
+  },
+  "errors": {
+    "upload_failed": "上传请求失败",
+    "upload_timeout": "上传超时",
+    "upload_aborted": "上传已取消",
+    "empty_response_body": "响应体为空"
   }
 }

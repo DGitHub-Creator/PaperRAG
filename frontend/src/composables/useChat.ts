@@ -1,184 +1,165 @@
+// 聊天状态（模块级单例）：不认识 DOM、不认识对话框，滚动与提示由组件负责（`docs/refactor/10` R3/R4）。
 import { ref } from "vue"
-import { authFetch } from "../services/api"
-import { useWebSocket } from "./useWebSocket"
+import * as api from "../api/client"
 import { t } from "../i18n"
+import { describeError, isAbortError } from "../utils/errors"
+import { useWebSocket } from "./useWebSocket"
+import type { CitationItem, MessageInfo, RagStep, RagTrace, StreamEvent } from "../api/types"
 
-export interface RAGStep {
-  icon?: string
-  label: string
-  detail?: string
-}
-
-export interface RAGTraceEntry {
-  step: string
-  label?: string
-  score?: number
-  time_ms?: number
-  message?: string
-}
-
-export interface Message {
+export interface ChatMessage {
   text: string
   isUser: boolean
-  isThinking?: boolean
-  ragTrace?: RAGTraceEntry[] | null
-  ragSteps?: RAGStep[]
-  citations?: string[]
-  unsupported?: string[]
+  isThinking: boolean
+  ragSteps: RagStep[]
+  ragTrace: RagTrace | null
+  citations: CitationItem[]
+  unsupported: CitationItem[]
 }
 
-// ── 模块级单例状态：App.vue / ChatView.vue 等多处调用共享同一份 ──
-// 否则消息列表、加载态、会话 ID 会在组件间分裂
-const messages = ref<Message[]>([])
+const messages = ref<ChatMessage[]>([])
 const isLoading = ref(false)
-const sessionId = ref("session_" + Date.now())
-const abortController = ref<AbortController | null>(null)
+const sessionId = ref(newSessionId())
+/** 每次消息内容变化 +1：组件 watch 它来滚动，状态层因此不需要认识 DOM */
+const revision = ref(0)
 
-let _scrollRaf = 0
-function scrollToBottom(): void {
-  if (_scrollRaf) return
-  _scrollRaf = requestAnimationFrame(() => {
-    _scrollRaf = 0
-    const el = document.querySelector(".chat-container")
-    if (el) el.scrollTop = el.scrollHeight
-  })
+let abortController: AbortController | null = null
+// WS 模式下流式回复落在哪条消息上（SSE 模式用闭包里的索引）
+let wsTargetIndex = -1
+
+function newSessionId(): string {
+  return `session_${Date.now()}`
 }
 
-function newChat(): void {
-  messages.value = []
-  sessionId.value = "session_" + Date.now()
+function blankReply(): ChatMessage {
+  return { text: "", isUser: false, isThinking: true, ragSteps: [], ragTrace: null, citations: [], unsupported: [] }
 }
 
-function clearChat(): void {
-  messages.value = []
-}
-
-function loadMessages(data: Message[] | unknown[]): void {
-  messages.value = (data || []).map((msg: any) => ({
-    text: msg.text ?? msg.content ?? "",
-    isUser: msg.isUser ?? msg.type === "human",
-    ragTrace: msg.ragTrace ?? msg.rag_trace ?? null,
-    ragSteps: [],
-  }))
-  scrollToBottom()
-}
-
-function stop(): void {
-  if (abortController.value) {
-    abortController.value.abort()
-  } else {
-    const { isConnected, disconnect } = useWebSocket()
-    if (isConnected.value) disconnect()
-  }
-}
-
-function handleEvent(ev: any, botIdx: number): void {
-  const msg = messages.value[botIdx]
+function applyEvent(event: StreamEvent, index: number): void {
+  const msg = messages.value[index]
   if (!msg) return
-  if (ev.type === "content") {
-    if (msg.isThinking) msg.isThinking = false
-    msg.text += ev.content
-  } else if (ev.type === "trace") {
-    msg.ragTrace = ev.rag_trace
-  } else if (ev.type === "rag_step") {
-    msg.ragSteps!.push(ev.step)
-  } else if (ev.type === "citations") {
-    msg.citations = ev.citations
-    msg.unsupported = ev.unsupported
-  } else if (ev.type === "error") {
-    msg.isThinking = false
-    msg.text += `\n[Error: ${ev.content}]`
-  }
-}
-
-async function send(text: string): Promise<void> {
-  if (!text.trim() || isLoading.value) return
-
-  messages.value.push({ text, isUser: true })
-  scrollToBottom()
-
-  isLoading.value = true
-  const botIdx = messages.value.push({
-    text: "", isUser: false, isThinking: true, ragTrace: null, ragSteps: [], citations: [], unsupported: [],
-  }) - 1
-
-  const { isConnected, send: wsSend } = useWebSocket()
-  if (isConnected.value) {
-    _wsBotIdx = botIdx
-    wsSend({ message: text, session_id: sessionId.value })
-    return
-  }
-
-  abortController.value = new AbortController()
-  _wsBotIdx = -1
-
-  try {
-    const res = await authFetch("/chat/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: sessionId.value }),
-      signal: abortController.value.signal,
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    if (!res.body) throw new Error("Response body is null")
-
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
-        const line = buffer.slice(0, idx)
-        buffer = buffer.slice(idx + 2)
-        if (!line.startsWith("data: ")) continue
-        const raw = line.slice(6)
-        if (raw === "[DONE]") continue
-        try {
-          handleEvent(JSON.parse(raw), botIdx)
-        } catch (_) { /* ignore parse errors */ }
-      }
-      scrollToBottom()
-    }
-  } catch (err: unknown) {
-    const msg = messages.value[botIdx]
-    if (!msg) return
-    msg.isThinking = false
-    if (err instanceof Error && err.name === "AbortError") {
-      msg.text = msg.text || t("chat.aborted")
-    } else {
-      msg.text = `${t("chat.error_prefix")}${err instanceof Error ? err.message : String(err)}`
-    }
-  } finally {
-    isLoading.value = false
-    abortController.value = null
-    scrollToBottom()
-  }
-}
-
-// WS 模式下当前流式回复对应的 bot 消息索引
-let _wsBotIdx = -1
-
-function connectWs(token: string): void {
-  const { connect } = useWebSocket()
-  connect(token, (data: any) => {
-    if (data.type === "done") {
+  switch (event.type) {
+    case "content":
+      msg.isThinking = false
+      msg.text += event.content
+      break
+    case "rag_step":
+      msg.ragSteps.push(event.step)
+      break
+    case "trace":
+      msg.ragTrace = event.rag_trace ?? null
+      break
+    case "citations":
+      msg.citations = event.citations || []
+      msg.unsupported = event.unsupported || []
+      break
+    case "error":
+      msg.isThinking = false
+      msg.text += `\n[${t("chat.error_prefix")}${event.content}]`
+      break
+    case "done":
+      msg.isThinking = false
       isLoading.value = false
-    } else {
-      handleEvent(data, _wsBotIdx)
-      scrollToBottom()
-    }
-  })
-}
-
-function disconnectWs(): void {
-  const { disconnect } = useWebSocket()
-  disconnect()
+      break
+  }
+  revision.value += 1
 }
 
 export function useChat() {
-  return { messages, isLoading, sessionId, newChat, clearChat, loadMessages, send, stop, connectWs, disconnectWs }
+  function newChat(): void {
+    messages.value = []
+    sessionId.value = newSessionId()
+    revision.value += 1
+  }
+
+  function clearChat(): void {
+    messages.value = []
+    revision.value += 1
+  }
+
+  /** 历史会话记录 → 消息列表（契约里 rag_trace 是对象，不是数组） */
+  function loadHistory(records: MessageInfo[]): void {
+    messages.value = records.map((record) => ({
+      text: record.content,
+      isUser: record.type === "human",
+      isThinking: false,
+      ragSteps: [],
+      ragTrace: record.rag_trace ?? null,
+      citations: [],
+      unsupported: [],
+    }))
+    revision.value += 1
+  }
+
+  function selectSession(id: string): void {
+    sessionId.value = id
+  }
+
+  function stop(): void {
+    if (abortController) {
+      abortController.abort()
+      return
+    }
+    // As-Is 语义：WS 模式下"停止"就是断链（下一条消息会退回 SSE）。改动留给 P1-4 流式接管。
+    const ws = useWebSocket()
+    if (ws.isConnected.value) ws.disconnect()
+  }
+
+  async function send(text: string): Promise<void> {
+    const content = text.trim()
+    if (!content || isLoading.value) return
+
+    messages.value.push({ text: content, isUser: true, isThinking: false, ragSteps: [], ragTrace: null, citations: [], unsupported: [] })
+    const index = messages.value.push(blankReply()) - 1
+    revision.value += 1
+    isLoading.value = true
+
+    const ws = useWebSocket()
+    if (ws.isConnected.value) {
+      wsTargetIndex = index
+      ws.send({ message: content, session_id: sessionId.value })
+      return
+    }
+
+    const controller = new AbortController()
+    abortController = controller
+    try {
+      await api.chatStream({ message: content, session_id: sessionId.value }, controller.signal, (event) => applyEvent(event, index))
+    } catch (err: unknown) {
+      const msg = messages.value[index]
+      if (msg) {
+        msg.isThinking = false
+        if (isAbortError(err)) msg.text = msg.text || t("chat.aborted")
+        else msg.text = `${t("chat.error_prefix")}${describeError(err)}`
+        revision.value += 1
+      }
+    } finally {
+      isLoading.value = false
+      abortController = null
+      revision.value += 1
+    }
+  }
+
+  /** 登录后接 WS；事件落到的位置由 wsTargetIndex 决定 */
+  function connectWs(token: string): void {
+    useWebSocket().connect(token, (event) => {
+      applyEvent(event, wsTargetIndex)
+    })
+  }
+
+  function disconnectWs(): void {
+    useWebSocket().disconnect()
+  }
+
+  function reset(): void {
+    disconnectWs()
+    if (abortController) abortController.abort()
+    abortController = null
+    wsTargetIndex = -1
+    messages.value = []
+    isLoading.value = false
+    sessionId.value = newSessionId()
+    revision.value += 1
+  }
+
+  return { messages, isLoading, sessionId, revision, newChat, clearChat, loadHistory, selectSession, send, stop, connectWs, disconnectWs, reset }
 }

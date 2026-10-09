@@ -47,9 +47,14 @@
     "error_prefix": "Error: ",
     "error_msg": "Hmm... something went wrong: ",
     "retrieval_process": "Retrieval Process",
-    "footer_hint": "AI-generated content may contain errors. Please verify carefully."
+    "footer_hint": "AI-generated content may contain errors. Please verify carefully.",
+    "citations_title": "Citations",
+    "unsupported_label": "Unverified citations:",
+    "trace_count": "{count} items",
+    "more": "More"
   },
   "history": {
+    "delete": "Delete session",
     "title": "Chat History",
     "empty": "No history yet",
     "messages": "messages",
@@ -90,9 +95,17 @@
     "load_failed": "Failed to load documents: ",
     "upload_failed_prefix": "Upload failed: ",
     "query_failed": "Progress query failed: ",
-    "delete_failed_prefix": "Delete failed: "
+    "delete_failed_prefix": "Delete failed: ",
+    "chunk_count": "{count} chunks",
+    "delete": "Delete"
   },
   "ws": {
     "error": "WebSocket connection error"
+  },
+  "errors": {
+    "upload_failed": "Upload request failed",
+    "upload_timeout": "Upload timed out",
+    "upload_aborted": "Upload cancelled",
+    "empty_response_body": "Empty response body"
   }
 }

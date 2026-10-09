@@ -1,60 +1,52 @@
+// WS 通道（模块级单例，任何组件共享一条连接）。帧本体与 SSE 同源，解析复用 api/sse.ts。
 import { ref } from "vue"
-import { t } from "../i18n"
+import { wsChatUrl } from "../api/ws"
+import { parseStreamEvent } from "../api/sse"
+import type { ChatRequest, StreamEvent } from "../api/types"
 
-// ── 模块级单例状态：任何组件调用 useWebSocket() 共享同一连接 ──
-const ws = ref<WebSocket | null>(null)
 const isConnected = ref(false)
-const _token = ref<string>("")
-const _onMessage = ref<((data: unknown) => void) | null>(null)
-const _onError = ref<((msg: string) => void) | null>(null)
 
-/** 后端 WS 路由：/api/v1/ws/chat（与 REST API 同前缀，代理层统一转发） */
-function buildWsUrl(token: string): string {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${location.host}/api/v1/ws/chat?token=${encodeURIComponent(token)}`
-}
-
-function _openSocket(): void {
-  const socket = new WebSocket(buildWsUrl(_token.value))
-  socket.onopen = () => { isConnected.value = true }
-  socket.onmessage = (ev: MessageEvent) => {
-    try { _onMessage.value?.(JSON.parse(ev.data)) }
-    catch (_) { /* ignore parse errors */ }
-  }
-  socket.onerror = () => {
-    isConnected.value = false
-    _onError.value?.(t("ws.error"))
-  }
-  socket.onclose = () => { isConnected.value = false }
-  ws.value = socket
-}
+let socket: WebSocket | null = null
+let onEvent: ((event: StreamEvent) => void) | null = null
 
 export function useWebSocket() {
-  function connect(token: string, onMessage: (data: unknown) => void, onError?: (msg: string) => void): void {
-    if (ws.value) disconnect()
-    _token.value = token
-    _onMessage.value = onMessage
-    _onError.value = onError ?? null
-    _openSocket()
+  function connect(token: string, handler: (event: StreamEvent) => void): void {
+    disconnect()
+    onEvent = handler
+    const next = new WebSocket(wsChatUrl(token))
+    next.onopen = () => {
+      isConnected.value = true
+    }
+    next.onmessage = (message: MessageEvent) => {
+      if (typeof message.data !== "string") return
+      const event = parseStreamEvent(message.data)
+      if (event) onEvent?.(event)
+    }
+    next.onerror = () => {
+      isConnected.value = false
+    }
+    next.onclose = () => {
+      isConnected.value = false
+    }
+    socket = next
   }
 
-  function send(data: unknown): void {
-    if (ws.value?.readyState === WebSocket.OPEN) {
-      ws.value.send(JSON.stringify(data))
-    }
+  function send(input: ChatRequest): void {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(input))
   }
 
   function disconnect(): void {
-    if (ws.value) {
+    if (socket) {
       // 先摘除回调，避免主动关闭触发 onerror/onclose 副作用
-      if (ws.value) ws.value.onclose = null
-      ws.value.close()
-      ws.value = null
+      socket.onclose = null
+      socket.onerror = null
+      socket.onmessage = null
+      socket.close()
+      socket = null
     }
+    onEvent = null
     isConnected.value = false
-    _onMessage.value = null
-    _onError.value = null
   }
 
-  return { ws, isConnected, connect, send, disconnect }
+  return { isConnected, connect, send, disconnect }
 }
