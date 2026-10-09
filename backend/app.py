@@ -10,9 +10,9 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -29,7 +29,13 @@ from backend.core.config import (
     validate_runtime_security,
 )
 from backend.core.database import init_db
-from backend.core.exceptions import PaperRAGError, paper_rag_error_handler, unhandled_error_handler
+from backend.core.exceptions import (
+    PaperRAGError,
+    paper_rag_error_handler,
+    rate_limit_exceeded_handler,
+    request_validation_error_handler,
+    unhandled_error_handler,
+)
 from backend.core.logging_config import setup_root_logger
 from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
 from backend.core.rate_limit import default_limits, key_source, limiter, storage_backend
@@ -59,9 +65,13 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="PaperRAG - 学术论文 RAG 知识库平台")
 
+    # ── 错误信封（决策 K1/K4：全仓只留 {"detail": "..."} 一种形状）──
+    # 422 的数组 detail 由 pydantic 决定形状，Go 复刻不起，故降级为 400 + 字符串。
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+
     # ── 速率限制 ───────────────────────────────────────────────────
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
     # 日志取自构造 limiter 时真正用到的量，避免"日志说开了、其实没配"
     if default_limits:
