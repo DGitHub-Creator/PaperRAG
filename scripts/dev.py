@@ -11,11 +11,14 @@
     uv run python scripts/dev.py migrate             # 容器内 alembic upgrade head
     uv run python scripts/dev.py test -m unit        # 分层跑测试
     uv run python scripts/dev.py test -- -k auth -v  # 透传 pytest 自己的选项
+    uv run python scripts/dev.py gen                  # 重生成 Go 数据访问层（sqlc）
+    uv run python scripts/dev.py gen --check          # 生成物漂移门禁
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import socket
 import subprocess
@@ -26,6 +29,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
+SERVER_DIR = ROOT / "server"
+
+# sqlc 版本钉死：生成物入库（决策 K2）后，两个人用不同版本重生成会得到不同代码，
+# `git diff --exit-code` 门禁就会以"别人的改动"为名把 CI 弄红，而且没人看得出原因。
+SQLC_VERSION = "v1.30.0"
 
 # compose 里被 depends_on 或健康检查依赖的服务容器名（与 docker-compose.yml 的 container_name 一致）
 HEALTH_CONTAINERS = ["paperrag-postgres", "paperrag-redis", "milvus-standalone", "paperrag-backend"]
@@ -200,6 +208,51 @@ def cmd_test(args: argparse.Namespace) -> int:
     return run(cmd)
 
 
+def sqlc_binary() -> str | None:
+    """找本机 sqlc：PATH 优先，其次 `go install` 的默认落点 GOBIN/~/go/bin。"""
+    found = shutil.which("sqlc")
+    if found:
+        return found
+    gobin = os.environ.get("GOBIN") or str(Path.home() / "go" / "bin")
+    name = "sqlc.exe" if os.name == "nt" else "sqlc"
+    candidate = Path(gobin) / name
+    return str(candidate) if candidate.exists() else None
+
+
+def cmd_gen(args: argparse.Namespace) -> int:
+    """重新生成 Go 数据访问层（P0-3 / K2）。
+
+    生成物进版本库，一致性由 `--check` 保证：改完 .sql 忘记 gen，这条就会红。
+    找不到本机 sqlc 时退回 `go run …@固定版本`，慢一次但结果与别人一致。
+    """
+    binary = sqlc_binary()
+    if binary:
+        proc = subprocess.run([binary, "version"], capture_output=True, text=True)
+        got = (proc.stdout or "").strip()
+        if SQLC_VERSION.lstrip("v") not in got:
+            print(f"[gen] sqlc 版本不匹配：本机 {got or '未知'}，仓库钉的是 {SQLC_VERSION}")
+            print("      跨版本重生成会产出结构不同的代码，diff 门禁会失去意义。")
+            print(f"      对齐：go install github.com/sqlc-dev/sqlc/cmd/sqlc@{SQLC_VERSION}")
+            return 1
+        cmd = [binary, "generate"]
+    else:
+        print(f"[gen] 未找到本机 sqlc，退回 go run …@{SQLC_VERSION}（首次会下载依赖）")
+        cmd = ["go", "run", f"github.com/sqlc-dev/sqlc/cmd/sqlc@{SQLC_VERSION}", "generate"]
+
+    if run(cmd, cwd=SERVER_DIR) != 0:
+        return 1
+    if not args.check:
+        print("[gen] 已生成 server/internal/db/")
+        return 0
+
+    rc = run(["git", "diff", "--exit-code", "--", "server/internal/db", "server/sqlc.yaml"])
+    if rc != 0:
+        print("[gen] 生成物与提交不一致：改了 .sql 就要把重生成结果一起提交（K2 的门禁）")
+        return rc
+    print("[gen] 生成物无漂移。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dev.py", description="ResearchPilot 开发环境统一入口（只用标准库）")
     sub = p.add_subparsers(dest="command", required=True)
@@ -232,6 +285,10 @@ def build_parser() -> argparse.ArgumentParser:
     test.add_argument("-m", "--marker", default=None, help="只跑某一层：unit / integration / chain / e2e / slow")
     test.add_argument("pytest_args", nargs="*", default=[], help="透传给 pytest，如 `test -- -k auth -v`")
     test.set_defaults(func=cmd_test)
+
+    gen = sub.add_parser("gen", help="重生成 Go 数据访问层（sqlc）；--check 兼作生成物漂移门禁")
+    gen.add_argument("--check", action="store_true", help="生成后要求 git diff 为空")
+    gen.set_defaults(func=cmd_gen)
     return p
 
 

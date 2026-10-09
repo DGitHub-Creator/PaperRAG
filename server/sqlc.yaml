@@ -1,0 +1,33 @@
+# sqlc 代码生成配置（P0-3，决策 K2：生成物入库）。
+#
+# 跑法：uv run python scripts/dev.py gen（内部执行 `go run github.com/sqlc-dev/sqlc/cmd/sqlc generate`
+# 或直接 $HOME/go/bin/sqlc）。一致性由 `sqlc generate && git diff --exit-code` 保证，
+# 因此 CI 不需要装 sqlc，只需在改动 .sql 后重生成——K2 定的就是这条。
+#
+# 路径相对本文件所在目录（server/）。
+version: "2"
+sql:
+  - engine: "postgresql"
+    # P0-2 收编后把这里切成 ["migrations"] 并重跑 gen：
+    # 参照 schema 与真实基线的任何字段差异都会在生成的 struct 上变成可见 diff。
+    schema:
+      - "sql/schema.sql"
+    queries:
+      - "sql/queries"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db"
+        # pgx/v5 已在依赖里，生成的代码直接用它，不引入 database/sql
+        sql_package: "pgx/v5"
+        # 生成物进版本库，故不带 "DO NOT EDIT" 之外的额外噪声：默认带 header 头部标记，保留
+        emit_exact_table_names: false
+        # 不生成 interface：只有一个实现时它是纯粹的间接层（原则④）
+        emit_interface: false
+        # 结构体给前端/内部 JSON 用得到时再开；现在没有消费者
+        emit_json_tags: false
+        # 没有 NULL 列参与这条切片，不需要指针包装
+        emit_pointers_for_null_types: false
+        rename:
+          # 生成的方法名统一 Go 风格；sqlc 默认已 PascalCase，这里只留显式记录
+          id: ID
