@@ -70,14 +70,29 @@ class TestStructuralRules:
         data["phases"][0]["tasks"][0]["deps"] = ["P9-9"]
         assert any("依赖不存在" in e for e in sync_progress.validate(data))
 
-    def test_in_progress_requires_finished_deps(self):
-        data = make_data(status="in_progress", requires="mock", evidence="none")
+    def _with_dep(self, data, dep_status):
         data["phases"][0]["tasks"].append(
-            {"id": "P0-1", "title": "t2", "status": "in_progress", "evidence": "none",
-             "requires": "mock", "hours": 2, "deps": ["P0-0"], "verify": "x", "note": ""}
+            {"id": "P0-1", "title": "t2", "status": dep_status, "evidence": "none",
+             "requires": "mock", "hours": 2, "deps": [], "verify": "x", "note": ""}
         )
+        data["phases"][0]["tasks"][0]["deps"] = ["P0-1"]
+        return data
+
+    def test_in_progress_may_overlap_with_in_progress_dep(self):
+        # 前置的 real 部分常常阻塞本卡的 mock 部分，允许并行，但见下一条
+        data = self._with_dep(make_data(status="in_progress", requires="mock"), "in_progress")
+        assert sync_progress.validate(data) == []
+
+    def test_in_progress_blocks_untouched_dep(self):
+        data = self._with_dep(make_data(status="in_progress", requires="mock"), "pending")
         errors = sync_progress.validate(data)
-        assert any("进行中但依赖未完成" in e for e in errors), errors
+        assert any("尚未开始" in e for e in errors), errors
+
+    def test_done_requires_deps_done(self):
+        # done 是硬门：不能继承别人没验完的前置
+        data = self._with_dep(make_data(status="done", evidence="real", requires="real"), "in_progress")
+        errors = sync_progress.validate(data)
+        assert any("依赖尚未完成" in e for e in errors), errors
 
     def test_bad_enums(self):
         data = make_data(status="almost")

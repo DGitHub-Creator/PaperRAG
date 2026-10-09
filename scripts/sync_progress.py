@@ -96,17 +96,23 @@ def validate(data: dict) -> list[str]:
                 errors.append(f"{tid} 缺正的整数 hours（用于工时加权完成度）")
 
     for tid, task in tasks.items():
-        for dep in task.get("deps", []):
+        deps = task.get("deps", [])
+        for dep in deps:
             if dep not in tasks:
                 errors.append(f"{tid} 依赖不存在的任务：{dep}")
             if dep == tid:
                 errors.append(f"{tid} 依赖自身")
+        # done 是硬门：前置必须也 done，否则"完成"继承了别人没验完的洞
+        if task.get("status") == "done":
+            not_done = [d for d in deps if tasks.get(d, {}).get("status") != "done"]
+            if not_done:
+                errors.append(f"{tid} 标为 done 但依赖尚未完成：{'、'.join(not_done)}")
+        # in_progress 允许与"进行中的前置"并行开工（一张卡的 real 部分常常阻塞另一张的 mock 部分），
+        # 但不允许依赖还完全没人动就抢跑——那是"边写边补架构"的入口
         if task.get("status") == "in_progress":
-            unfinished = [
-                d for d in task.get("deps", []) if tasks.get(d, {}).get("status") != "done"
-            ]
-            if unfinished:
-                errors.append(f"{tid} 进行中但依赖未完成：{'、'.join(unfinished)}")
+            untouched = [d for d in deps if tasks.get(d, {}).get("status") == "pending"]
+            if untouched:
+                errors.append(f"{tid} 已开工但前置 {'、'.join(untouched)} 尚未开始")
 
     ids = [s.get("id") for s in data.get("schedule", [])]
     if len(ids) != len(set(ids)):
