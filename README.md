@@ -6,14 +6,25 @@ PaperRAG 是一个面向学术论文的 RAG 知识库平台，重点处理论文
 
 ## 项目简介
 
-- 学术文档解析：PDF/Word/Excel 加载，学术文本清洗，结构化分块。
-- 学术结构识别：定理、证明、定义、公式、引文、术语表。
-- 混合检索：BGE-M3 dense embedding、BM25 sparse embedding、Milvus hybrid search。
-- 检索增强：公式检索、引文优先、Rerank、Auto-merging、Context Expansion。
-- 查询改写：HyDE、Step-back、多轮相关性评分与重检索。
-- Agent 问答：LangChain/LangGraph 工具调用，SSE/WebSocket 流式输出。
-- 产品能力：用户认证、会话历史、文档上传、任务进度、RAG Trace、引用展示。
-- 工程能力：Docker Compose、本地缓存、健康检查、限流、测试与 CI 配置。
+功能状态口径：**已实现** = 在默认运行链路上生效；**部分实现** = 代码存在但有条件失效或未打通；**规划中** = 模块与测试存在，但无调用方接入，不产生用户可见能力。
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| 学术文档解析（PDF/Word/Excel 加载、文本清洗、分块） | 部分实现 | 默认 PDF 结构分块路径只产叶级分块，缺层级父块（`document_loader.py:_split_structural`） |
+| 学术结构识别（定理/证明/公式/引文/术语表） | 部分实现 | 提取器在分块期生效，但元数据未写入检索层（`milvus_writer.py` 字段映射不含这些列） |
+| 混合检索（dense + sparse + Milvus hybrid + RRF） | 已实现 | 稀疏向量为**自实现 BM25**（`rag/embedding.py`），非 BGE-M3 原生 sparse |
+| Rerank（双轨）、Context Expansion | 已实现 | 含定理优先与兄弟块扩展 |
+| 查询改写（HyDE、Step-back、相关性评分与重检索） | 已实现 | `rag/rag_pipeline.py` |
+| Agent 问答（LangGraph 工具调用、SSE/WebSocket） | 已实现 | SSE 目前**整段答案一次性下发**，非 token 级增量 |
+| 引用展示、RAG Trace、会话历史 | 已实现 | 引用校验只验证 `[Source N]` 编号存在性，不做语义接地 |
+| 公式感知检索 | 规划中 | 索引构建函数无任何调用点，检索分支恒返回空（`rag_utils.py:_build_formula_index`） |
+| Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块，合并数恒为 0；仅标准分块路径有效 |
+| 多模态图表检索、ML 布局分析、论文知识图谱 | 规划中 | 模块与单元测试齐备，但未接入上传/检索链路；图谱三张表零写入 |
+| 用户认证与权限 | 已实现 | JWT 分型校验、WebSocket 回查用户表、全局限流按 `RATE_LIMIT` 生效（A0-3）。前端未接 refresh 流程，访问令牌 60 分钟到期需重新登录 |
+| 文档上传与任务进度 | 部分实现 | 任务状态默认存进程内存，重启即丢 |
+| Docker Compose、健康检查、测试与 CI | 已实现 | 307 项测试为 mock 级，真实链路（上传→入库→问答）尚未被自动覆盖；前端 `typecheck` 已进 CI 门禁 |
+
+> 上述断链的逐条证据见 [docs/refactor/00-audit.md](docs/refactor/00-audit.md) §3，重构路线见 [docs/refactor/](docs/refactor/)。
 
 ## 架构概览
 
@@ -118,7 +129,8 @@ cp .env.example .env
 LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://your-llm-endpoint/v1
 LLM_MODEL=your_model
-JWT_SECRET_KEY=replace-with-a-strong-random-secret
+# 必填，缺失时应用拒绝启动；生成：python -c "import secrets; print(secrets.token_urlsafe(32))"
+JWT_SECRET_KEY=
 ```
 
 兼容旧变量：
@@ -213,11 +225,34 @@ npm run build
 
 ## 当前已知问题
 
-- 代码注释中存在历史编码污染，建议后续逐步修复。
-- `frontend/style.css` 仍为单体文件（~26KB），建议按组件拆分。
-- 生产环境需要强制设置 JWT secret、CORS、上传限制等安全基线。
+功能层面（证据见 [docs/refactor/00-audit.md](docs/refactor/00-audit.md)）：
 
-详细分析与计划见 [架构评审与改进计划](docs/architecture-review-and-improvement-plan.md)。
+- 公式感知检索、多模态图表检索、ML 布局分析、论文知识图谱：**代码存在但未接入任何运行链路**，不产生实际能力。
+- 默认 PDF 解析路径不产出层级父块，导致 Auto-merging 恒不生效、`parent_chunks` 表近乎为空。
+- 分块期提取的公式/引文/术语/章节元数据在写入 Milvus 时被丢弃。
+- 叶子分块正文**只存在于 Milvus**，且字段为 `VARCHAR(2000)`，超长内容被截断。
+- 上传任务状态默认存进程内存，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切到 Redis）。
+
+安全基线：
+
+- `ALLOWED_ORIGINS` 默认 `*`（生产校验会拒绝启动），上传大小上限默认 100MB，均需显式配置。
+- 前端没有 refresh token 流程：访问令牌过期后直接登出，`/auth/refresh` 目前无调用方。
+- 全局限流只覆盖 HTTP；WebSocket 走自带的每用户 10 条/60 秒计数，且不受 `RATE_LIMIT` 影响。
+- 部署在自有反代之后时必须设 `TRUST_PROXY_HEADERS=true`，否则限流按代理 IP 计数，所有访客共用一个桶。
+
+工程层面：
+
+- `frontend/style.css`（1314 行）在拆分为 `src/assets/*.css` 后已成为**无人引用的孤儿文件**。
+- 307 项测试全部为 mock 级，`chain`/`e2e` 两层尚未建立（见 [06-milestone-a0.md](docs/refactor/06-milestone-a0.md) A0-6）。
+
+升级到本版本需要注意（A0-3 的启动行为变更）：
+
+- `JWT_SECRET_KEY` 不再有默认值，缺失时应用**拒绝启动**；`ADMIN_INVITE_CODE` 未配置则注册接口不能创建 admin。
+- `init_db()` 不再在 Alembic 失败时回退 `create_all`，迁移跑不起来即抛错。存量用 `create_all` 建表、
+  没有 `alembic_version` 记录的库需要先人工补基准版本，再启动服务。
+- `RATE_LIMIT` 现在真的生效（`APP_ENV=production` 默认 60/minute，开发环境默认关闭）。
+
+详细分析与计划见 [架构评审与改进计划](docs/architecture-review-and-improvement-plan.md) 与 [重构 spec](docs/refactor/04-migration.md)。
 
 ## GitHub SSH 说明
 
