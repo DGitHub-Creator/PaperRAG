@@ -29,10 +29,13 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   citations?: string[]
   unsupported?: string[]
-}>()
+}>(), {
+  citations: () => [],
+  unsupported: () => [],
+})
 </script>
 
 <style scoped>

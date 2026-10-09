@@ -1,5 +1,5 @@
 import { ref, computed } from "vue"
-import { authFetch } from "../services/api"
+import { authFetch, apiFetch } from "../services/api"
 
 interface UserInfo {
   username: string

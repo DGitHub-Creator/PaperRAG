@@ -1,5 +1,5 @@
 import { ref, reactive } from "vue"
-import { authFetch } from "../services/api"
+import { authFetch, BASE } from "../services/api"
 import { t } from "../i18n"
 
 interface StepState {
@@ -140,7 +140,7 @@ export function useDocuments() {
       const xhr = new XMLHttpRequest()
       const fd = new FormData()
       fd.append("file", file)
-      xhr.open("POST", "/documents/upload/async")
+      xhr.open("POST", `${BASE}/documents/upload/async`)
       const token = localStorage.getItem("accessToken")
       if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
       xhr.upload.onprogress = (e: ProgressEvent) => {

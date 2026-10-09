@@ -1,6 +1,6 @@
 // 统一 API 前缀：后端路由全部挂在 /api/v1 下
 // 所有 authFetch / fetch 调用都必须经过 BASE，避免路径漂移
-const BASE = "/api/v1"
+export const BASE = "/api/v1"
 
 function getToken(): string {
   return localStorage.getItem("accessToken") || ""
