@@ -113,6 +113,7 @@
 | 验收 | `uv run pytest -m chain -k ai_executions`：提交→轮询→领取结果，重复 `task_id` 不重跑模型（幂等），`cancel` 后过期结果被丢弃；`GET /internal/v1/ai/healthz` 无 token 时 401 |
 | 等级 | real |
 | 规模/风险 | L / `PARSE_PAPER` 若走真实 LLM/embedding 需密钥；无密钥时以固定小 PDF + 本地 embedding 的降级路径验结构，并在 `progress.json` 标 `needs_secret: true` 与未验段落 |
+| 当前状态 | 2026-10-09 推到 mock 级上限：`backend/internal_api/{router,schemas,registry,executions,codes,auth,__init__}.py` 七件挂上 7 条 `/internal/v1/ai` 路径；`AICORE_INTERNAL_TOKEN` **未配置即拒绝**（比较走 `hmac.compare_digest`），healthz/readyz 复用 `backend/api/health.py` 不另造探活。§3.4 三条语义都有断言兜着：幂等——假 loader 记调用次数，重复 `task_id` 与重复 `(run_id, idempotency_key)` 两条索引各自命中且次数恒为 1；取消——`succeed()` 见 `cancelled` 返回 None，`/result` 于是 409 带 `errors[].code=CANCELLED`，与"尚未结束"那个 detail-only 的 409 靠 code 分开；超时——deadline 已过不起跑、置 failed 并仍写 `usage{0,0,0}`（504 `MODEL_TIMEOUT`）。错误体 `{"detail","errors[]"}`：`detail` 让全仓仍只有一种信封，`errors[].code` 让 Go 不解析文本；九码由用例与 `contracts/error-codes.md` §1 及 schema 的 `ErrorCode` 三方逐码比对；实现也被钉在契约上——`x-endpoints` 的 7 条与真实注册路径一一对应、注册类型集合等于 `x-p0-registered-task-types`、`/internal/` 不出现在 `openapi.yaml`（内部面不被 `check_contracts.py` 看见，这三条是它唯一的门禁）。**未 done 的两件事都要真环境**：`ai_executions` 迁移出自 `server/migrations/`（P0-2 得先从实际库结构抄基线），compose 里"ai-core 不发布宿主端口"是 P0-8 的文件改动；所以 `uv run pytest -m chain -k ai_executions` 本机收集 0 项，如实 `not_run`。`BUDGET_EXCEEDED` 暂只存在于码表与契约，拦截随 P1 的 LLM 任务类型落地 |
 
 ### P0-8 compose 与跨环境实跑
 

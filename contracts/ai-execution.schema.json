@@ -71,7 +71,7 @@
     },
     "Budget": {
       "type": "object",
-      "description": "沿用现有 backend/services/budget.py 语义，不另造一套",
+      "description": "沿用现有 backend/core/budget.py 的语义（按请求隔离的调用次数与成本阈值），不另造一套；P0 只声明字段，实际拦截随 P1 的 LLM 任务类型落地",
       "properties": {
         "max_llm_calls": { "type": "integer", "minimum": 0 },
         "max_cost_usd": { "type": "number", "minimum": 0 }
