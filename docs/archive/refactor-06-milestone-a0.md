@@ -1,10 +1,12 @@
-# 06 — Milestone A0 任务清单（文件级）【历史】
+# 06 — Milestone A0 任务清单（文件级）【已归档】
 
-> ⚠️ **本文件已被取代**：2026-10-09 用户《重构执行总纲》以原则①「端到端链路优先」推翻旧决策 Q1
+> ⚠️ **已归档（2026-10-09），不作为实施依据**（原位于 `docs/refactor/06-milestone-a0.md`）。
+> 2026-10-09 用户《重构执行总纲》以原则①「端到端链路优先」推翻旧决策 Q1
 > （"Go 之前先做一轮完整基线修复"），路线改为 **P0 架构与契约先行**，见
-> [08-principles-and-conventions.md](08-principles-and-conventions.md) §2 与
-> [04-migration.md](04-migration.md) §0/§3。本文件的任务表与 E1–E10 **保留作历史记录与文件级细节来源**，
+> [08-principles-and-conventions.md](../refactor/08-principles-and-conventions.md) §2 与
+> [04-migration.md](../refactor/04-migration.md) §0/§3。本文件的任务表与 E1–E10 **保留作历史记录与文件级细节来源**，
 > **不再作为排期依据**；每张卡的新归属见本文 §4。已完成项（A0-1 `2c3e583`、A0-3 `d8f1563`）不撤销。
+> 现行任务卡与退出标准在 [09-milestone-p0.md](../refactor/09-milestone-p0.md)，进度真相源是 [progress.json](../progress.json)。
 >
 > 原文目标：**让"旧系统可用"变成可机检的事实，并让 chunk 数据可信**。A0 不写任何 Go 代码、不引入新框架。
 > 规模：solo 15–20h/周，约 3–4 周。每个 `A0-x` 是一个独立提交（可含少量 fixup），提交信息前缀 `fix(a0):` / `feat(a0):` / `test(a0):` / `docs(a0):`。

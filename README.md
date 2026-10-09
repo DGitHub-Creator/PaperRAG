@@ -1,42 +1,74 @@
-# PaperRAG
+# ResearchPilot
 
-PaperRAG 是一个面向学术论文的 RAG 知识库平台，重点处理论文中的复杂版式、公式、定理、证明、引文和多轮问答溯源。
+> 原名 **PaperRAG**。2026-10-09 起按《重构执行总纲》升级为 **ResearchPilot**：
+> Go 主后端（调度、鉴权、数据所有权）+ Python AI Core（解析、检索、推理），
+> 目标是能自主完成「检索 → 深读 → 对比 → 探索 → 核验 → 报告」的科研平台。
+> **重构进行中**：当前仓库里可跑的仍是 Python 单体 + Vue 前端，Go 侧只有骨架与数据访问层。
 
-项目当前包含 FastAPI 后端、Vue 3/Vite 前端、Milvus 向量库、PostgreSQL、Redis，以及文档解析、混合检索、Agent 问答、RAG Trace 和异步文档任务等能力。
+面向学术论文的 RAG 知识库，重点处理复杂版式、公式、定理、证明、引文与多轮问答溯源。
 
-## 项目简介
+## 0. 先读这几份（文档权威入口）
 
-功能状态口径：**已实现** = 在默认运行链路上生效；**部分实现** = 代码存在但有条件失效或未打通；**规划中** = 模块与测试存在，但无调用方接入，不产生用户可见能力。
+| 要知道什么 | 去哪看 |
+| --- | --- |
+| **最高约束**：四条第一性原则、阶段顺序律、任务卡规范、开发规范 | [docs/refactor/08-principles-and-conventions.md](docs/refactor/08-principles-and-conventions.md) |
+| **现在该做什么**：P0 任务卡（输入/输出/依赖/验收/证据等级）+ X1–X8 退出标准 | [docs/refactor/09-milestone-p0.md](docs/refactor/09-milestone-p0.md) |
+| **进度多少 / 还差多少**：唯一真相源（`PROGRESS.md`、`progress.html` 是它的生成物） | [docs/progress.json](docs/progress.json) · [可视化看板](docs/progress.html) |
+| 契约（浏览器面 / Go↔Python 内部面 / 错误码 / 表写入矩阵） | [contracts/](contracts/) |
+| 目标架构（To-Be，大部分**未实现**） | [docs/refactor/02-target-architecture.md](docs/refactor/02-target-architecture.md) |
+| 当前架构（As-Is 事实快照） | [docs/refactor/01-current-architecture.md](docs/refactor/01-current-architecture.md) |
+| 从零起环境的命令序列 + 实跑记录 + 已知坑 | [docs/refactor/p0-environment.md](docs/refactor/p0-environment.md) |
+| 文档索引与阅读顺序 | [docs/refactor/README.md](docs/refactor/README.md) |
 
-| 能力 | 状态 | 说明 |
+被取代的旧计划全部移进 [docs/archive/](docs/archive/README.md)，**不作为实施依据**。
+里程碑口径只用 **P0 架构与契约 → P1 后端迁移/最小原型 → P2 功能拓展 → P3 多 Agent**；
+`Milestone A0/A/B/C` 属旧口径，对应关系见 [04-migration.md](docs/refactor/04-migration.md) §0。
+
+## 1. 能力状态（三档口径，不含糊）
+
+**已实现** = 在默认运行链路上生效且有用例；**部分实现** = 代码存在但有条件失效或未打通；
+**未实现** = 有计划与卡片号，代码不存在或不产生用户可见能力。
+
+| 能力 | 状态 | 说明 / 卡片 |
 | --- | --- | --- |
-| 学术文档解析（PDF/Word/Excel 加载、文本清洗、分块） | 部分实现 | 默认 PDF 结构分块路径只产叶级分块，缺层级父块（`document_loader.py:_split_structural`） |
-| 学术结构识别（定理/证明/公式/引文/术语表） | 部分实现 | 提取器在分块期生效，但元数据未写入检索层（`milvus_writer.py` 字段映射不含这些列） |
-| 混合检索（dense + sparse + Milvus hybrid + RRF） | 已实现 | 稀疏向量为**自实现 BM25**（`rag/embedding.py`），非 BGE-M3 原生 sparse |
-| Rerank（双轨）、Context Expansion | 已实现 | 含定理优先与兄弟块扩展 |
-| 查询改写（HyDE、Step-back、相关性评分与重检索） | 已实现 | `rag/rag_pipeline.py` |
-| Agent 问答（LangGraph 工具调用、SSE/WebSocket） | 已实现 | SSE 目前**整段答案一次性下发**，非 token 级增量 |
-| 引用展示、RAG Trace、会话历史 | 已实现 | 引用校验只验证 `[Source N]` 编号存在性，不做语义接地 |
-| 公式感知检索 | 规划中 | 索引构建函数无任何调用点，检索分支恒返回空（`rag_utils.py:_build_formula_index`） |
-| Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块，合并数恒为 0；仅标准分块路径有效 |
-| 多模态图表检索、ML 布局分析、论文知识图谱 | 规划中 | 模块与单元测试齐备，但未接入上传/检索链路；图谱三张表零写入 |
-| 用户认证与权限 | 已实现 | JWT 分型校验、WebSocket 回查用户表、全局限流按 `RATE_LIMIT` 生效（A0-3）。前端未接 refresh 流程，访问令牌 60 分钟到期需重新登录 |
-| 文档上传与任务进度 | 部分实现 | 任务状态默认存进程内存，重启即丢 |
-| Docker Compose、健康检查、测试与 CI | 已实现 | 307 项测试为 mock 级，真实链路（上传→入库→问答）尚未被自动覆盖；前端 `typecheck` 已进 CI 门禁 |
+| 混合检索（dense + 自实现 BM25 sparse + Milvus hybrid + RRF） | 已实现 | 稀疏向量是自实现 BM25（`backend/rag/embedding.py`），非 BGE-M3 原生 sparse |
+| Rerank 双轨、Context Expansion、查询改写（HyDE / Step-back） | 已实现 | `backend/rag/rag_pipeline.py` |
+| Agent 问答（LangGraph 工具调用、SSE / WebSocket） | 已实现 | SSE 目前**整段答案一次性下发**，非 token 级增量 |
+| 引用展示、RAG Trace、会话历史 | 已实现 | 引用校验只验 `[Source N]` 编号存在性，不做语义接地 |
+| 用户认证与权限 | 已实现 | JWT 分型、WS 回查用户表、限流按 `RATE_LIMIT` 真生效（`d8f1563`）。前端**未接 refresh 流程**，60 分钟到期需重登 |
+| 前端结构（单一请求出口、单一 token 所有者、模块单例状态） | 已实现 | FE-1；由 `scripts/check_frontend.py` 的 R1–R11 机器执行 |
+| 契约目录与静态门禁 | 已实现 | P0-4 done；`scripts/check_contracts.py`（X3 本机 pass） |
+| Go 服务骨架（health/ready、错误信封、trace、panic 兜底） | 部分实现 | P0-1：`gofmt`/`vet`/`test` 本机绿（16 项）；**未接真库、未进 compose** |
+| Go 数据访问层（sqlc 生成物入库 + 连接池） | 部分实现 | P0-3：schema 源是临时参照 `server/sql/schema.sql`，等 P0-2 真基线后重指 |
+| ai-core 内部执行面（`/internal/v1/ai/*` 七条路径） | 部分实现 | P0-7：Python 侧 29 条 HTTP 级用例 + 幂等/取消/超时语义；**`ai_executions` 表与容器级链路未实现** |
+| 学术文档解析（PDF/Word/Excel、清洗、分块） | 部分实现 | 默认 PDF 结构分块只产叶级块，缺层级父块（`document_loader.py:_split_structural`） |
+| 学术结构识别（定理/证明/公式/引文/术语） | 部分实现 | 提取器在分块期生效，但元数据未写入检索层（`milvus_writer.py` 字段映射不含这些列） |
+| Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块 → 合并数恒为 0 |
+| 文档上传与任务进度 | 部分实现 | 任务状态默认存**进程内存**，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切 Redis；根治属 P3 的 Go Frontier） |
+| Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：离线 `--check-baseline` + 只读 `--live` 已落（19 项判定单测）；**基线迁移未实现**（要真库） |
+| 公式感知检索 | **未实现** | 索引构建函数零调用点，检索分支恒返回空 → P2-2 |
+| 多模态图表检索、ML 布局分析、论文知识图谱 | **未实现** | 模块与单测存在但无调用方；图谱三张表零写入 → P2 |
+| `paper_chunks` 真相层（PG 持正文，Milvus 只存可重建索引） | **未实现** | 现在叶级正文**只在 Milvus**且 `VARCHAR(2000)` 截断 → P2-1 |
+| 真实链路测试（chain 层）与浏览器 E2E | **未实现** | `pytest -m chain` 当前收集 0 项（exit=5）→ P0-5 / P0-9 / P1-6 |
+| Go 接管 13 条浏览器接口 | **未实现** | → P1 |
+| 多 Agent 自主探索（ResearchRun / Frontier / 报告生成） | **未实现** | → P3 |
 
-> 上述断链的逐条证据见 [docs/refactor/00-audit.md](docs/refactor/00-audit.md) §3，重构路线见 [docs/refactor/](docs/refactor/)。
+断链的逐条证据见 [00-audit.md](docs/refactor/00-audit.md) §3；差距处置见 [03-gap-analysis.md](docs/refactor/03-gap-analysis.md)。
 
-## 架构概览
+## 2. 架构
+
+### As-Is（当前可跑）
 
 ```mermaid
 flowchart TB
-    Browser["Browser / Vue 3"] --> API["FastAPI"]
+    Browser["Browser / Vue 3 + TS"] --> API["FastAPI (backend/)"]
     Browser --> Stream["SSE / WebSocket"]
     Stream --> Agent["Agent Service"]
     API --> Auth["Auth / Sessions / Documents"]
+    API --> Internal["/internal/v1/ai/* 内部执行面（P0-7，未接真库）"]
     Agent --> RAG["LangGraph RAG Pipeline"]
-    RAG --> Milvus["Milvus: dense + sparse vectors"]
-    RAG --> PG["PostgreSQL: users, sessions, parent chunks"]
+    RAG --> Milvus["Milvus: dense + sparse"]
+    RAG --> PG["PostgreSQL: users, sessions, parent_chunks"]
     RAG --> Redis["Redis: cache, jobs"]
     API --> PG
     API --> Redis
@@ -45,226 +77,178 @@ flowchart TB
     Loader --> Milvus
 ```
 
-更完整的架构梳理、优缺点与路线图见：
+### To-Be（目标，**未实现**，见 [02-target-architecture.md](docs/refactor/02-target-architecture.md)）
 
-- [docs/architecture-review-and-improvement-plan.md](docs/architecture-review-and-improvement-plan.md)
-
-## 技术栈
-
-| 层级 | 技术 |
-| --- | --- |
-| 后端 | Python 3.12, FastAPI, SQLAlchemy, Alembic, SlowAPI |
-| Agent/RAG | LangChain, LangGraph, Pydantic, sentence-transformers |
-| 向量检索 | Milvus, dense vector, sparse BM25, RRF, rerank |
-| 数据层 | PostgreSQL, Redis, MinIO, etcd |
-| 前端 | Vue 3, Vite, TypeScript, vue-i18n, marked, KaTeX |
-| 部署 | Docker, Docker Compose, Nginx |
-| 测试 | pytest, pytest-asyncio, pytest-cov, ruff |
-
-## 目录结构
-
-```text
-PaperRAG/
-  backend/
-    api/              HTTP/WebSocket 路由
-    core/             配置、数据库、认证、依赖容器、日志、限流
-    rag/              文档解析、Embedding、检索、RAG Graph
-    services/         Agent、缓存、任务、工具服务
-    agent/            新一代 LangGraph Agent 与引用校验
-    vectordb/         Milvus 客户端与写入逻辑
-  frontend/
-    src/              Vue 3 + TypeScript 应用源码
-    package.json      前端脚本与依赖
-  docs/               架构、计划和评审文档
-  tests/              单元测试与集成测试
-  alembic/            数据库迁移
-  docker-compose.yml  本地基础设施与后端服务编排
-  pyproject.toml      Python 项目与测试配置
+```mermaid
+flowchart TB
+    Browser["Browser"] --> Go["Go 主后端 server/：路由、鉴权、调度、数据所有权"]
+    Go -->|"/internal/v1/ai/* Bearer 静态令牌"| AI["Python AI Core backend/：解析、检索、推理"]
+    Go --> PG["PostgreSQL（唯一正文真相）"]
+    Go --> Redis["Redis"]
+    AI --> Milvus["Milvus（可重建索引）"]
+    Go --> Worker["Go Worker：Frontier 派发 + 租约（P3）"]
 ```
 
-## 运行方式（快速开始）
+Go 是唯一公开入口与唯一调度方；Python 只被动执行并如实上报，`proposed_tasks` /
+`evidence_candidates` 对 Go 是**建议**，不携带写权限。
 
-### 1. 准备环境
+## 3. 快速开始
 
-需要：
-
-- Python 3.12+
-- Docker / Docker Compose
-- 推荐使用 uv 管理 Python 依赖
-- Node.js 20+ 用于前端开发
-
-### 2. 安装后端依赖
+统一入口是 `scripts/dev.py`（跨平台，Windows/macOS/Linux 同一套命令）：
 
 ```bash
-uv sync
+cp .env.example .env            # 然后填 JWT_SECRET_KEY（缺失即拒绝启动）
+uv sync --extra test            # Python 依赖（可复现：uv.lock）
+uv run python scripts/dev.py doctor   # 自检：docker、.env、密钥占位值、端口占用、compose 静态校验
+uv run python scripts/dev.py up       # 起基础设施 + 服务，等 healthy
+uv run python scripts/dev.py test -m unit
 ```
 
-或使用 pip：
+完整序列（含首拉耗时、迁移、冒烟、收工）见 [p0-environment.md](docs/refactor/p0-environment.md) §2。
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e ".[test]"
-```
-
-Windows PowerShell：
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -U pip
-pip install -e ".[test]"
-```
-
-### 3. 配置环境变量
-
-```bash
-cp .env.example .env
-```
-
-至少配置：
-
-```env
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://your-llm-endpoint/v1
-LLM_MODEL=your_model
-# 必填，缺失时应用拒绝启动；生成：python -c "import secrets; print(secrets.token_urlsafe(32))"
-JWT_SECRET_KEY=
-```
-
-兼容旧变量：
-
-```env
-ARK_API_KEY=your_api_key
-BASE_URL=https://your-llm-endpoint/v1
-MODEL=your_model
-```
-
-### 4. 启动基础设施
+<details>
+<summary>不用 dev.py 的手工路径</summary>
 
 ```bash
 docker compose up -d postgres redis etcd minio standalone attu
+uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
+cd frontend && npm install && npm run dev
 ```
-
-常用端口：
 
 | 服务 | 端口 | 用途 |
 | --- | --- | --- |
-| PostgreSQL | 5432 | 用户、会话、父级分块、知识图谱 |
+| PostgreSQL | 5432 | 用户、会话、父级分块 |
 | Redis | 6379 | 缓存、任务状态 |
 | Milvus | 19530 | 向量检索 |
 | MinIO | 9000/9001 | Milvus 对象存储 |
 | Attu | 8080 | Milvus Web 管理 |
+| 后端 | 8000 | `/`（前端）、`/docs`、`/health`、`/ready` |
 
-### 5. 启动后端
+环境变量：`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（兼容旧名 `ARK_API_KEY` / `BASE_URL` / `MODEL`），
+`JWT_SECRET_KEY`（必填），`AICORE_INTERNAL_TOKEN`（Go→ai-core 内部令牌，留空则内部面拒绝一切请求）。
 
-```bash
-uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
+</details>
+
+## 4. 仓库结构
+
+```text
+ResearchPilot/            # GitHub 仓库名仍是 PaperRAG，改名属独立动作（见 §7）
+  backend/                Python AI Core：api/ core/ rag/ services/ agent/ vectordb/ internal_api/
+  server/                 Go 主后端（P0-1 起）：cmd/api、cmd/worker、internal/{config,db,httpapi,observability}
+  frontend/               Vue 3 + Vite + TS：src/{api,composables,components,utils,i18n}
+  contracts/              契约唯一真相源：openapi.yaml、ai-execution.schema.json、error-codes.md、table-acl.md
+  scripts/                dev.py（统一入口）、check_contracts.py、check_frontend.py、audit_schema.py、sync_progress.py
+  tests/                  unit/ integration/（chain/ e2e/ 尚未建立）
+  docs/refactor/          现行 spec（08 最高约束、09 任务卡、10 前端结构、00–05/07 事实与实施）
+  docs/archive/           已归档的旧计划（不作为实施依据）
+  alembic/                Python 侧迁移（Go 侧用 server/migrations/，两者边界见 contracts/table-acl.md）
 ```
 
-访问：
+## 5. 接口面
 
-- 应用入口：http://127.0.0.1:8000/
-- API 文档：http://127.0.0.1:8000/docs
-- 健康检查：http://127.0.0.1:8000/health
-
-### 6. 前端开发模式
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-构建：
-
-```bash
-npm run build
-```
-
-后端会优先挂载 `frontend/dist/`；如果不存在，则回退挂载 `frontend/`。
-
-## 主要 API
+**浏览器面**（18 个操作 = 13 条前端在调 + 5 条探针）以 [contracts/openapi.yaml](contracts/openapi.yaml) 为准，
+由 `scripts/check_contracts.py` 双向机检（契约声明了但前端没调、或前端调了但契约没有，都会红）。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register` | 注册 |
-| POST | `/api/v1/auth/login` | 登录 |
-| POST | `/api/v1/auth/refresh` | 刷新 token |
+| POST | `/api/v1/auth/{register,login,refresh}` | 注册 / 登录 / 刷新 |
 | GET | `/api/v1/auth/me` | 当前用户 |
-| GET | `/api/v1/sessions` | 会话列表 |
-| GET | `/api/v1/sessions/{session_id}` | 会话消息 |
-| DELETE | `/api/v1/sessions/{session_id}` | 删除会话 |
-| POST | `/api/v1/chat` | 同步聊天 |
-| POST | `/api/v1/chat/stream` | SSE 流式聊天 |
-| WS | `/api/v1/ws/chat?token=...` | WebSocket 流式聊天 |
-| GET | `/api/v1/documents` | 文档列表 |
-| POST | `/api/v1/documents/upload/async` | 异步上传文档 |
-| GET | `/api/v1/documents/upload/jobs/{job_id}` | 查询上传任务 |
-| POST | `/api/v1/documents/ingest` | 增量导入目录 |
-| DELETE | `/api/v1/documents/delete/async/{filename}` | 异步删除文档 |
-| POST | `/api/v1/cache/clear` | 清空缓存 |
+| GET/DELETE | `/api/v1/sessions[/{id}]` | 会话列表 / 消息 / 删除 |
+| POST | `/api/v1/chat`、`/api/v1/chat/stream` | 同步 / SSE 流式 |
+| WS | `/api/v1/ws/chat?token=...` | WebSocket 流式 |
+| GET/POST/DELETE | `/api/v1/documents/*` | 列表 / 异步上传 / 任务查询 / 增量导入 / 异步删除 |
+| POST | `/api/v1/cache/clear` | 清缓存（admin） |
 | GET | `/api/v1/stats/usage` | 使用统计 |
 
-## 测试与质量检查
+**内部执行面**（Go ↔ ai-core，不对浏览器暴露、不进 `openapi.yaml`）以
+[contracts/ai-execution.schema.json](contracts/ai-execution.schema.json) 为准：
+`POST /internal/v1/ai/execute`、`POST /internal/v1/ai/executions`、`GET …/{id}`、`GET …/{id}/result`、
+`POST …/{id}/cancel`、`GET /internal/v1/ai/{healthz,readyz}`。鉴权是 `Authorization: Bearer $AICORE_INTERNAL_TOKEN`，
+**未配置即拒绝服务**；错误体是 `{"detail": "...", "errors": [{code, retryable, ...}]}`，
+九个错误码见 [contracts/error-codes.md](contracts/error-codes.md)。P0 只注册 `PARSE_PAPER`、`INDEX_PAPER` 两种 `task_type`。
+
+## 6. 测试与门禁
+
+分层由 marker 表达，目录即分层（`tests/conftest.py` 自动补标）：
+
+| 层 | marker | 依赖 | 现状 |
+| --- | --- | --- | --- |
+| L0 单元 | `unit` | 无 | 391 项，每次提交 |
+| L1 集成 | `integration` | TestClient（真库属 P1-6） | 57 项，每次提交 |
+| L3 链路 | `chain` | compose 全栈 + LLM key | **0 项**（`-m chain` 返回 exit=5，不是绿） |
+| L4 浏览器 | `e2e` | 全栈 + Playwright | **0 项**（P0-9） |
 
 ```bash
-uv run pytest
-uv run pytest --cov=backend
-uv run ruff check .
+uv run pytest -q                                  # 全量 449 项
+uv run pytest -m unit -q                          # 分层
+uv run ruff check backend/ tests/ scripts/
+uv run python scripts/check_contracts.py          # 契约双向吻合 + 错误码逐字一致
+uv run python scripts/check_frontend.py           # 前端结构 R1–R11
+uv run python scripts/sync_progress.py --check    # 进度产物与真相源一致
+cd frontend && npm run typecheck && npm run build
+cd server && gofmt -l . && go vet ./... && go test ./...
 ```
 
-前端：
+CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progress / docker。
 
-```bash
-cd frontend
-npm run typecheck
-npm run build
-```
+**证据等级**：`none < mock < real < e2e`，写在 `docs/progress.json` 每张卡上，
+`sync_progress.py` 会拦住「标了 done 但证据等级不够」。当前所有 real / e2e 级退出标准均为 `not_run`：
+本机 Docker daemon 起不来（WSL2 可选组件装完待重启），没有真实 PG/Redis/Milvus，也没有 LLM 密钥。
+**mock 绿灯不等于完成**——这是原则②。
 
-## 当前已知问题
+## 7. 改名遗留项（有意留下，不是漏改）
 
-功能层面（证据见 [docs/refactor/00-audit.md](docs/refactor/00-audit.md)）：
+项目已改名 ResearchPilot，以下四处**故意没跟着改**，每处都有原因：
 
-- 公式感知检索、多模态图表检索、ML 布局分析、论文知识图谱：**代码存在但未接入任何运行链路**，不产生实际能力。
-- 默认 PDF 解析路径不产出层级父块，导致 Auto-merging 恒不生效、`parent_chunks` 表近乎为空。
+| 项 | 现值 | 为什么留 |
+| --- | --- | --- |
+| Go module path | `github.com/DGitHub-Creator/PaperRAG/server` | 必须与 GitHub 仓库改名同批做，否则 `go get` 断；改它是 1 行 `go.mod` + 7 行 import |
+| Redis 键前缀 | `REDIS_KEY_PREFIX` 默认 `paperrag`、`upload_jobs` 用 `paperrag:job:` | 改名会让既有部署的键变孤儿（TTL 1 天）；`REDIS_KEY_PREFIX` 可用环境变量覆盖，等真实栈可验证时再动 |
+| Prometheus 指标名 | `paperrag_http_requests_total` 等 | 改名即断已有抓取/看板；等 P1 接观测面时一次性换 |
+| `ADMIN_INVITE_CODE` 弱默认值黑名单 | 同时拒 `paperrag-admin-2026` 与 `researchpilot-admin-2026` | 只删旧值等于把已暴露过的口令重新变成可用口令 |
+
+`contracts/ai-execution.schema.json` 的 `$id` 命名空间（`researchhub.local`）同理保留。
+
+## 8. 已知问题与升级注意
+
+功能层面（证据见 [00-audit.md](docs/refactor/00-audit.md)）：
+
+- 公式感知检索、多模态图表检索、ML 布局分析、论文知识图谱：**代码存在但未接入任何运行链路**。
+- 默认 PDF 解析路径不产层级父块 → Auto-merging 恒不生效、`parent_chunks` 近乎空表。
 - 分块期提取的公式/引文/术语/章节元数据在写入 Milvus 时被丢弃。
-- 叶子分块正文**只存在于 Milvus**，且字段为 `VARCHAR(2000)`，超长内容被截断。
-- 上传任务状态默认存进程内存，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切到 Redis）。
+- 叶级分块正文**只在 Milvus**，字段 `VARCHAR(2000)` 会截断超长内容。
+- 上传任务状态默认存进程内存，重启即丢。
 
 安全基线：
 
-- `ALLOWED_ORIGINS` 默认 `*`（生产校验会拒绝启动），上传大小上限默认 100MB，均需显式配置。
-- 前端没有 refresh token 流程：访问令牌过期后直接登出，`/auth/refresh` 目前无调用方。
-- 全局限流只覆盖 HTTP；WebSocket 走自带的每用户 10 条/60 秒计数，且不受 `RATE_LIMIT` 影响。
-- 部署在自有反代之后时必须设 `TRUST_PROXY_HEADERS=true`，否则限流按代理 IP 计数，所有访客共用一个桶。
+- `ALLOWED_ORIGINS` 默认 `*`（生产校验拒绝启动）；上传上限默认 100MB，均需显式配置。
+- 前端没有 refresh token 流程，`/auth/refresh` 无调用方。
+- 全局限流只覆盖 HTTP；WebSocket 走自带的每用户 10 条/60 秒计数，不受 `RATE_LIMIT` 影响。
+- 部署在自有反代之后必须设 `TRUST_PROXY_HEADERS=true`，否则限流按代理 IP 计数，所有访客共用一个桶。
 
-工程层面：
+启动行为变更（`d8f1563` 起）：
 
-- `frontend/style.css`（1314 行）在拆分为 `src/assets/*.css` 后已成为**无人引用的孤儿文件**。
-- 307 项测试全部为 mock 级，`chain`/`e2e` 两层尚未建立（见 [06-milestone-a0.md](docs/refactor/06-milestone-a0.md) A0-6）。
+- `JWT_SECRET_KEY` 无默认值，缺失即**拒绝启动**；`ADMIN_INVITE_CODE` 未配置则注册接口不能创建 admin。
+- `init_db()` 不再在 Alembic 失败时回退 `create_all`；存量用 `create_all` 建表、无 `alembic_version` 的库
+  需先人工补基准版本（步骤属 P0-2）。
+- `RATE_LIMIT` 真的生效（`APP_ENV=production` 默认 60/minute，开发环境默认关闭）。
+- 429 与校验失败的错误信封统一为 `{"detail": "..."}`（决策 K1/K4）；校验失败从 422 降级为 400 + 字符串。
 
-升级到本版本需要注意（A0-3 的启动行为变更）：
+## 9. 开发约定（摘要，全文见 [08](docs/refactor/08-principles-and-conventions.md)）
 
-- `JWT_SECRET_KEY` 不再有默认值，缺失时应用**拒绝启动**；`ADMIN_INVITE_CODE` 未配置则注册接口不能创建 admin。
-- `init_db()` 不再在 Alembic 失败时回退 `create_all`，迁移跑不起来即抛错。存量用 `create_all` 建表、
-  没有 `alembic_version` 记录的库需要先人工补基准版本，再启动服务。
-- `RATE_LIMIT` 现在真的生效（`APP_ENV=production` 默认 60/minute，开发环境默认关闭）。
+1. **端到端链路优先**：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态。
+2. **完成 = 端到端可验证行为**：不接受"基本完成/大致可用/已支持"；验收标准必须可机检。
+3. **先对齐再动手**：每阶段先定输入/输出/依赖/验收，禁止边写边改架构。
+4. **最小修改**：优先复用现有资产，禁止无关重构与大规模改写。
+5. 注释一律中文；密钥只经环境变量，不提交 `.env`；LLM 日志只记问题/模型/token 数，不记全文。
+6. **每次改动同步计划与日程**：改 `docs/progress.json`（真相）→ 生成 `PROGRESS.md` / `progress.html` → `sync_progress.py --check` 是 CI 门禁。
 
-详细分析与计划见 [架构评审与改进计划](docs/architecture-review-and-improvement-plan.md) 与 [重构 spec](docs/refactor/04-migration.md)。
+## 10. Git
 
-## GitHub SSH 说明
-
-如果使用多个 GitHub 账号，remote URL 需要匹配 `~/.ssh/config` 中的 Host 别名。例如：
+多账号场景下 remote URL 要匹配 `~/.ssh/config` 的 Host 别名：
 
 ```bash
 git remote set-url origin git@github.com-creator:DGitHub-Creator/PaperRAG.git
-```
-
-测试：
-
-```bash
 ssh -T git@github.com-creator
 ```
 

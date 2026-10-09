@@ -25,7 +25,7 @@ Windows 需要 Docker Desktop（WSL2 后端）。Linux 装 docker-ce + compose �
 
 ```bash
 # 0) 拿代码
-git clone <repo> && cd PaperRAG
+git clone <repo> && cd <repo-dir>   # 仓库改名后目录名跟着变，别写死
 
 # 1) 自检：docker 在不在、.env 有没有、密钥是不是还是占位值、端口有没有被占
 uv run python scripts/dev.py doctor

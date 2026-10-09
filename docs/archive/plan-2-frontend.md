@@ -1,5 +1,8 @@
 # Plan 2 — 前端工程化 ✅ 已完成（归档）
 
+> ⚠️ **已归档，不作为实施依据。** 标题里的「✅ 已完成」是旧计划的自评口径；
+> 实测核查见 [00-audit.md](../refactor/00-audit.md) §3（多处「宣称 ✅ 但实际断链」）。
+> 现行进度真相源是 [progress.json](../progress.json)，验收口径见 [09-milestone-p0.md](../refactor/09-milestone-p0.md) §0。
 > 完成时间：2026-05
 > 从 CDN 单页 HTML 迁移到 Vite + Vue3 SFC + TypeScript，全部功能移植完成。
 

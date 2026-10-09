@@ -1,6 +1,7 @@
 # 02 — 目标架构（To-Be）
 
-> 输入：[plan-v2.0-researchpilot.md](plan-v2.0-researchpilot.md) §1/§3/§4/§5 + 已确认决策 Q1–Q8（全 A）。
+> **本文状态（2026-10-09 复核）**：性质=**决策**（To-Be：五条架构律 L1–L5、目录、契约、状态机、写入边界）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。**大部分未实现**：Go 主后端与 Frontier 属 P1/P3，双图与 Evidence 属 P4 展望；已落地的只有契约目录（P0-4，`contracts/`）与 ai-core 内部执行面（P0-7，mock 级）。本文是目标态，不是现状——现状看 [01](01-current-architecture.md)。
+> 输入：[plan-v2.0-researchpilot.md](../archive/refactor-plan-v2.0-researchpilot.md)（已归档）§1/§3/§4/§5 + 已确认决策 Q1–Q8（全 A）。
 > 前提事实：[00-audit.md](00-audit.md)、[01-current-architecture.md](01-current-architecture.md)。
 > **目标不是把代码变成 Go**，而是在功能正确、数据可信、可验证的基础上升级。凡与"数据可信"冲突的架构推进一律让路。
 
@@ -16,10 +17,10 @@
 
 ## 1. 目录布局（决策 Q2-A）
 
-Go 落 `server/`，**Python 继续留在 `backend/`**，改名推迟到 Milestone B 之后作为独立提交。
+Go 落 `server/`，**Python 继续留在 `backend/`**，改名推迟到 P3 之后作为独立提交。
 
 ```text
-PaperRAG/
+ResearchPilot/
 ├── server/                     # Go 主后端（新增）
 │   ├── cmd/
 │   │   ├── api/                # HTTP/SSE/WS 服务入口
@@ -36,9 +37,9 @@ PaperRAG/
 │   │   ├── worker/             # goroutine pool、派发、fencing
 │   │   ├── aiclient/           # Python AI Core 客户端（execute/submit/status/result）
 │   │   ├── events/             # 持久事件日志 + SSE 游标续读
-│   │   ├── knowledge/          # Milestone C
-│   │   ├── evidence/           # Milestone B/C
-│   │   ├── reports/            # Milestone B
+│   │   ├── knowledge/          # P4 展望（双图）
+│   │   ├── evidence/           # P3/P4
+│   │   ├── reports/            # P3
 │   │   ├── storage/            # ObjectStorage 接口（本地卷 → S3）
 │   │   └── observability/      # slog、metrics、trace 传播
 │   ├── sql/                    # sqlc 查询
@@ -65,7 +66,7 @@ PaperRAG/
 | `ai-core` | FastAPI + uvicorn | **仅内网**，不发布到 nginx | 原 `backend` 容器改角色 |
 | postgres / redis / milvus / minio / etcd | 不变 | — | Milvus 语义降级为"可重建索引" |
 
-`frontend/dist/` 由 nginx 直接服务；`app.py:141-150` 的静态挂载在里程碑 A 完成时移除。
+`frontend/dist/` 由 nginx 直接服务；`app.py:141-150` 的静态挂载在 P1 完成时移除。
 
 ## 3. Go ↔ Python 契约（决策 Q7-A + 异步前置）
 
@@ -104,7 +105,7 @@ PaperRAG/
 
 `PLAN_RESEARCH`、`SEARCH_PAPERS`、`SCREEN_PAPERS`、`PARSE_PAPER`、`INDEX_PAPER`、`READ_PAPER`、`EXTRACT_KNOWLEDGE`、`COMPARE_PAPERS`、`EXPLORE_GAPS`、`VERIFY_EVIDENCE`、`GENERATE_REPORT`。
 
-Milestone A 只需前 5 种（后 6 种属 B/C）。
+P0/P1 只需前 5 种（后 6 种属 P3/P4）。
 
 ### 3.4 幂等、取消、超时、fencing
 
@@ -121,7 +122,7 @@ Milestone A 只需前 5 种（后 6 种属 B/C）。
 
 ### 3.5 服务间鉴权与错误码
 
-- Milestone A：静态服务令牌 `AICORE_INTERNAL_TOKEN`（Go 发 `Authorization: Bearer`），Python 校验 + compose 内网隔离，`ai-core` 不发布宿主端口。mTLS 记 DEFER。
+- P0/P1：静态服务令牌 `AICORE_INTERNAL_TOKEN`（Go 发 `Authorization: Bearer`），Python 校验 + compose 内网隔离，`ai-core` 不发布宿主端口。mTLS 记 DEFER。
 - 错误码表（Python→Go，进 `contracts/`）：`INVALID_PAYLOAD`、`UNSUPPORTED_TASK_TYPE`、`BUDGET_EXCEEDED`、`MODEL_TIMEOUT`、`MODEL_RATE_LIMIT`、`PARSE_FAILED`、`INDEX_UNAVAILABLE`、`CANCELLED`、`INTERNAL`。每码固定 `retryable` 与 HTTP 映射。
 - Go 对浏览器**保持现有信封**：`{"detail": ...}`（01 §6），只有 429 沿用现实现的 `{"error": ...}` 还是统一为 `detail`，作为兼容性决策留到 A0 结束后定案（见 04 §3.2）。
 
@@ -165,7 +166,7 @@ Run 级 `max_papers / max_fulltext_reads / max_planning_rounds / max_expansion_d
 
 ### 6.1 代码所有权
 
-| 能力 | 里程碑 A 之后归属 | 依据 |
+| 能力 | P1 之后归属 | 依据 |
 | --- | --- | --- |
 | JWT/RBAC/用户/workspace | **Go** | 复刻 PBKDF2 格式与 claims（01 §6、Q1） |
 | 会话与消息 | **Go** | 需把覆盖式写改 append-only（00-audit §4） |
@@ -200,9 +201,9 @@ Run 级 `max_papers / max_fulltext_reads / max_planning_rounds / max_expansion_d
 
 ## 7. 前端与交付面
 
-保留 Vue 3/Vite/TS，不换框架（计划 §9）。里程碑 A 只做**基址切换与故障修复**；A0 先让 6 项类型错误归零并把 `typecheck` 加进 CI（现状 CI 只 `npm run build`，01 §1 的机制缺口）。新增页面按 B/C 分批：Workspace、Monitor（SSE + `Last-Event-ID`）、Paper Reader、Report、Knowledge Explorer（有限节点展开）。
+保留 Vue 3/Vite/TS，不换框架（计划 §9）。P1 只做**基址切换与故障修复**；A0 先让 6 项类型错误归零并把 `typecheck` 加进 CI（现状 CI 只 `npm run build`，01 §1 的机制缺口）。新增页面按 B/C 分批：Workspace、Monitor（SSE + `Last-Event-ID`）、Paper Reader、Report、Knowledge Explorer（有限节点展开）。
 
-## 8. 双图与 Evidence（Milestone C 轮廓，不展开）
+## 8. 双图与 Evidence（P4 展望轮廓，不展开）
 
 `knowledge_nodes/edges` 复用现死表骨架（00-audit D5）；`exploration_*` 全新；强语义关系（`PROVES`/`CONTRADICTS_CLAIM`）**必须绑定 evidence**，禁止仅凭 embedding 相似建边。Evidence 状态 `SUPPORTED/INFERRED/CONFLICTED/UNVERIFIED`，`SUPPORTED ≠ 已独立验证证明正确`（计划 §8.1）。用关系表实现，**第一版不引入 Neo4j**。
 

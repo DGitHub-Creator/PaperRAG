@@ -1,5 +1,13 @@
 # PaperRAG → ResearchPilot 重构计划 V2.0
 
+> ⚠️ **已归档（2026-10-09），不作为实施依据**（原位于 `docs/refactor/plan-v2.0-researchpilot.md`，逐字存档未改正文）。
+> 本文的决策 **Q1「Go 之前先做一轮完整基线修复」已被《重构执行总纲》推翻**：原则①「端到端链路优先」要求
+> 架构与契约先行，阶段模型改为 **P0 架构与契约 → P1 后端迁移/最小原型 → P2 功能拓展 → P3 多 Agent**。
+> 现行口径：[08-principles-and-conventions.md](../refactor/08-principles-and-conventions.md)（最高约束）、
+> [04-migration.md](../refactor/04-migration.md)（路线与旧卡片重映射）、[09-milestone-p0.md](../refactor/09-milestone-p0.md)
+> （任务卡与退出标准）、[progress.json](../progress.json)（进度真相源）。
+> 本文保留的价值是「当时为什么这么定」，以及 00-audit / 02-target 的输入出处；凡与上述文件冲突，一律以上述文件为准。
+
 2026 年 10 月 9 日 · Go 主后端 + Python AI Core · 面向 Coding Agent 的完整实施方案
 
 这次正式确定技术路线：

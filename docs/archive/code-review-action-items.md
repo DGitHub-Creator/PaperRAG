@@ -1,5 +1,10 @@
 # PaperRAG 代码审查改进计划
 
+> ⚠️ **已归档（2026-10-09），不作为实施依据。** 7 项缺点的处置去向见 [03-gap-analysis.md](../refactor/03-gap-analysis.md)
+> （差距清单与断链处置）与 [04-migration.md](../refactor/04-migration.md) §0（旧卡片重映射）；已完成项另见
+> [completed-items.md](completed-items.md)。排期与验收一律以 [09-milestone-p0.md](../refactor/09-milestone-p0.md)
+> \+ [progress.json](../progress.json) 为准。
+
 > 基于对项目架构的深入分析，针对 7 项具体缺点制定的可执行改进方案。
 
 ---

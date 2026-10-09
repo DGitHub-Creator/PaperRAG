@@ -1,5 +1,9 @@
 # 已完成改进项归档
 
+> ⚠️ **已归档，不作为实施依据。** 这里的「已完成」是旧计划（`improvement_plan.md` / `code-review-action-items.md`）
+> 的自评口径，未经端到端验证；实测核查见 [00-audit.md](../refactor/00-audit.md) §3（5 处「宣称 ✅ 但实际断链」）。
+> 现行进度真相源是 [progress.json](../progress.json)，验收口径见 [09-milestone-p0.md](../refactor/09-milestone-p0.md) §0。
+
 > 从 `improvement_plan.md` 和 `code-review-action-items.md` 中提取的已完成项目。
 
 ---

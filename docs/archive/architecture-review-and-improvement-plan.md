@@ -1,5 +1,10 @@
 # PaperRAG 架构梳理、优缺点与改进计划
 
+> ⚠️ **已归档（2026-10-09），不作为实施依据。** 本文的架构判断已并入 [01-current-architecture.md](../refactor/01-current-architecture.md)（As-Is 事实）
+> 与 [02-target-architecture.md](../refactor/02-target-architecture.md)（To-Be 决策）；排期与验收以
+> [09-milestone-p0.md](../refactor/09-milestone-p0.md) 的任务卡与 [progress.json](../progress.json) 为准。
+> 保留只为追溯当时的判断依据。
+
 更新时间：2026-06-22
 
 ## 1. 项目定位

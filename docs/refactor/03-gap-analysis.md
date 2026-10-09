@@ -1,5 +1,6 @@
 # 03 — 差距分析（Gap Analysis）
 
+> **本文状态（2026-10-09 复核）**：性质=**决策依据**（差距清单、断链处置、未调用接口审计纪律、测试缺口）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。清单本身不单独跟踪状态；每条差距的处置去向与完成情况见 [04 §0/§3](04-migration.md) 与 [../progress.json](../progress.json)。
 > 现状见 01，目标见 02。每项标 **阻断里程碑**（A0/A/B/C）与**工作量档位**（S≈≤2h，M≈半天，L≈1–2天，XL≈≥3天；按 solo 15–20h/周）。
 
 ## 1. 功能正确性缺口（全部阻断 A）
@@ -82,7 +83,7 @@
 
 ## 7. 文档谎报清单（需修正）
 
-`README.md:9-16` 与 `docs/plan-5-academic.md` 把 D1/D4/D5/D6 全标 ✅；`agent/core.py:3` 注释声称按 `complexity` 路由（实现只读 `classification`）；`ws.py:4-5` 声明不存在的 `/ws/upload/{job_id}`；`ParentChunk` docstring 层级语义反向；`app.py:67` 日志谎报全局限流；`README.md:216-218` "当前已知问题"漏掉全部真实断链。→ A0 内一并修正，README 改为三档状态表。
+`README.md:9-16` 与 `docs/archive/plan-5-academic.md`（已归档）把 D1/D4/D5/D6 全标 ✅；`agent/core.py:3` 注释声称按 `complexity` 路由（实现只读 `classification`）；`ws.py:4-5` 声明不存在的 `/ws/upload/{job_id}`；`ParentChunk` docstring 层级语义反向；`app.py:67` 日志谎报全局限流；`README.md:216-218` "当前已知问题"漏掉全部真实断链。→ A0 内一并修正，README 改为三档状态表。
 
 ## 8. 测试与评测缺口（对应决策 Q8）
 

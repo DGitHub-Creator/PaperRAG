@@ -1,5 +1,9 @@
 # PaperRAG 全面改进计划
 
+> ⚠️ **已归档（2026-10-09），不作为实施依据。** 现行权威口径：[08 原则与开发规范](../refactor/08-principles-and-conventions.md)、
+> [09 P0 任务卡与退出标准](../refactor/09-milestone-p0.md)、[progress.json](../progress.json)（进度真相源）。
+> 本文的分阶段路线图已被 P0→P3 阶段模型取代；保留只为追溯当时的判断依据，不要据此排期或验收。
+
 > 基于代码审计结果，对标 Dify、RAGFlow、QAnything 等生产级 RAG 系统制定的分阶段改进路线图。
 >
 > **归档说明**：已完成的计划项已移至 `docs/archive/` 目录，本文档仅保留待执行项。

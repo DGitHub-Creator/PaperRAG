@@ -1,6 +1,8 @@
 # 00 — Phase 0 代码审计
 
-> 依据 [plan-v2.0-researchpilot.md](plan-v2.0-researchpilot.md) §2 要求产出。
+> **本文状态（2026-10-09 复核）**：性质=**事实**（审计基线 `main @ c55129e`，逐文件读源码 + grep 调用点验证）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。结论仍然有效；文中提到的修复去向已按 04 §0 重映射，已落地的部分（A0-1 `2c3e583`、A0-3 `d8f1563`、FE-1、P0-4、P0-7）见 [../progress.json](../progress.json)。
+
+> 依据 [plan-v2.0-researchpilot.md](../archive/refactor-plan-v2.0-researchpilot.md) §2 要求产出（该计划已归档，见 [../archive/README.md](../archive/README.md)）。
 > 审计对象：`main @ c55129e`（2026-10-09）。方法：逐文件读源码 + grep 调用点验证，**所有结论以代码为第一依据，文档声明不作为事实**。
 > 标注约定：`[V]` = 本次已用调用点/实跑验证；`[U]` = 未验证，需后续确认。
 
@@ -42,7 +44,7 @@
    - 合计 6 error / exit 2。即 **`npm run typecheck` 在当前主干上是红的**，而 `pyproject` 的 `fail_under=40` 与 CI 只跑 Python 侧（`.github/workflows/ci.yml`），前端类型检查不在门禁内。[V]
 2. `frontend/src/composables/useDocuments.ts:143` `xhr.open("POST", "/documents/upload/async")` **缺 `/api/v1` 前缀**，与 `services/api.ts:1-3` 的"所有调用必须经过 BASE"约定矛盾；dev 只有 `/api` 被代理，prod nginx 该路径落到静态层 → 异步上传按钮实际打不通。[V]（typecheck 抓不到，属纯运行时缺陷：路径是字符串字面量）
 
-> **对 V2.0 计划的直接影响**：里程碑 A 的验收标准是"原有论文问答功能保持可用"。以上两项说明**当前主干的登录与上传在浏览器里可能就是坏的**。若不在重构前修复，Go 接管后无法区分"迁移引入的回归"与"既有故障"。
+> **对 V2.0 计划的直接影响**：**P1** 的验收标准（旧称里程碑 A）是"原有论文问答功能保持可用"。以上两项说明**当前主干的登录与上传在浏览器里可能就是坏的**。若不在重构前修复，Go 接管后无法区分"迁移引入的回归"与"既有故障"。
 
 ---
 
@@ -90,7 +92,7 @@
 
 ## 3. 已验证的功能断链（计划 §17-Q8"哪些功能已经存在"的答案）
 
-这是 Phase 0 最重要的产出。README 与 `docs/plan-5-academic.md` 标 ✅ 的差异化功能，有 **5 处实际断链**。
+这是 Phase 0 最重要的产出。README 与 `docs/archive/plan-5-academic.md`（已归档）标 ✅ 的差异化功能，有 **5 处实际断链**。
 
 | # | 宣称 | 实测 | 证据 |
 | --- | --- | --- | --- |
@@ -167,4 +169,4 @@
 
 - 实跑 8 项端到端流程（需要 `.env` + LLM key + Milvus/PG/Redis 起容器）。
 - `docker-compose*.yml` / `.env.production.example` 的 env 集合与 `core/config/` 的差集（`.env.example` 已见 `AGENT_ENABLED`、`ENTAILMENT_BACKEND` 两项在 config 中无对应常量，疑遗留）。
-- `docs/` 下 4 份既有计划（`improvement_plan.md`、`code-review-action-items.md`、`architecture-review-and-improvement-plan.md`、`plan-5-academic.md`）与本文的结论冲突处，是否以本文为准并归档。
+- `docs/archive/` 下 4 份既有计划（`improvement_plan.md`、`code-review-action-items.md`、`architecture-review-and-improvement-plan.md`、`plan-5-academic.md`）与本文的结论冲突处：**已按本文为准并于 2026-10-09 归档**，归档件不再作为实施依据（见 `docs/archive/README.md`）。

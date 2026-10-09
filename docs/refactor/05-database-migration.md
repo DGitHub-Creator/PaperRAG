@@ -1,12 +1,13 @@
 # 05 — PostgreSQL Schema 收编与 Chunk 数据重建
 
+> **本文状态（2026-10-09 复核）**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。**除核查脚本外全部未实现**：`scripts/audit_schema.py` 已落（P0-2，离线 `--check-baseline` + 只读 `--live`，19 项判定单测）；基线迁移、`paper_chunks`、时间戳转换、`rebuild_chunks.py` 都要真实 PG，本机无 Docker → `not_run`。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
 > 对应决策 Q4、Q5。原则：**先核查、后建基线、禁止对存量库重复初始化建表**；Milvus 降级为可重建索引，PostgreSQL 成为文献与分块正文的唯一真相（02 §0 L3）。
 
 ## 1. 收编前置核查（必须在任何写操作之前完成）
 
 存量库不可信任：`init_db()` 在 alembic 失败时静默回退 `Base.metadata.create_all`（`core/database.py:99-120`），所以**库可能物理存在 9 张表但没有任何 `alembic_version` 行**。
 
-核查脚本 `scripts/audit_schema.py`（A0-3 交付，只读）：
+核查脚本 `scripts/audit_schema.py`（**P0-2** 交付，只读）：
 
 | 检查 | 方法 | 判定 |
 | --- | --- | --- |
@@ -21,7 +22,7 @@
 
 ## 2. 冻结 alembic，建立 golang-migrate 基线
 
-> **迁移文件形态**：`server/migrations/*.sql` 是纯 SQL + `migrate` 约定的 `.down.sql`，**不需要任何 Go 代码即可执行**（用 `migrate/migrate` 镜像或 CLI：`docker run --rm migrate/migrate -path /migrations -database "$DATABASE_URL" up`）。因此 Milestone A0 可以在 Go 服务还不存在时就按同一套迁移文件建表，而不必回头再引入第二套迁移工具。
+> **迁移文件形态**：`server/migrations/*.sql` 是纯 SQL + `migrate` 约定的 `.down.sql`，**不需要任何 Go 代码即可执行**（用 `migrate/migrate` 镜像或 CLI：`docker run --rm migrate/migrate -path /migrations -database "$DATABASE_URL" up`）。因此 **P0-2** 可以在 Go 服务还不存在时就按同一套迁移文件建表，而不必回头再引入第二套迁移工具。
 
 | 步骤 | 动作 | 约束 |
 | --- | --- | --- |
@@ -37,7 +38,7 @@
 
 现状问题（03 §2）：叶子块正文只在 Milvus 且 `VARCHAR(2000)` 截断；`parent_chunks` 只收 level 1/2 而 PDF 默认路径不产 → 实际近空；无版本、无定位、无哈希。
 
-新增（`server/migrations/000003_paper_chunks.sql`，A0-4 交付；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
+新增（`server/migrations/000003_paper_chunks.sql`，**P2-1** 交付；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
 
 ```sql
 CREATE TABLE papers (
@@ -143,13 +144,13 @@ chunk_id  = "{paper_version_id}:{level}:{ordinal:06d}"
 
 ### 3.4 `parent_chunks` 的结局
 
-`ParentChunkStore`（`rag/parent_chunk_store.py`）改为读写 `paper_chunks`（`level IN (1,2)`），Redis Cache-Aside 逻辑不变；`parent_chunks` 表在里程碑 A 的阶段 3 之后 DROP（届时它仍近乎空，无数据搬迁成本）。**A0 不删表**，保证 Python 检索路径随时可回退。
+`ParentChunkStore`（`rag/parent_chunk_store.py`）改为读写 `paper_chunks`（`level IN (1,2)`），Redis Cache-Aside 逻辑不变；`parent_chunks` 表在 **P1** 的阶段 3（[04 §4.1](04-migration.md) 的切换阶段）之后 DROP（届时它仍近乎空，无数据搬迁成本）。**A0 不删表**，保证 Python 检索路径随时可回退。
 
 ## 4. TIMESTAMPTZ 统一（决策 Q4：先验证再转换）
 
 现状：所有列为 `timestamp without time zone`；写入混用 naive `datetime.utcnow()`（`conversation_storage.py:85`、`models.py` 各默认值）与 aware `datetime.now(UTC)`（`parent_chunk_store.py:95`）。aware 值经 psycopg2 落到 `timestamp` 列时，**PG 会按会话 `TimeZone` 转换后再丢弃偏移** → 存量数值的真实语义取决于历史会话时区与 `log_timezone`，**不能假定为 UTC**。
 
-### 4.1 验证（只读，A0-3）
+### 4.1 验证（只读，**P0-2**）
 
 ```sql
 SHOW timezone;  SHOW log_timezone;  -- 以及 server_version
@@ -175,7 +176,7 @@ ALTER TABLE chat_messages ALTER COLUMN timestamp TYPE timestamptz
 | 备份 | `pg_dump -Fc` 全量 + 校验和；记录 `pg_dump` 的 SHA256 与行数快照 |
 | 演练 | 在克隆库上完整跑一遍转换 + 回归计数，产出对照表 |
 | 数据校验 | 转换前后各表 `count(*)`、`min/max`、按小时直方图的 KL 差异、抽样 100 行 epoch 一致性 |
-| 停机窗口 | 转换期间禁止旧进程写入（旧代码继续写 naive 会污染新列）→ 与 A0-3 的 `create_all` 报错改动同批上线 |
+| 停机窗口 | 转换期间禁止旧进程写入（旧代码继续写 naive 会污染新列）→ 与已完成的 A0-3（`d8f1563`，删静默 `create_all`）同批上线 |
 | 恢复 | `pg_restore` 到临时库比对；回滚脚本 = 反向 `ALTER ... TYPE timestamp USING col AT TIME ZONE 'UTC'`，**且只在未写入新数据时有效** |
 | 新表 | `paper_*`、`research_*` 一律 `timestamptz`，从第一天起不继承旧问题 |
 
@@ -185,14 +186,14 @@ ALTER TABLE chat_messages ALTER COLUMN timestamp TYPE timestamptz
 
 **硬约束**：不得把 Milvus 中已截断的 `text` 当完整原文（决策 Q5）。重建只能从原始 PDF 出发。
 
-`scripts/rebuild_chunks.py`（A0-4）：
+`scripts/rebuild_chunks.py`（**P2-1**）：
 
 ```
 --dry-run | --paper <display_name> | --limit N | --reindex | --verify-only
 ```
 
 1. **原料可用性检查**：原始 PDF 位于 `backend/data/documents/`（`paths.py:8`）。枚举现有 Milvus `filename` 集合，与磁盘文件、`ingested.json` 记录三方对账 → 输出 `missing_source` 清单，这些文献**必须重新上传**，脚本明确标记为不可自动重建，不静默跳过。
-2. **逐文献重解析**：走现有 `DocumentLoader.load_document()`（修复后的分层版本，见 06 A0-4），产出 level 1/2/3 全量 chunk。
+2. **逐文献重解析**：走现有 `DocumentLoader.load_document()`（修复后的分层版本，见 [../archive/refactor-06-milestone-a0.md](../archive/refactor-06-milestone-a0.md) 的 A0-4（已归档）），产出 level 1/2/3 全量 chunk。
 3. **写 PG**：建/复用 `papers` → `paper_versions(version_no+1, raw_sha256)` → `paper_files(object_id)` → `paper_sections` → `paper_chunks`（`ON CONFLICT` upsert）。
 4. **建索引**：调 `MilvusWriter`（复用 `rag/embedding.py` 的 dense + 手写 BM25），同事务写 `paper_chunk_vectors(index_state)`。
 5. **一致性校验**：每个版本比对 `count(paper_chunks where level=3)` vs `count(paper_chunk_vectors where index_state='ready')`；不等则 `index_state='stale'` 并**保留可检索降级**（PG 可用，向量缺失只降级不报错）。
