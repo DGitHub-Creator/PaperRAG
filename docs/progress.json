@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0-7 ai-core 内部执行面推到 mock 级上限（`backend/internal_api/` 七件 + 29 条 HTTP 级用例）：§3.4 的三条语义都落在可断言的地方——幂等用「假 loader 调用次数恒为 1」证明，取消后过期结果被丢弃，过期 deadline 不起跑但仍写 usage；错误体是 `{\"detail\", \"errors[]}`，detail 保住全仓一种信封，errors[].code 让 Go 不解析文本就能区分同为 400/409 的不同原因，码表与契约逐码比对。P0-7 距 done 只差真实环境那两件：`ai_executions` 迁移（阻塞于 P0-2 的真库基线）与 compose 里 ai-core 不发布宿主端口（属 P0-8）。FE-1 前端结构重构 done（api/ 七件取代 services/api.ts，六个 composable 统一模块单例，check_frontend.py 机器执行 R1–R11 且每条规则都有负向用例）；P0-4 契约目录 done；P0-2/P0-3 同日停在同一件事上——真实 PostgreSQL：基线 DDL 必须由实际结构抄录，当前 sqlc 用的是 `server/sql/schema.sql` 这份临时参照，P0-2 出基线后要重指 schema 并重跑 gen。本机无 Docker/PG，因此 P0-0/P0-1/P0-2 的 real 级与 P0-5 起各卡的容器证据一律 not_run（见 p0-environment.md §3）。K1–K4 已全部定案，剩 D1/D2/D3 三项待拍且均不阻塞当前工作",
+  "current": "P0 的本机上限已经触到，剩下的全压在同一件事上：Docker daemon 起不来。现场核查更正了旧结论——Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（per-user）都装好了，缺的是一次重启让 WSL2 可选组件生效（per-user 安装用不了 Hyper-V 后端，没有绕开的路）。因此 P0-0/P0-1/P0-2/P0-5/P0-6/P0-7/P0-8/P0-9 的 real 与 e2e 证据一律 not_run，而 `docker compose config` 这条不需要 daemon 的真机校验已经接进 `dev.py doctor`（实测通过，并配了一条「compose 写坏时必须红」的用例）。P0-7 ai-core 内部执行面推到 mock 级上限：`backend/internal_api/` 七件 + 29 条 HTTP 级用例，§3.4 的幂等/取消/超时三条语义都有断言兜着，错误体 {detail, errors[]} 让 Go 不解析文本就能区分同码不同因，三条机检把实现钉回契约（7 条路径、注册类型集合、`/internal/` 不进 openapi.yaml）；距 done 只差 `ai_executions` 迁移（阻塞于 P0-2 的真库基线）与 compose 端口（属 P0-8）。FE-1 前端结构重构 done；P0-4 契约目录 done；P0-2/P0-3 停在同一处——基线 DDL 必须由实际库结构抄录。全量 448 项 pytest（unit 391 / integration 57）+ ruff + typecheck/build + 三个门禁全绿；`pytest -m chain` 收集 0 项时返回 exit=5 而不是 0，验收命令不会因为没用例而假绿。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -75,10 +75,10 @@
           "id": "X7",
           "desc": "测试分层可用（marker 已注册且目录即分层）",
           "command": "uv run python scripts/dev.py test -m unit && uv run python scripts/dev.py test -m integration && uv run python scripts/dev.py test -- tests/unit/test_pytest_layering.py",
-          "expect": "unit 310 通过 / integration 23 通过 / 分层机检 5 通过；无 PytestUnknownMarkWarning。chain 层 0 条用例属预期（用例自 P0-5 起）",
+          "expect": "unit 391 通过 / integration 57 通过 / 分层机检 5 通过；无 PytestUnknownMarkWarning。chain 层 0 条用例属预期（用例自 P0-5 起）",
           "level": "mock",
           "result": "pass",
-          "evidence_note": "2026-10-09 本地实跑：310/23/5 全绿。chain、e2e 两层的用例由 P0-5 与 P0-9 提供"
+          "evidence_note": "2026-10-09 本地实跑：391/57/5 全绿（全量 448 项）。chain 层现在收集 0 项且 pytest 返回 exit=5 而不是 0——这个区别不能省：验收命令不能因为没收到用例就看起来像绿。chain/e2e 两层的用例分别由 P0-5 与 P0-9 提供"
         },
         {
           "id": "X8",
@@ -150,7 +150,7 @@
           "hours": 5,
           "deps": [],
           "verify": "uv run python scripts/dev.py test -m unit",
-          "note": "吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass，但 p0-environment.md §3 的实跑记录表全空：本机未安装 Docker Desktop，doctor 实测 exit=1，up/health/migrate 未实跑 → 等级 real 达不到，不标 done"
+          "note": "吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass（391/57/5，全量 448）。**环境实况更正**：Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（per-user 安装）都在，daemon 起不来的唯一原因是 WSL2 可选组件装完待重启，而 per-user 安装用不了 Hyper-V 后端——缺的不是安装，是一次重启。doctor 现在把两类失败分开报：compose 自身的错走 `docker compose config`（不需要 daemon，本机已实跑通过；顺手删掉废弃的 `version:` 字段，免得每次调用都吐告警），环境没起来另说；配一条用例证明这条校验会红而不是恒过。实测 exit=1 且只列两条阻塞（daemon 没跑、缺 .env）；up/health/migrate 仍未实跑 → 等级 real 达不到，不标 done"
         },
         {
           "id": "P0-1",
