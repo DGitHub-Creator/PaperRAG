@@ -14,20 +14,20 @@ from starlette.responses import Response
 
 from backend.core.config import VERSION
 
-APP_INFO = Info("paperrag", "PaperRAG application information")
+APP_INFO = Info("researchpilot", "ResearchPilot application information")
 REQUEST_COUNT = Counter(
-    "paperrag_http_requests_total",
+    "researchpilot_http_requests_total",
     "Total HTTP requests",
     ["method", "endpoint", "status"],
 )
 REQUEST_LATENCY = Histogram(
-    "paperrag_http_request_duration_seconds",
+    "researchpilot_http_request_duration_seconds",
     "HTTP request latency in seconds",
     ["method", "endpoint"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 ACTIVE_REQUESTS = Gauge(
-    "paperrag_active_requests",
+    "researchpilot_active_requests",
     "Number of currently active requests",
 )
 

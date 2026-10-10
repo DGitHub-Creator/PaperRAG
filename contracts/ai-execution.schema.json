@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://researchhub.local/contracts/ai-execution.schema.json",
+  "$id": "https://researchpilot.local/contracts/ai-execution.schema.json",
   "title": "Go ↔ ai-core 内部执行面契约",
   "description": "对应 02-target-architecture.md §3.1–§3.4。Go 是唯一调度方，Python 只被动执行并如实上报；proposed_tasks 与 evidence_candidates 对 Go 是输入建议，不携带任何写权限。",
   "x-endpoints": [

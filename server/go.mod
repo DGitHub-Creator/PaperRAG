@@ -1,4 +1,4 @@
-module github.com/DGitHub-Creator/PaperRAG/server
+module github.com/DGitHub-Creator/ResearchPilot/server
 
 go 1.25.1
 

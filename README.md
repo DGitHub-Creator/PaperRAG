@@ -1,6 +1,6 @@
 # ResearchPilot
 
-> 原名 **PaperRAG**。2026-10-09 起按《重构执行总纲》升级为 **ResearchPilot**：
+> 2026-10-09 起按《重构执行总纲》升级为 **ResearchPilot**（旧名与决策史见 `docs/archive/`）：
 > Go 主后端（调度、鉴权、数据所有权）+ Python AI Core（解析、检索、推理），
 > 目标是能自主完成「检索 → 深读 → 对比 → 探索 → 核验 → 报告」的科研平台。
 > **重构进行中**：当前仓库里可跑的仍是 Python 单体 + Vue 前端，Go 侧只有骨架与数据访问层。
@@ -132,7 +132,7 @@ cd frontend && npm install && npm run dev
 ## 4. 仓库结构
 
 ```text
-ResearchPilot/            # GitHub 仓库名仍是 PaperRAG，改名属独立动作（见 §7）
+ResearchPilot/            # 仓库名、包名、镜像名、指标名已统一（改名于 2026-10-10 收口）
   backend/                Python AI Core：api/ core/ rag/ services/ agent/ vectordb/ internal_api/
   server/                 Go 主后端（P0-1 起）：cmd/api、cmd/worker、internal/{config,db,httpapi,observability}
   frontend/               Vue 3 + Vite + TS：src/{api,composables,components,utils,i18n}
@@ -196,18 +196,20 @@ CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progres
 本机 Docker daemon 起不来（WSL2 可选组件装完待重启），没有真实 PG/Redis/Milvus，也没有 LLM 密钥。
 **mock 绿灯不等于完成**——这是原则②。
 
-## 7. 改名遗留项（有意留下，不是漏改）
+## 7. 改名收口（2026-10-10 完成）
 
-项目已改名 ResearchPilot，以下四处**故意没跟着改**，每处都有原因：
+旧名在本仓已清除，**唯一保留旧字面量的地方是安全黑名单**——那不是命名残留：
 
 | 项 | 现值 | 为什么留 |
 | --- | --- | --- |
-| Go module path | `github.com/DGitHub-Creator/PaperRAG/server` | 必须与 GitHub 仓库改名同批做，否则 `go get` 断；改它是 1 行 `go.mod` + 7 行 import |
-| Redis 键前缀 | `REDIS_KEY_PREFIX` 默认 `paperrag`、`upload_jobs` 用 `paperrag:job:` | 改名会让既有部署的键变孤儿（TTL 1 天）；`REDIS_KEY_PREFIX` 可用环境变量覆盖，等真实栈可验证时再动 |
-| Prometheus 指标名 | `paperrag_http_requests_total` 等 | 改名即断已有抓取/看板；等 P1 接观测面时一次性换 |
-| `ADMIN_INVITE_CODE` 弱默认值黑名单 | 同时拒 `paperrag-admin-2026` 与 `researchpilot-admin-2026` | 只删旧值等于把已暴露过的口令重新变成可用口令 |
+| `ADMIN_INVITE_CODE` 弱默认值黑名单 | 同时拒 `paperrag-admin-2026` 与 `researchpilot-admin-2026` | 已泄露口令的**拒绝清单**：只删旧值等于把暴露过的口令重新变成可用口令 |
 
-`contracts/ai-execution.schema.json` 的 `$id` 命名空间（`researchhub.local`）同理保留。
+同批改掉的：Go module path（`go.mod` + 7 行 import）、`REDIS_KEY_PREFIX`（含 `upload_jobs` 的作业键
+前缀）、Prometheus 指标名（含 `Info` 组件名）、compose 镜像名、契约 `$id` 命名空间、远端 URL 改为
+`git@github.com:DGitHub-Creator/ResearchPilot.git`。
+
+既有部署若已在采集旧指标名或依赖旧 Redis 键，需同步更新抓取配置；旧键 TTL（1 天）到期即自行消失。
+`docs/archive/` 下的归档件按仓库纪律逐字保留（历史记录，不是现状描述）。
 
 ## 8. 已知问题与升级注意
 
@@ -248,9 +250,13 @@ CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progres
 多账号场景下 remote URL 要匹配 `~/.ssh/config` 的 Host 别名：
 
 ```bash
-git remote set-url origin git@github.com-creator:DGitHub-Creator/PaperRAG.git
-ssh -T git@github.com-creator
+git remote set-url origin git@github.com:DGitHub-Creator/ResearchPilot.git
+ssh -T git@github.com
 ```
+
+> 别名必须与 `~/.ssh/config` 里真实存在的 `Host` 一致（本机只有 `github.com` / `github-ryan` /
+> `aliyun-mrm`）。写一个不存在的别名会在 `git fetch` 时直接变成
+> `ssh: Could not resolve hostname ...`，而不是鉴权失败，容易误判成网络问题。
 
 ## License
 

@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/DGitHub-Creator/PaperRAG/server/internal/observability"
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
 
 // Trace 透传上游的 X-Trace-Id，没有就新生成一个，并写回响应头供前端排查。

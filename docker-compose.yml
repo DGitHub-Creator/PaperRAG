@@ -92,8 +92,8 @@ services:
 
   backend:
     container_name: researchpilot-backend
-    # 显式命名镜像：compose 默认镜像名取 project 名（由目录名 PaperRAG 推导为
-    # paperrag-backend），与项目改名 ResearchPilot 后的口径不一致。
+    # 显式命名镜像：compose 默认镜像名取 project 名（由目录名推导），
+    # 与项目名 researchpilot 的口径不一致，这里钉死。
     image: researchpilot-backend
     build:
       context: .

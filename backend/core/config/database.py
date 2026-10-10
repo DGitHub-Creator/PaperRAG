@@ -22,7 +22,7 @@ DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
-REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "paperrag")
+REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "researchpilot")
 REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL_SECONDS", "300"))
 USE_REDIS_JOB_MANAGER = os.getenv(
     "USE_REDIS_JOB_MANAGER",

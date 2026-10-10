@@ -326,10 +326,10 @@ class RedisJobManager:
 
     接口与 UploadJobManager 完全兼容，可无缝切换。
     使用 Redis HASH 存储任务数据，TTL 24 小时自动清理。
-    键格式: paperrag:job:{job_id} → {field: value}
+    键格式: researchpilot:job:{job_id} → {field: value}
     """
 
-    _REDIS_PREFIX = "paperrag:job:"
+    _REDIS_PREFIX = "researchpilot:job:"
     _REDIS_TTL = 86400
 
     def __init__(self):
