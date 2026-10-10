@@ -92,9 +92,15 @@ services:
 
   backend:
     container_name: researchpilot-backend
+    # 显式命名镜像：compose 默认镜像名取 project 名（由目录名 PaperRAG 推导为
+    # paperrag-backend），与项目改名 ResearchPilot 后的口径不一致。
+    image: researchpilot-backend
     build:
       context: .
       dockerfile: Dockerfile
+      # Dockerfile 是多阶段构建，最后一个 stage 是 nginx；不写 target 会构建出 nginx 镜像，
+      # 容器监听 80 而本服务的端口映射与 healthcheck 都是 8000，必然 unhealthy。
+      target: backend
     ports:
       - "8000:8000"
     environment:
@@ -106,6 +112,12 @@ services:
       # JWT_SECRET_KEY 已无内置默认值，缺失即拒绝启动。此处仅给本地开发栈一个
       # 可用值；生产用 docker-compose.prod.yml + .env.production，或在此注入真实密钥。
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-only-insecure-jwt-secret}
+      # LLM_API_KEY / LLM_MODEL 在 backend/core/config 的 validate_config() 里是硬要求
+      # （缺失即拒绝启动，实测抛 RuntimeError: Missing required configuration）。
+      # 由本地 .env 经 compose 变量替换注入（.env 不入库）。
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/models:/app/models
       - ${DOCKER_VOLUME_DIRECTORY:-.}/data:/app/data

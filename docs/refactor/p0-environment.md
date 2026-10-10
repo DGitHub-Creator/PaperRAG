@@ -33,7 +33,9 @@ uv run python scripts/dev.py doctor
 # 2) 配密钥（.env 不入库；这一步是交互式的人为动作，dev.py 不代填 secrets）
 cp .env.example .env
 uv run python -c "import secrets;print(secrets.token_urlsafe(32))"   # 输出写进 .env 的 JWT_SECRET_KEY=
-# 要验问答链路再补 LLM_API_KEY / LLM_BASE_URL；只验骨架可跳过
+# LLM_API_KEY / LLM_MODEL 是硬要求：backend/app.py 的 startup 无条件调 validate_config()，
+# 缺失即 RuntimeError 拒绝启动（本机实测），所以**只验骨架也必须给非空值**（占位即可）。
+# 要真答问题再补 LLM_BASE_URL；compose 已把这三个变量透传进 backend 容器。
 
 # 3) 装依赖（可复现：uv.lock）
 uv sync --extra test
@@ -70,19 +72,25 @@ P0-1 之后会多出 `go-api` / `go-worker` / `ai-core` 三个服务，以及 ng
 | --- | --- | --- | --- | --- | --- |
 | 1 | `dev.py doctor` | Windows / docker CLI 29.8.2 | 2026-10-09 | ✅ pass | 实测 exit=1，且**只**报两条：daemon 没在跑、缺 `.env`。这正是期望——阻塞项列得出来才叫自检 |
 | 1b | `docker compose config --quiet` | 同上（daemon 停着） | 2026-10-09 | ✅ pass | 这条**不需要 daemon**：插值、字段拼写、端口形状纯客户端就能判。已接进 `doctor`，让"compose 写坏了"和"环境没起来"分成两个原因 |
-| 2 | `dev.py up` + `ps` | — | — | ⬜ not_run | 记录首拉耗时 |
-| 3 | `curl :8000/health` | — | — | ⬜ not_run | 期望 200 |
+| 2 | `dev.py up` + `ps` | Windows / Docker Desktop（本机实测）（系统级安装，Client（本机实测）） | 2026-10-10 | ✅ pass | 7 个容器起来：postgres / redis / etcd / minio / standalone / attu 全 healthy，backend 由 unhealthy 转 healthy。首拉镜像本机不复现（镜像已在），构建约 2–3 分钟 |
+| 3 | `curl :8000/health` | 同上 | 2026-10-10 | ✅ pass | 容器内与宿主机均 HTTP 200，返回 `{"status":"ok","version":"0.1.0"}` |
 | 3b | `gofmt` + `go vet` + `go test` | Windows / go1.25.1 | 2026-10-09 | ✅ pass | 16 项 Go 用例全绿，无需容器 |
-| 4 | `dev.py migrate` | — | — | ⬜ not_run | 存量库无 `alembic_version` 时见 §4 第 4 条 |
+| 4 | `dev.py migrate` | 同上 | 2026-10-10 | ✅ pass | exit 0；backend 启动时已自动 `alembic upgrade head`，手动复跑无变更 |
 | 5 | `test -m unit` / `-m integration` | Windows | 2026-10-09 | ✅ pass | 391 / 57 通过；容器环境需复现一次 |
 | 6 | 全量 `uv run pytest -q` | Windows | 2026-10-09 | ✅ pass | 448 通过（2026-10-09 本机基线）；`-m chain` 当前收集 0 项、exit=5，不是绿 |
 
-**2026-10-09 状态更正**（先前这里写的是"本机未安装 Docker Desktop"，已被现场核查推翻）：
-Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（**per-user 安装**，在
-`（per-user 安装目录）`）都在。daemon 起不来的唯一原因是 **WSL2 的 Windows
-可选组件装完还没重启**，而 per-user 安装用不了 Hyper-V 后端，所以没有绕开重启的第二条路。
-因此 §2 的 4/6/8 步与 X1/X6/X7 的容器部分仍未实跑，P0-0 的证据等级停在 mock；
-能实跑的三条（1、1b、3b）都已跑过并记在上面。重启后按本序列从第 4 步继续。
+**2026-10-10 状态更正（推翻 2026-10-09 那版"缺一次重启"的结论）**：真因不是 WSL 组件待重启，
+而是 **Docker Desktop 根本没在运行**——`Start-Process 'Docker Desktop.exe'` 之后 **5 秒**引擎就绪，
+`docker info` 返回 `（本机实测，linux 引擎）`。同一段另有两处与现场不符：安装形态是
+**系统级**（`（Docker Desktop 安装目录）\`，`com.docker.service` 为 Manual/Stopped），
+不是 per-user 的 `（per-user 安装目录）`（该路径实测不存在）；版本也不是
+"CLI 29.8.2 / Desktop 4.94"，实测 Client（本机实测） / Compose（本机实测） / Desktop（本机实测）。
+`wsl -l -v` 显示 `docker-desktop` 为 WSL 2、`wsl --status` 正常。
+
+2026-10-09 那版之所以看着自洽，是因为**没把 daemon 拉起来就下了结论**；教训与 `03` §7 的
+"文档谎报清单"同类：**环境结论必须来自本机实跑，不能来自日志片段的推断**。本次起栈还额外
+暴露了三处真实缺陷（`.env.example` 行内注释、compose 缺 `target`、镜像名沿用目录名），
+均已修复并记入 §4 第 10/12 条。
 
 ## 4. 已知坑（按踩到的顺序）
 
@@ -103,12 +111,16 @@ Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（**per-user 安装**�
    `go env -w GOPROXY=https://goproxy.cn,direct`，或单条命令带 `GOPROXY=https://goproxy.cn,direct go mod tidy`。
    注意 `go mod tidy` 比 `go build` 要得多——它连依赖自己的测试依赖（testify 等）一起解析，
    所以首次 tidy 失败不代表代码有问题。容器构建用 `--build-arg GOPROXY=...`，仓库不写死镜像。
-8. **daemon 起不来的时候，`docker info` 不给原因**：本机实况是 Docker Desktop 已装但
-   `docker info` 只回一句 "Docker Desktop is unable to start"。真正的原因在
-   `（Docker 配置目录）\log\host\com.docker.backend.exe.log`——这次读到的是
-   `Wsl/WSL_E_WSL_OPTIONAL_COMPONENT_REQUIRED` + "A reboot is required to complete the WSL
-   installation"。**per-user 安装只能用 WSL2 后端**（日志里 Hyper-V 选项写着
-   "Per-user installations can't run the Hyper-V backend"），所以没有绕开重启的替代配置。
+8. **daemon 起不来时 `docker info` 不给原因，要看日志**：它只回
+   `open //./pipe/dockerDesktopLinuxEngine: ... cannot find the file specified`（引擎没跑）或
+   `Access is denied`（受限/权限）。真因在 `（Docker 配置目录）\log\host\`：`monitor.log` 记
+   `backend crashed ... reporting error to user`，`com.docker.backend.exe.log` 的 `GET /error`
+   带完整 JSON。本机实测踩过一次：**`daemon.json` 带 UTF-8 BOM**（PowerShell 5.1 的
+   `Set-Content -Encoding utf8` 会写 BOM）→ `parsing JSON: invalid character '茂'` → 引擎弹
+   错误对话框并退出，`docker desktop restart` 会卡在那里等对话框被点掉。
+   改这个文件务必无 BOM 写（`[System.IO.File]::WriteAllText($p,$json,(New-Object System.Text.UTF8Encoding($false)))`），
+   而且**不要拿 PowerShell 的 `ConvertFrom-Json` 当校验**——它容忍 BOM，会给假绿；
+   用 Python 的 `json.loads(open(p,'rb').read().decode('utf-8'))` 校验。
    另有一条能立刻用：`docker compose config` **不需要 daemon**，compose 自身的错先在停机状态下判掉。
    凡涉及 up/health 的行都填不了时，别据此推断"链路是好的"——那正是 `08` §1 ②禁止的事。
 9. **`uv sync` 会重写整个 `uv.lock` 的下载源**：本机的 PyPI 镜像只活在当时的环境变量里
@@ -121,6 +133,30 @@ Docker CLI 29.8.2 + Compose v5.5.1 + Docker Desktop 4.94（**per-user 安装**�
    再用 `uv sync --extra test --locked` 验证（`--locked` 只校验不重解析）；
    确实要重解析时带 `uv lock --default-index https://pypi.tuna.tsinghua.edu.cn/simple`。
    **diff 只看增删行数不够**——这种整文件重写统计数看着正常，内容却全变了。
+10. **`.env.example` 的历史写法会炸**：`KEY= #值`（赋值后跟行内注释）在 python-dotenv 下
+   `#值` 会被当成真实值，`DENSE_EMBEDDING_DIM= #1024` → `int('#1024')` 抛 `ValueError`，
+   应用起不来、13 个测试文件连收集都过不去（2026-10-10 已把那 11 行改成整行注释）。
+   自检：`python -c "from dotenv import dotenv_values as v;print(v('.env.example'))"`。
+11. **构建期 BuildKit 取 `# syntax=docker/dockerfile:1` 不走 Docker Desktop 代理**：Docker Hub
+   被 DNS 污染时必然 `failed to fetch oauth token ... timeout`（daemon 侧的拉取反而是通的）。
+   绕过：先用 daemon 把这 4 个镜像拉到本地经典存储，BuildKit 就会用本地前端——
+   `docker pull docker/dockerfile:1 node:20-alpine python:3.12-slim nginx:alpine`。
+12. **compose 的 backend 服务必须写 `target: backend`**：`Dockerfile` 是多阶段且**最后一阶是
+   `nginx`**；不写 target 时构建出的是 nginx 镜像 → 容器监听 80，而端口映射与 healthcheck 都是
+   8000，**永远 unhealthy**（实测容器日志里是 nginx 的 entrypoint）。
+13. **数据盘被换过/恢复过之后 `container_name` 会撞车**：旧栈残留容器占着同名
+   （`milvus-etcd`/`milvus-minio`/`milvus-standalone`/`milvus-attu`），compose 报
+   `Conflict. The container name "/milvus-etcd" is already in use`。**重命名即可，不必删除**：
+   `docker rename milvus-etcd milvus-etcd-prev`（4 个各做一遍），卷与数据不受影响。
+14. **换镜像存储会让镜像"消失"**：`settings-store.json` 的 `UseContainerdSnapshotter` 决定你看的是
+   containerd 那套还是经典 `overlay2` 那套。本机实测：置 `true` 时 `docker images` 只剩 4 个而
+   `Local Volumes 3` 仍在（卷看得见、镜像看不见）；改回 `false` 后 10 个镜像 + 8 个容器全部回来。
+   同文件的 `CustomWslDistroDir` 决定数据盘落在哪个盘（指回 `（数据盘目录，可在设置里改）`
+   后 29 GB 旧盘被重新挂载、数据无损失）。注意 Docker Desktop 会重写该文件：代理键名是
+   `ProxyHTTPMode`（大写 HTTP），写错大小写等于没写。
+15. **受限运行下 `tmp_path` 类测试必失败**：`PermissionError: [WinError 5] ...\Temp\pytest-of-<用户名>`，
+   与仓库无关——把 `TEMP`/`TMP` 指到工作区内可写目录再跑即可（本机实测集成层由
+   `46 passed / 1 failed / 10 errors` 变为 `56 passed / 1 failed`）。
 
 ## 5. 与本卡之外的关系
 - `dev.py seed` 不在本卡：种开发数据需要先跑通上传→入库链路（属 P1），
