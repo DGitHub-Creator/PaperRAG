@@ -94,15 +94,24 @@ Go 是唯一公开入口与唯一调度方；Python 只被动执行并如实上�
 
 ## 3. 快速开始
 
+前置：**Docker Desktop 必须在运行**。引擎没起来时 `docker info` 只报一句 pipe-not-found，
+既不是缺组件、也不需要重装——启动 Docker Desktop 后约 5 秒引擎即就绪
+（详见 [p0-environment.md](docs/refactor/p0-environment.md) §4 第 8、14 条）。
+
 统一入口是 `scripts/dev.py`（跨平台，Windows/macOS/Linux 同一套命令）：
 
 ```bash
-cp .env.example .env            # 然后填 JWT_SECRET_KEY（缺失即拒绝启动）
+cp .env.example .env            # 必填三项见下
 uv sync --extra test            # Python 依赖（可复现：uv.lock）
 uv run python scripts/dev.py doctor   # 自检：docker、.env、密钥占位值、端口占用、compose 静态校验
 uv run python scripts/dev.py up       # 起基础设施 + 服务，等 healthy
 uv run python scripts/dev.py test -m unit
 ```
+
+`.env` 的三个必填项（缺失或占位即拒绝启动，均已实测）：`JWT_SECRET_KEY`
+（`python -c "import secrets;print(secrets.token_urlsafe(32))"`）、`LLM_API_KEY`、`LLM_MODEL`——
+**后两个连"只验骨架"也必须非空**（`app.py` 的 startup 无条件调 `validate_config()`），占位值即可。
+中国大陆网络另需 `go env -w GOPROXY=https://goproxy.cn,direct`（`proxy.golang.org` 不可达）。
 
 完整序列（含首拉耗时、迁移、冒烟、收工）见 [p0-environment.md](docs/refactor/p0-environment.md) §2。
 

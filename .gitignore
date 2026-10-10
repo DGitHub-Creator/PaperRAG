@@ -51,6 +51,13 @@ models/
 # Frontend dependencies
 frontend/node_modules/
 
+# 本机运行产物：仓库只保留"能跑的最小状态"，这些一律不入库。
+# 根级 node_modules/ 是误在仓库根执行 npm install 的产物（依赖应装在 frontend/）。
+node_modules/
+.tmp/
+.tmp-pytest/
+.pytest-cache/
+
 # Cloned repos
 citelocal-agent/
 
