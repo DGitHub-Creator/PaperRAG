@@ -5,7 +5,7 @@
   "baseline_commit": "6221147",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "2026-10-11 现场实况：Docker Desktop 可正常运行（启动后 5 秒引擎就绪），数据盘在 D:（29 GB，不占 C:），中间件 6 个容器与 dev.py infra / serve 两条路径均已实跑通过。P0-0 证据等级已由 mock 升到 real：doctor 全绿 → up 起 7 容器、backend healthy → /health 容器内与宿主机均 200 → migrate exit 0；未标 done 只因 down/logs 未逐个实跑。P0-4 契约目录 done、FE-1 前端结构 done、A0-1/A0-3/SPEC-1 done。P0-7 ai-core 内部执行面推到 mock 级上限（backend/internal_api/ 七件 + 29 条 HTTP 用例，三条机检把实现钉回契约），距 done 只差 ai_executions 迁移（阻塞于 P0-2 真库基线）与 compose 端口（属 P0-8）。P0-2 已完成真库审计：docs/refactor/schema-baseline.json 由 --live 从真实 PG 15.18 导出（10 张表、alembic head=add_paper_knowledge_graph、ORM 与真库漂移 23 处），下一步是把基线 DDL 抄进 server/migrations/ 并让 --check-baseline 通过。P0-1 / P0-3 仍 in_progress（P0-3 的 schema 源仍是临时参照 server/sql/schema.sql）。当前测试基线：449 passed（unit + integration；chain 与 e2e 各 0 条用例，-m chain 收 0 项时 pytest 返回 exit=5 而不是 0，不能算绿）。日常开发走源码运行（dev.py infra + serve），全栈容器只用于 P0-8/P0-9 的容器级验收。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞",
+  "current": "2026-10-11 现场实况：Docker Desktop 可正常运行（启动后 5 秒引擎就绪），数据盘位置可自定义（不占系统盘），中间件 6 个容器与 dev.py infra / serve 两条路径均已实跑通过。P0-0 证据等级已由 mock 升到 real：doctor 全绿 → up 起 7 容器、backend healthy → /health 容器内与宿主机均 200 → migrate exit 0；未标 done 只因 down/logs 未逐个实跑。P0-4 契约目录 done、FE-1 前端结构 done、A0-1/A0-3/SPEC-1 done。P0-7 ai-core 内部执行面推到 mock 级上限（backend/internal_api/ 七件 + 29 条 HTTP 用例，三条机检把实现钉回契约），距 done 只差 ai_executions 迁移（阻塞于 P0-2 真库基线）与 compose 端口（属 P0-8）。P0-2 已完成真库审计：docs/refactor/schema-baseline.json 由 --live 从真实 PG 15.18 导出（10 张表、alembic head=add_paper_knowledge_graph、ORM 与真库漂移 23 处），下一步是把基线 DDL 抄进 server/migrations/ 并让 --check-baseline 通过。P0-1 / P0-3 仍 in_progress（P0-3 的 schema 源仍是临时参照 server/sql/schema.sql）。当前测试基线：449 passed（unit + integration；chain 与 e2e 各 0 条用例，-m chain 收 0 项时 pytest 返回 exit=5 而不是 0，不能算绿）。日常开发走源码运行（dev.py infra + serve），全栈容器只用于 P0-8/P0-9 的容器级验收。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -151,7 +151,7 @@
           "hours": 5,
           "deps": [],
           "verify": "uv run python scripts/dev.py test -m unit",
-          "note": "吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass（2026-10-09 记 391/57/5、全量 448；2026-10-11 复跑 449 passed）。**环境实况更正（2026-10-10 二次更正，推翻上一版「缺一次重启」）**：真因是 Docker Desktop 根本没在运行——拉起后 5 秒引擎就绪；安装形态为系统级（`（Docker Desktop 安装目录）/`，`com.docker.service` Manual/Stopped），实测 Client（本机实测） / Compose（本机实测） / Desktop（本机实测），与上一版记的「per-user 安装 / CLI 29.8.2 / Desktop 4.94」不符。doctor 现在把两类失败分开报：compose 自身的错走 `docker compose config`（不需要 daemon，本机已实跑通过；顺手删掉废弃的 `version:` 字段，免得每次调用都吐告警），环境没起来另说；配一条用例证明这条校验会红而不是恒过。实测 exit=1 且只列两条阻塞（daemon 没跑、缺 .env）。**2026-10-10 本机实跑补齐**：doctor 全绿 → `up` 起 7 个容器、backend 转 healthy → `/health` 容器内与宿主机均 200（`{\"status\":\"ok\",\"version\":\"0.1.0\"}`）→ `migrate` exit 0；unit 361/395 通过（另 34 项受沙箱临时目录限制，非仓库缺陷）、integration 56/57（余 1 项是「断言服务不可用」的旧设计，宿主上服务已在跑必然失败，已改为显式模拟依赖不可达）。起栈过程修掉三处真实缺陷：`.env.example` 行内注释被 dotenv 当成值（应用起不来 + 13 个测试文件收集失败）、compose 缺 `target: backend`（构建出 nginx 镜像 → 永远 unhealthy）、镜像名仍按旧目录名推导（已钉为 researchpilot-backend）。证据等级 real 已达成；仍不标 done——`down`/`logs` 未在本轮逐个实跑。**2026-10-11 路径补充**：新增 `dev.py infra`（只起中间件，postgres/redis/etcd/minio/milvus/attu）与 `dev.py serve`（宿主源码跑后端 uvicorn --reload），把「源码运行 + 中间件容器」列为一等路径——免于构建含 torch 的 16.5 GB backend 镜像，改代码也不必重建；同时修正 `up` 的健康等待：只请求部分服务时按实际请求的那几个等健康，原实现写死含 backend 的 HEALTH_CONTAINERS，会让 `dev.py up postgres` 一直等一个从未创建的容器直到超时。本机实测：infra 起 6 容器全 healthy 且零构建、serve 后 /health 与 /ready 均 200（database/redis/milvus 全 connected）、经 vite 代理的 /api/v1/* 与直连后端逐字一致；顺带记录两个坑——vite 5 只监听 ::1（访问用 localhost 而非 127.0.0.1）、探针路由不带 /api/v1 前缀。"
+          "note": "吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass（2026-10-09 记 391/57/5、全量 448；2026-10-11 复跑 449 passed）。**环境实况更正（2026-10-10 二次更正，推翻上一版「缺一次重启」）**：真因是 Docker Desktop 根本没在运行——拉起后 5 秒引擎就绪；安装形态为系统级（`（Docker Desktop 安装目录）`，`com.docker.service` Manual/Stopped），实测 Client（本机实测） / Compose Compose（本机实测） / Desktop（本机实测），与上一版记的「per-user 安装 / CLI 29.8.2 / Desktop 4.94」不符。doctor 现在把两类失败分开报：compose 自身的错走 `docker compose config`（不需要 daemon，本机已实跑通过；顺手删掉废弃的 `version:` 字段，免得每次调用都吐告警），环境没起来另说；配一条用例证明这条校验会红而不是恒过。实测 exit=1 且只列两条阻塞（daemon 没跑、缺 .env）。**2026-10-10 本机实跑补齐**：doctor 全绿 → `up` 起 7 个容器、backend 转 healthy → `/health` 容器内与宿主机均 200（`{\"status\":\"ok\",\"version\":\"0.1.0\"}`）→ `migrate` exit 0；unit 361/395 通过（另 34 项受沙箱临时目录限制，非仓库缺陷）、integration 56/57（余 1 项是「断言服务不可用」的旧设计，宿主上服务已在跑必然失败，已改为显式模拟依赖不可达）。起栈过程修掉三处真实缺陷：`.env.example` 行内注释被 dotenv 当成值（应用起不来 + 13 个测试文件收集失败）、compose 缺 `target: backend`（构建出 nginx 镜像 → 永远 unhealthy）、镜像名仍按旧目录名推导（已钉为 researchpilot-backend）。证据等级 real 已达成；仍不标 done——`down`/`logs` 未在本轮逐个实跑。**2026-10-11 路径补充**：新增 `dev.py infra`（只起中间件，postgres/redis/etcd/minio/milvus/attu）与 `dev.py serve`（宿主源码跑后端 uvicorn --reload），把「源码运行 + 中间件容器」列为一等路径——免于构建含 torch 的 16.5 GB backend 镜像，改代码也不必重建；同时修正 `up` 的健康等待：只请求部分服务时按实际请求的那几个等健康，原实现写死含 backend 的 HEALTH_CONTAINERS，会让 `dev.py up postgres` 一直等一个从未创建的容器直到超时。本机实测：infra 起 6 容器全 healthy 且零构建、serve 后 /health 与 /ready 均 200（database/redis/milvus 全 connected）、经 vite 代理的 /api/v1/* 与直连后端逐字一致；顺带记录两个坑——vite 5 只监听 ::1（访问用 localhost 而非 127.0.0.1）、探针路由不带 /api/v1 前缀。"
         },
         {
           "id": "P0-1",
@@ -835,8 +835,8 @@
   "risks": [
     {
       "risk": "开发机没有容器运行时，P0 的 real 级验收整体阻塞（2026-10-11 已解除）",
-      "trigger": "2026-10-09 判为「本机未安装 Docker Desktop / WSL 组件装完待重启」；2026-10-10 现场核查**推翻**：Docker Desktop（本机实测）（系统级安装，Client（本机实测） / Compose（本机实测））一直都在，只是没在运行——启动后 5 秒引擎即就绪。真实阻塞是缺 .env（且 LLM_API_KEY / LLM_MODEL 是硬要求，只验骨架也必须有值）与 docker.io 的 DNS 污染",
-      "mitigation": "已解除并留下证据：p0-environment.md §3 的 up/ps、/health 200、migrate 均已实跑记录；中间件 6 容器 healthy；镜像源与本地代理（本机代理 7890）已配好。剩余风险转移到数据面：chunk 正文仍只在 Milvus 且 VARCHAR(2000) 截断，见 G10/G11/G12"
+      "trigger": "2026-10-09 判为「本机未安装 Docker Desktop / WSL 组件装完待重启」；2026-10-10 现场核查**推翻**：Docker Desktop（本机实测）（系统级安装，Client（本机实测） / Compose Compose（本机实测））一直都在，只是没在运行——启动后 5 秒引擎即就绪。真实阻塞是缺 .env（且 LLM_API_KEY / LLM_MODEL 是硬要求，只验骨架也必须有值）与 docker.io 的 DNS 污染",
+      "mitigation": "已解除并留下证据：p0-environment.md §3 的 up/ps、/health 200、migrate 均已实跑记录；中间件 6 容器 healthy；镜像源与本地代理（本机代理 本机代理端口）已配好。剩余风险转移到数据面：chunk 正文仍只在 Milvus 且 VARCHAR(2000) 截断，见 G10/G11/G12"
     },
     {
       "risk": "Go 依赖拉不动，P0-1 之后每张 Go 卡都开不了工",
@@ -874,7 +874,7 @@
       "mitigation": "P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md"
     },
     {
-      "risk": "Windows + Docker Desktop 上跑不通",
+      "risk": "Windows（本机） + Docker Desktop 上跑不通",
       "trigger": "bind mount 权限、CRLF、宿主端口占用、路径长度",
       "mitigation": "命令只走 scripts/*.py + compose；.gitattributes 固定 eol=lf；P0-0/P0-8 必须在 Windows 实跑"
     },

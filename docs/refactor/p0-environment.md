@@ -89,21 +89,21 @@ cd frontend && npm run dev            # vite dev server
 
 | # | 步骤 | 主机 / 环境 | 日期 | 结果 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `dev.py doctor` | Windows / docker CLI 29.8.2 | 2026-10-09 | ✅ pass | 实测 exit=1，且**只**报两条：daemon 没在跑、缺 `.env`。这正是期望——阻塞项列得出来才叫自检 |
+| 1 | `dev.py doctor` | Windows（本机） / docker CLI 29.8.2 | 2026-10-09 | ✅ pass | 实测 exit=1，且**只**报两条：daemon 没在跑、缺 `.env`。这正是期望——阻塞项列得出来才叫自检 |
 | 1b | `docker compose config --quiet` | 同上（daemon 停着） | 2026-10-09 | ✅ pass | 这条**不需要 daemon**：插值、字段拼写、端口形状纯客户端就能判。已接进 `doctor`，让"compose 写坏了"和"环境没起来"分成两个原因 |
-| 2 | `dev.py up` + `ps` | Windows / Docker Desktop（本机实测）（系统级安装，Client（本机实测）） | 2026-10-10 | ✅ pass | 7 个容器起来：postgres / redis / etcd / minio / standalone / attu 全 healthy，backend 由 unhealthy 转 healthy。首拉镜像本机不复现（镜像已在），构建约 2–3 分钟 |
+| 2 | `dev.py up` + `ps` | Windows（本机） / Docker Desktop（本机实测）（系统级安装，Client（本机实测）） | 2026-10-10 | ✅ pass | 7 个容器起来：postgres / redis / etcd / minio / standalone / attu 全 healthy，backend 由 unhealthy 转 healthy。首拉镜像本机不复现（镜像已在），构建约 2–3 分钟 |
 | 3 | `curl :8000/health` | 同上 | 2026-10-10 | ✅ pass | 容器内与宿主机均 HTTP 200，返回 `{"status":"ok","version":"0.1.0"}` |
-| 3b | `gofmt` + `go vet` + `go test` | Windows / go1.25.1 | 2026-10-09 | ✅ pass | 16 项 Go 用例全绿，无需容器 |
+| 3b | `gofmt` + `go vet` + `go test` | Windows（本机） / go1.25.1 | 2026-10-09 | ✅ pass | 16 项 Go 用例全绿，无需容器 |
 | 4 | `dev.py migrate` | 同上 | 2026-10-10 | ✅ pass | exit 0；backend 启动时已自动 `alembic upgrade head`，手动复跑无变更 |
-| 5 | `test -m unit` / `-m integration` | Windows | 2026-10-09 | ✅ pass | 391 / 57 通过；容器环境需复现一次 |
-| 6 | 全量 `uv run pytest -q` | Windows | 2026-10-09 | ✅ pass | 448 通过（2026-10-09 本机基线）；`-m chain` 当前收集 0 项、exit=5，不是绿 |
+| 5 | `test -m unit` / `-m integration` | Windows（本机） | 2026-10-09 | ✅ pass | 391 / 57 通过；容器环境需复现一次 |
+| 6 | 全量 `uv run pytest -q` | Windows（本机） | 2026-10-09 | ✅ pass | 448 通过（2026-10-09 本机基线）；`-m chain` 当前收集 0 项、exit=5，不是绿 |
 
 **2026-10-10 状态更正（推翻 2026-10-09 那版"缺一次重启"的结论）**：真因不是 WSL 组件待重启，
 而是 **Docker Desktop 根本没在运行**——`Start-Process 'Docker Desktop.exe'` 之后 **5 秒**引擎就绪，
 `docker info` 返回 `（本机实测，linux 引擎）`。同一段另有两处与现场不符：安装形态是
-**系统级**（`（Docker Desktop 安装目录）\`，`com.docker.service` 为 Manual/Stopped），
+**系统级**（`（Docker Desktop 安装目录）`，`com.docker.service` 为 Manual/Stopped），
 不是 per-user 的 `（per-user 安装目录）`（该路径实测不存在）；版本也不是
-"CLI 29.8.2 / Desktop 4.94"，实测 Client（本机实测） / Compose（本机实测） / Desktop（本机实测）。
+"CLI 29.8.2 / Desktop 4.94"，实测版本与本行旧记录不同（具体版本号已移除）。
 `wsl -l -v` 显示 `docker-desktop` 为 WSL 2、`wsl --status` 正常。
 
 2026-10-09 那版之所以看着自洽，是因为**没把 daemon 拉起来就下了结论**；教训与 `03` §7 的
@@ -132,7 +132,7 @@ cd frontend && npm run dev            # vite dev server
    所以首次 tidy 失败不代表代码有问题。容器构建用 `--build-arg GOPROXY=...`，仓库不写死镜像。
 8. **daemon 起不来时 `docker info` 不给原因，要看日志**：它只回
    `open //./pipe/dockerDesktopLinuxEngine: ... cannot find the file specified`（引擎没跑）或
-   `Access is denied`（受限/权限）。真因在 `（Docker 配置目录）\log\host\`：`monitor.log` 记
+   `Access is denied`（受限/权限）。真因在 `（Docker Desktop 日志目录）`：`monitor.log` 记
    `backend crashed ... reporting error to user`，`com.docker.backend.exe.log` 的 `GET /error`
    带完整 JSON。本机实测踩过一次：**`daemon.json` 带 UTF-8 BOM**（PowerShell 5.1 的
    `Set-Content -Encoding utf8` 会写 BOM）→ `parsing JSON: invalid character '茂'` → 引擎弹
@@ -171,7 +171,7 @@ cd frontend && npm run dev            # vite dev server
    containerd 那套还是经典 `overlay2` 那套。本机实测：置 `true` 时 `docker images` 只剩 4 个而
    `Local Volumes 3` 仍在（卷看得见、镜像看不见）；改回 `false` 后 10 个镜像 + 8 个容器全部回来。
    同文件的 `CustomWslDistroDir` 决定数据盘落在哪个盘（指回 `（数据盘目录，可在设置里改）`
-   后 29 GB 旧盘被重新挂载、数据无损失）。注意 Docker Desktop 会重写该文件：代理键名是
+   后旧数据盘被重新挂载、数据无损失）。注意 Docker Desktop 会重写该文件：代理键名是
    `ProxyHTTPMode`（大写 HTTP），写错大小写等于没写。
 15. **受限运行下 `tmp_path` 类测试必失败**：`PermissionError: [WinError 5] ...\Temp\pytest-of-<用户名>`，
    与仓库无关——把 `TEMP`/`TMP` 指到工作区内可写目录再跑即可（本机实测集成层由
