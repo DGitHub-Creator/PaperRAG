@@ -161,6 +161,10 @@
 - **D1** 总纲要求 ai-core/ 独立目录，路线建议保留 backend/ 物理目录、ai-core 只作角色名，是否接受？ → 建议：接受（决策 Q2 + 原则④），改名留到 P2 后作为可单独回滚的提交（P0 目录结构）
 - **D2** 13 条在用接口在 P1 迁完、其余 12 条在 P1 末统一 Deprecation，是否符合总纲 P0 完成标准里「旧接口必须迁移或标记 deprecated」？ → 建议：符合原则①；若要求 P0 内完成则 P0 估时翻倍（P0 退出标准 X2）
 - **D3** chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？ → 建议：接受；证据级引用属 P2 的 Z1/Z3（P1 演示口径与 README 表述）
+- **D4** 产品轴 V1.0（可信学术 RAG）要求先完成数据可信化，而架构轴把 chunk 真相层与公式索引排在 P2 —— 是否把 P2-1/P2-2 前移到 P0/P1 之间？ → 建议：接受最小前移：P0-2 真库基线已完成，接着只做 chunk 正文进 PG（P2-1）与公式索引接线（P2-2）两项，其余仍按架构轴走；不整段搬 P2（V1.0 的完成时点；11 §7 的顺序冲突）
+- **D5** docs/refactor/11 §8 的十项产品能力（论文图书馆、Deep Reader、比较矩阵、Gap Explorer、Research Lab、Research Writing、Research Radar、Research Workspace、工具层、信息增益驱动规划）是否登记为任务卡或新阶段？ → 建议：先只登记 V1 相关的四项（论文图书馆最小版、Deep Reader 结构解析、比较矩阵、原文定位），其余留到 V2 开工前再拍。注意：登记会把完成度分母从 372h 显著抬高（当前 11% 会下降），这是诚实的代价，不要用「以后再说」回避（产品轴是否进入 progress.json 的分母）
+- **D6** P0-2 的基线语义：alembic_version 是否算 Go 拥有的基线对象（当前 000001_baseline 含它）？存量库上是否允许 migrate down（等价弃库）、是否强制 pg_dump 前置？ → 建议：保留 alembic_version 在基线里但注明「非 Go 拥有」；down 只允许作用于空库或已备份库，并把强制备份前置写进 05 的 down 纪律（P0-2 收尾；05 的 down 语义）
+- **D7** 是否按 ARTEX 的分层习惯，把 evidence / report / llmpool（含用量记账）/ guard / tools（MCP）/ notify 在 Go 侧升为一等模块？（02 目前把它们散在 P3/P4 展望里） → 建议：接受其中三个：evidence（L4 的直接承载）、report（V2 报告 + V4 Research Writing）、llmpool + 用量记账（P2-6 预算持久化的前置）；guard / tools(MCP) / notify 等 V3/V4 再定（02 的模块划分与 P3/P4 的边界）
 
 ## 风险登记（前 8）
 

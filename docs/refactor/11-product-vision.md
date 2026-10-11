@@ -147,6 +147,9 @@ ResearchPilot 不是一个聊天机器人，而是一个**科研伙伴**：输�
 10. 工具与技能层（MCP / skills / 插件）与 ARTEX 式的一等模块划分（§9）
 11. **研究性课题**：用*证据充分性、问题覆盖率、信息增益*驱动自主任务规划，并评估它相较固定工作流的实际收益
     （架构轴的 P3 目前只有预算 + Frontier，没有信息增益驱动）
+12. **双图（Knowledge Graph / Exploration Graph）与 Evidence Registry 的落地**：`02 §8` 把它们标为 **P4 展望**，
+    而 [`progress.json`](../progress.json) 的阶段只到 **P3** —— 需要决定是并进 P3 还是新开 P4 阶段，
+    否则它会长期停在"展望"里（`00-audit.md` D5 已确认 `paper_nodes`/`citation_edges`/`glossary_entries` 是零写零读的死表骨架）
 
 > 现状反差：审计已确认"定理/公式/引文等学术元数据**入库即丢弃**、公式索引**零调用**、
 > chunk 正文仍在 Milvus 且被 `VARCHAR(2000)` 截断"（`00-audit.md` D1–D3 / G10–G12）。

@@ -17,6 +17,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 1 | `docs/refactor/08-principles-and-conventions.md` | **最高约束**（四条原则、阶段顺序律、任务卡规范、进度同步律） |
 | 2 | `docs/progress.json` | **进度唯一真相**；`PROGRESS.md` 与 `progress.html` 是它的生成物，改完必须重跑 `sync_progress.py` |
 | 3 | `docs/refactor/09-milestone-p0.md`、`10-frontend-structure.md` | 当前阶段的任务卡与 X1–X8 退出标准 |
+| 3.5 | `docs/refactor/11-product-vision.md`、`12-known-code-issues.md` | **产品轴（V1–V4）** 与**代码问题台账**；两轴映射见 11 §7 |
 | 4 | `contracts/` | Go↔Python 契约；改契约改这里，`check_contracts.py` 机检 |
 | 5 | `docs/refactor/00-audit.md`、`01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状** |
 | 6 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
@@ -56,7 +57,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - `scripts/audit_schema.py --live` **需要显式导出 `DATABASE_URL`**（脚本不读 config 的默认值），否则它会以为本机没有 PG；它导出的 `schema-baseline.json` **不含列清单**（见 §4 最后一行）。
 - 验证基线迁移是否真的幂等，可用「临时库」法（不碰真库）：`pg_dump --schema-only langchain_app | psql -d <临时库>` 复制结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变。
 - Docker 数据盘是 VHDX，**删数据不会自动缩小**；真正回收要压缩/稀疏化。
-- 受限沙箱下：docker 的命名管道、uv 的缓存、git 写 `.git/index.lock` 都可能被拒；测试要用**工作区外**的 TEMP，否则 `tmp_path` 类用例会因沙箱临时目录不可写而**假失败**（不是仓库缺陷）。
+- 受限沙箱下：docker 的命名管道、uv 的缓存、git 写 `.git/index.lock` 都可能被拒。**跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**（本机实测 `（上级目录）\.pytest-tmp`），否则 41–42 个 `tmp_path` 用例会以 `PermissionError: [WinError 5]` **假失败**（表现为 `407 passed, 42 errors`——**不是仓库缺陷**）；也**不要**用 `--basetemp` 指到工作区内的既有目录。这些临时目录会带上创建时的完整性标签，策略在 `workspace-write` 与 `danger-full-access` 之间切换后就可能变成**谁都删不掉的毒目录**（本机出现过 `.tmp-pytest`/`.pytest-bt`/`pytest-of-<用户名>`/`tmp*/`），只能靠更高权限运行或用户自有终端清理。
 - 更细的坑见 `docs/refactor/p0-environment.md` §4。
 
 ## 6. 两条运行路径

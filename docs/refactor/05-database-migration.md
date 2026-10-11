@@ -5,13 +5,13 @@
 
 ## 1. 收编前置核查（必须在任何写操作之前完成）
 
-存量库不可信任：`init_db()` 在 alembic 失败时静默回退 `Base.metadata.create_all`（`core/database.py:99-120`），所以**库可能物理存在 9 张表但没有任何 `alembic_version` 行**。
+存量库不可信任：`init_db()` 在 alembic 失败时静默回退 `Base.metadata.create_all`（`core/database.py:99-120`），所以**库可能物理存在表但没有任何 `alembic_version` 行**。真库已核查（`schema-baseline.json`，2026-10-11）：**10 张表，含 `alembic_version`**；`alembic_version` 是否算 Go 基线对象**待决策**（P0-2 的 `000001_baseline` 目前含它）。
 
 核查脚本 `scripts/audit_schema.py`（**P0-2** 交付，只读）：
 
 | 检查 | 方法 | 判定 |
 | --- | --- | --- |
-| 实际表集合 | `information_schema.tables WHERE table_schema='public'` | 与 `models.py` 声明的 9 表 diff |
+| 实际表集合 | `information_schema.tables WHERE table_schema='public'` | 与 `models.py` 声明的 9 表 diff；**真库实测 10 张表**（多出的 `alembic_version` 是迁移历史表，非业务表） |
 | 迁移版本 | `SELECT version_num FROM alembic_version`（表不存在 = 曾走 create_all） | 三种情形：无表 / 空 / head 不符 |
 | 列级漂移 | `information_schema.columns` vs SQLAlchemy `Base.metadata`（类型、可空、server_default） | 逐字段 diff 报告 |
 | 索引与约束 | `pg_indexes` + `pg_constraint` | 已知漂移：`ix_paper_nodes_id` 缺失；`filename` 是唯一索引而非 UNIQUE 约束（sqlc 经 `constraint_type='u'` 查不到） |
@@ -27,7 +27,7 @@
 | 步骤 | 动作 | 约束 |
 | --- | --- | --- |
 | 2.1 | 停用 `init_db()` 的 alembic 调用与 `create_all` 兜底 | 改为：探测 schema 与基线不符 → **记录差异并抛出启动失败**（禁止任何隐式建表）。对应决策 Q4「删除静默兜底，改为明确报错」 |
-| 2.2 | 生成 `server/migrations/000001_baseline.{up,down}.sql` | 内容 = §1 核查出的**实际结构**（不是 ORM 声明），含现存 9 表 + 索引 + 约束 |
+| 2.2 | 生成 `server/migrations/000001_baseline.{up,down}.sql` | 内容 = §1 核查出的**实际结构**（不是 ORM 声明），含**真库 10 张表**（9 张业务表 + `alembic_version`）+ 索引 + 约束 |
 | 2.3 | 存量库打基线戳 | `migrate version 1`（只写 `schema_migrations`，不执行 DDL）；新库走 `000001_baseline.up.sql` |
 | 2.4 | `alembic/` 保留为只读历史 | 在 `alembic/README` 与 CI 中标注 FROZEN；禁止新增 revision。`models.py` 继续用于 Python 侧 ORM 读，但**不再作为 schema 来源** |
 | 2.5 | 漂移修复作为第一个后续迁移 | `000002_fix_drift`：补 `ix_paper_nodes_id`；`paper_nodes.filename` 唯一索引转 UNIQUE 约束（**先核查是否与现网语义等价**，等价则记为"不改"，避免无收益 DDL） |
@@ -162,6 +162,16 @@ SHOW timezone;  SHOW log_timezone;  -- 以及 server_version
 
 **结论写入** `docs/refactor/timestamp-audit.md`，并给出每表每列的判定（UTC / 本地 / 混杂）。混杂时按行不可判定 → 记录为 `unknown` 并采用保守转换（不猜测偏移，标注数据质量降级）。
 
+### 4.2.1 已核查的列级事实与更正（2026-10-11，依据 `schema-baseline.json`）
+
+本文**没有**出现过「`users.created_at` / `users.role` 在库里没有 DEFAULT」这类断言，所以这里不是改错句，而是把**真库核查的结论**登记下来，防止它被 `server/sql/schema.sql` 的注释带回文档：
+
+- `users.created_at` 真库有 **`DEFAULT now()`**；`users.role` 真库有 **`DEFAULT 'user'`**。
+- **依据**：这两列**没有**出现在 `schema-baseline.json` 的 `column_diff`（23 条）里。`scripts/audit_schema.py:233` 的判定是 `if a[col].get("column_default") is None` → 纯按**真库** `information_schema.columns.column_default` 是否为空投 diff，与 ORM 是否声明 `server_default` 无关，所以"没出现"等价于"库里有默认值"。
+- **旁证**：出现该差异的 23 列全是应用必填列（`username`/`password_hash`/`filename`/`chunk_id`/`text`/`definition`/外键 …）。所以"有默认值"这件事只能来自库**自己的** DDL，不可能是 ORM 客户端默认值被误认。
+- **⚠️ 已知失真**：`server/sql/schema.sql`（P0-3 的临时参照）在同样两列上是错的——该文件第 22、25 行的注释写「DDL 里没有 DEFAULT / 库里无 DEFAULT」。真实库有。这是 **P0-3 的已知差异**：`sqlc.yaml` 的 schema 从 `schema.sql` 切到 `migrations/` 时必须把这两列当已知差异逐条核对（`column_diff` 覆盖的是列级**默认值/类型/存在性**，校验器并**不检查** varchar 长度与 NOT NULL，所以长度与可空性**目前无机检覆盖**）。
+- **对 Go 的后果**：`role`/`created_at` 可省略让 PG 补默认值（不再必然撞 NOT NULL violation）；切到 `timestamptz` 后 `DEFAULT now()` 是 **aware** 默认值，含义明确，正好落在本节的转换方向上。
+
 ### 4.2 转换迁移（验证通过后才执行）
 
 ```sql
@@ -201,3 +211,13 @@ ALTER TABLE chat_messages ALTER COLUMN timestamp TYPE timestamptz
 7. **切换**：新版本 `index_state='ready'` 后，把 `papers.current_version_id` 指向它；旧版本 chunk 保留，`Milvus` 删除在确认切换成功后异步执行（避免"先删后建"造成检索空窗）。
 
 **验收**：任取一篇，`SELECT chunk_id, page_number, start_char, length(text) FROM paper_chunks WHERE paper_version_id=? AND level=3` 的正文总长 ≥ 解析器输出的 normalized full text 长度的 95%（无截断证据）；随机 20 个 chunk 能按 `page_number`+`start_char` 在 PDF 上人工复核到原文。
+
+## 6. 与产品愿景的关系
+
+> 对照 [11-product-vision.md](11-product-vision.md)（产品轴 V1–V4）。本文只管数据面，产品级缺口集中记在 `11 §8`，此处不复述。
+
+**已覆盖**：`11 §4.2 Deep Reader` 的数据前提（`paper_chunks` 持完整正文 + `page_number`/`start_char` 定位 + `chapter_path`，是"每次回答可跳转 PDF 位置"的地基）· `11 §4.1 AI 论文图书馆` 的实体层（`papers`/`paper_versions`/`paper_files`，`raw_sha256` 去重与版本寻址，即"为什么这篇在我的库里"的落点）· `11 §4.7 Research Lab` 的公式前提（`formula_index_entries`，即 V1.0 的"公式/定理检索"）。
+
+**未覆盖**：`11 §4.3 Multi-Paper 比较矩阵 / Paper Diff`（`paper_versions` 只提供版本寻址，不做方法/假设/定理差异比对）· `11 §4.5 Research Knowledge Graph` 与 `§4.6 Gap Explorer / Hypothesis Board`（无假设、缺口、探索图表）· `11 §4.2` 的**定理/证明级解析**（DDL 只有 `has_theorem`/`has_proof` 布尔标记，没有定理前提/结论/证明步骤/依赖引理的结构）· `11 §4.8 Research Writing` 与 `§4.9 Research Radar`（无报告版本表、无文献变化追踪）· `11 §4.10 Research Workspace`（无项目/任务/笔记/报告/预算表）。全部指向 `11 §8`。
+
+**需拍板/冲突**：无与本文冲突的口径。唯一待决策："`alembic_version` 算不算 Go 基线对象"（P0-2 的基线迁移目前含它，见 §1/§2.2）——选项 A：含它（新库迁移链与 Go 迁移工具共存，需明确谁写版本行）；选项 B：排除它，把它当 Python 侧历史遗留、由 `migrate` 的 `schema_migrations` 独占版本真相。

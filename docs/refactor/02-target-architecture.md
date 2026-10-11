@@ -210,3 +210,23 @@ Run 级 `max_papers / max_fulltext_reads / max_planning_rounds / max_expansion_d
 ## 9. 明确不做
 
 一次性删除 Python 后端 · Kafka/RabbitMQ · 微服务注册中心 · Neo4j · 端到端 GraphRAG 复杂算法 · 为 P1/P2 推迟 P0 · 两个全局调度器 · 把 LangGraph State 当业务库 · 无标注数据下把 ≥95%/≥90% 当硬门禁（决策 Q8）。
+
+## 10. 与产品愿景的关系
+
+> 对照 [11-product-vision.md](11-product-vision.md)。本节是**建议与待决策项，不改现有架构律 L1–L5，也不改 §1 已落地的目录布局**；产品级缺口集中记在 `11 §8`。
+
+**已覆盖**：`11 §4.4 Research Mission`（§1 的 `scheduler`/`frontier`/`worker`/`runs` + §5）· `11 §4.5 Research Knowledge Graph` 的**骨架位**（`knowledge/` 标 P4 展望）· `11 §6` 的"可信证据链"**原则**（L4 + `evidence/` 占位）· `11 §4.4` 的**报告出口**（`reports/` 标 P3）· `11 §4.1/§4.2` 的**存储与文件**前提（`papers/`、`chunks/`、`storage/`）· `11 §4.10 Research Workspace` 的前端面（§7 的 Workspace/Monitor/Reader/Report 页面）。
+
+**未覆盖**：ARTEX 式的一等模块划分（`11 §9` + `§8` 第 10 项）在 §1 里**只占位不成模块**——`evidence/`、`reports/` 被压在 P3/P4，`llmpool/`+用量记账、`guard/`、`mcphttp/`+`skills/`、`notify/`+`selfupdate/`、独立 bench compose **完全没有**。建议的 Go 包名与归属（**待决策**）：
+
+| 建议包 | 归属 | 对应愿景 | 与现状的关系 |
+| --- | --- | --- | --- |
+| `internal/evidence/` | L4 的落地形态，**升为一等包**（不是 P4 展望） | `§4.5`/`§6` 证据链、`§5①` 反向导航 | 现为 `evidence/` 占位；`papers/`、`chunks/` 只提供 hook 点 |
+| `internal/report/` | 同时承载 V2 报告与 `§4.8` Research Writing | `§4.8`/`§5③` | 现为 `reports/`（P3），建议改名对齐 ARTEX |
+| `internal/llmpool/` + `internal/llmrec/` | 模型池 + 逐次调用/用量记账 | `§4.10` 的"AI 预算"、`§4.4` 的预算耗尽 | 记账表 `model_usage_records` 已在 §6.2 矩阵里，但**没有对应包**；§5.1 的预算判定也缺一个落点 |
+| `internal/guard/` | prompt injection / 工具白名单 / 上传面护栏 | `11 §11` 不把模型输出当事实 | `03 §6` 的缺口，目标架构里只有 L4 的原则、无模块 |
+| `internal/mcphttp/` + `internal/skills/` | MCP 工具与技能扩展（学术 API、`§4.7` 验证工具） | `§4.7 Research Lab`、`§4.1` 的 Zotero/BibTeX | **完全没有**；`§3.3` 的 `task_type` 枚举无法表达外部工具 |
+| `internal/notify/` + `internal/selfupdate/` | 自托管产品化 | `§4.9 Research Radar` 的主动通知、V4 私有部署 | **完全没有**（`11 §11` 把团队协作/私有部署留到 V4，但自更新不在非目标里） |
+| `docker-compose.bench.yml` | 独立基准环境 | `11 §8` 第 11 项的可评估性（信息增益驱动规划需要能被量化对比） | P2-4 的 10–15 题回归集现在没有隔离的运行环境 |
+
+**需拍板/冲突**：**有，两处**。①上表七项是否进 §1 目录与 §6.1 所有权表——选项 A：现在只登记为 `11 §8` 的候选卡，等 V2/V3 排期时再落目录（保持 L5 与"架构变更先回文档层对齐"）；选项 B：现在就把 `evidence/`、`report/`、`llmpool/` 三个包名写进 §1（代价是 §6.2 表级矩阵与 `contracts/table-acl.md` 要同批改，而 P0/P1 用不到）。②`notify/`+`selfupdate/` 与 `11 §11` 的口径张力：`§11` 说"团队协作与机构私有部署留到 V4"，但"主动发现"（`§4.9`）隐含推送能力——需要明确 `notify/` 是 V3 的 Radar 必需品还是 V4 的私有部署附属物。

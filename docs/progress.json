@@ -902,6 +902,30 @@
       "question": "chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？",
       "recommendation": "接受；证据级引用属 P2 的 Z1/Z3",
       "blocking": "P1 演示口径与 README 表述"
+    },
+    {
+      "id": "D4",
+      "question": "产品轴 V1.0（可信学术 RAG）要求先完成数据可信化，而架构轴把 chunk 真相层与公式索引排在 P2 —— 是否把 P2-1/P2-2 前移到 P0/P1 之间？",
+      "recommendation": "接受最小前移：P0-2 真库基线已完成，接着只做 chunk 正文进 PG（P2-1）与公式索引接线（P2-2）两项，其余仍按架构轴走；不整段搬 P2",
+      "blocking": "V1.0 的完成时点；11 §7 的顺序冲突"
+    },
+    {
+      "id": "D5",
+      "question": "docs/refactor/11 §8 的十项产品能力（论文图书馆、Deep Reader、比较矩阵、Gap Explorer、Research Lab、Research Writing、Research Radar、Research Workspace、工具层、信息增益驱动规划）是否登记为任务卡或新阶段？",
+      "recommendation": "先只登记 V1 相关的四项（论文图书馆最小版、Deep Reader 结构解析、比较矩阵、原文定位），其余留到 V2 开工前再拍。注意：登记会把完成度分母从 372h 显著抬高（当前 11% 会下降），这是诚实的代价，不要用「以后再说」回避",
+      "blocking": "产品轴是否进入 progress.json 的分母"
+    },
+    {
+      "id": "D6",
+      "question": "P0-2 的基线语义：alembic_version 是否算 Go 拥有的基线对象（当前 000001_baseline 含它）？存量库上是否允许 migrate down（等价弃库）、是否强制 pg_dump 前置？",
+      "recommendation": "保留 alembic_version 在基线里但注明「非 Go 拥有」；down 只允许作用于空库或已备份库，并把强制备份前置写进 05 的 down 纪律",
+      "blocking": "P0-2 收尾；05 的 down 语义"
+    },
+    {
+      "id": "D7",
+      "question": "是否按 ARTEX 的分层习惯，把 evidence / report / llmpool（含用量记账）/ guard / tools（MCP）/ notify 在 Go 侧升为一等模块？（02 目前把它们散在 P3/P4 展望里）",
+      "recommendation": "接受其中三个：evidence（L4 的直接承载）、report（V2 报告 + V4 Research Writing）、llmpool + 用量记账（P2-6 预算持久化的前置）；guard / tools(MCP) / notify 等 V3/V4 再定",
+      "blocking": "02 的模块划分与 P3/P4 的边界"
     }
   ],
   "not_doing": [
@@ -915,6 +939,8 @@
     "不改前端框架",
     "不 git mv backend → ai-core（决策 Q2）",
     "不删 parent_chunks / multimodal.py / layout_analyzer.py（只降级能力口径）",
-    "近期不做计费 / 团队协作 / 机构私有部署"
+    "近期不做计费 / 团队协作 / 机构私有部署",
+    "不承诺「输入主题一键生成一篇论文」——终局是「输入研究方向，建立能持续积累知识、追踪证据、执行研究任务的科研工作空间」（11 §11）",
+    "不把「模型检查通过」表述为「一般情形已证明」；Gap Explorer 只产出候选研究问题，不宣称发现了全新学术贡献（11 §11）"
   ]
 }
