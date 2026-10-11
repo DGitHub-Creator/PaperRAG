@@ -30,6 +30,11 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - 测试基线 **449 passed**（unit + integration）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
 - Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）；当前 11 个镜像 / 约 4.3 GB，**没有 backend 镜像**（按需构建）。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
+- **2026-10-11 做过一次历史重写**（把个人信息与设备信息从仓库历史里清除）：102 个提交的作者/提交者统一为
+  `ResearchPilot Dev <DGitHub-Creator@users.noreply.github.com>`；用户名、本机绝对路径、OS 与软件版本号、
+  本机代理、设备级 SSH 别名已从**文件内容与提交信息**中一并清除。**此前的提交 SHA 全部改变**——
+  文档里的 SHA 引用已按 `git filter-repo` 的 commit-map 修正；若外部笔记/Issue 里还留着更早的 SHA，
+  它们指向的提交已不存在，请用 `git log --grep=<标题>` 重新定位。
 
 ## 4. ⚠️ 已被推翻的旧结论（**不要重复相信**）
 

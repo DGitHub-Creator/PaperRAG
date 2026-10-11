@@ -1,7 +1,7 @@
 # 重构 Spec 索引
 
 面向 **ResearchPilot**（Go 主后端 + Python AI Core）的渐进式重构文档集。
-基线：`main @ 6221147`，2026-10-09。**最高约束是 [08](08-principles-and-conventions.md)**，其余文件与它冲突时以它为准。
+基线：`main @ 106f17dd`，2026-10-09。**最高约束是 [08](08-principles-and-conventions.md)**，其余文件与它冲突时以它为准。
 
 > 被取代的旧计划已移到 [`../archive/`](../archive/README.md)（含 `plan-v2.0-researchpilot.md` 与 `06-milestone-a0.md`）。
 > **归档件不作为实施依据**；引用它们时必须同时指出接管它的现行文件。

@@ -186,7 +186,7 @@ ALTER TABLE chat_messages ALTER COLUMN timestamp TYPE timestamptz
 | 备份 | `pg_dump -Fc` 全量 + 校验和；记录 `pg_dump` 的 SHA256 与行数快照 |
 | 演练 | 在克隆库上完整跑一遍转换 + 回归计数，产出对照表 |
 | 数据校验 | 转换前后各表 `count(*)`、`min/max`、按小时直方图的 KL 差异、抽样 100 行 epoch 一致性 |
-| 停机窗口 | 转换期间禁止旧进程写入（旧代码继续写 naive 会污染新列）→ 与已完成的 A0-3（`d8f1563`，删静默 `create_all`）同批上线 |
+| 停机窗口 | 转换期间禁止旧进程写入（旧代码继续写 naive 会污染新列）→ 与已完成的 A0-3（`335aeb7e`，删静默 `create_all`）同批上线 |
 | 恢复 | `pg_restore` 到临时库比对；回滚脚本 = 反向 `ALTER ... TYPE timestamp USING col AT TIME ZONE 'UTC'`，**且只在未写入新数据时有效** |
 | 新表 | `paper_*`、`research_*` 一律 `timestamptz`，从第一天起不继承旧问题 |
 

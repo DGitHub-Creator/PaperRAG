@@ -142,7 +142,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         env = read_env_file(ENV_FILE)
         secret = env.get("JWT_SECRET_KEY", "")
         if not secret:
-            problems.append(".env 里 JWT_SECRET_KEY 为空 → 应用会拒绝启动（d8f1563 起 fail-fast）")
+            problems.append(".env 里 JWT_SECRET_KEY 为空 → 应用会拒绝启动（335aeb7e 起 fail-fast）")
             hints.append('生成：uv run python -c "import secrets;print(secrets.token_urlsafe(32))" 写入 .env 的 JWT_SECRET_KEY=')
         elif secret in SECRET_PLACEHOLDERS:
             problems.append("JWT_SECRET_KEY 仍是占位值，等同没配")

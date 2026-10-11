@@ -3,7 +3,7 @@
 > **性质**：待你确认的实施计划。按 `08` §1 原则③，本文件获得确认后才动代码。
 > **目标**：搭起目标架构的骨架与契约，并跑通**第一条垂直切片**（浏览器 → Go 注册/登录/me）。
 > **不写业务功能迁移**（那是 P1），**不碰 chunk 可信化**（那是 P2）。
-> 基线：`main @ 6221147`（前端与鉴权安全修复已在 `2c3e583` / `d8f1563` 落地）。
+> 基线：`main @ 106f17dd`（前端与鉴权安全修复已在 `996cf777` / `335aeb7e` 落地）。
 > 规模：solo 15–20h/周，P0 约 2–2.5 周（W1–W2）。每张卡一个独立提交，前缀 `feat(p0):` / `test(p0):` / `docs(p0):`。
 
 ## 0. 退出标准（全部可机检；当前状态一律 `not_run`）
@@ -25,7 +25,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`d8f1563` 后缺失即拒绝启动） |
+| 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`335aeb7e` 后缺失即拒绝启动） |
 | 输出 | `scripts/dev.py`（新，跨平台统一入口：`doctor/up/down/ps/logs/migrate/test`；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/refactor/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
 | 依赖 | 无 |
 | 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
@@ -54,7 +54,7 @@
 | 依赖 | P0-0（需容器） |
 | 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
 | 等级 | real |
-| 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`d8f1563` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
+| 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`335aeb7e` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
 | 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测，含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论 |
 
 ### P0-3 Go 数据访问层
@@ -96,7 +96,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 输入 | `backend/core/auth.py` 现状语义（`d8f1563`）：token `type` 分型、角色以 DB 为准、`ADMIN_INVITE_CODE` 未配置则禁 admin 注册、`JWT_SECRET_KEY` 无默认值；P0-3 数据层 |
+| 输入 | `backend/core/auth.py` 现状语义（`335aeb7e`）：token `type` 分型、角色以 DB 为准、`ADMIN_INVITE_CODE` 未配置则禁 admin 注册、`JWT_SECRET_KEY` 无默认值；P0-3 数据层 |
 | 输出 | `server/internal/auth/{jwt.go,password.go,handler.go,service.go}`、`scripts/export_pbkdf2_golden.py`（新，从真实库导出 N 条哈希做 golden vectors，**不含密码与盐明文**）、`server/migrations/000002_auth_compat.*.sql`（仅在需要补列时） |
 | 依赖 | P0-3、P0-4 |
 | 验收 | X4、X5；`cd frontend && npm run typecheck` 仍 0 error（Go 侧响应形状与前端一致） |
@@ -120,7 +120,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | P0-1、P0-6、P0-7 |
-| 输出 | `docker-compose.yml`（新增 `go-api`/`go-worker`/`ai-core` 服务；`backend` 服务改为 `ai-core` 角色并去掉宿主端口）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `d8f1563` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为含 Go 的完整序列 |
+| 输出 | `docker-compose.yml`（新增 `go-api`/`go-worker`/`ai-core` 服务；`backend` 服务改为 `ai-core` 角色并去掉宿主端口）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `335aeb7e` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为含 Go 的完整序列 |
 | 依赖 | P0-1、P0-6、P0-7 |
 | 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据） |
 | 等级 | real |

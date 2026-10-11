@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "ResearchPilot",
   "as_of": "2026-10-11",
-  "baseline_commit": "6221147",
+  "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
   "current": "2026-10-11 现场实况：Docker Desktop 可正常运行（启动后 5 秒引擎就绪），数据盘位置可自定义（不占系统盘），中间件 6 个容器与 dev.py infra / serve 两条路径均已实跑通过。P0-0 证据等级已由 mock 升到 real：doctor 全绿 → up 起 7 容器、backend healthy → /health 容器内与宿主机均 200 → migrate exit 0；未标 done 只因 down/logs 未逐个实跑。P0-4 契约目录 done、FE-1 前端结构 done、A0-1/A0-3/SPEC-1 done。P0-7 ai-core 内部执行面推到 mock 级上限（backend/internal_api/ 七件 + 29 条 HTTP 用例，三条机检把实现钉回契约），距 done 只差 ai_executions 迁移（阻塞于 P0-2 真库基线）与 compose 端口（属 P0-8）。P0-2 已完成真库审计：docs/refactor/schema-baseline.json 由 --live 从真实 PG 15.18 导出（10 张表、alembic head=add_paper_knowledge_graph、ORM 与真库漂移 23 处），下一步是把基线 DDL 抄进 server/migrations/ 并让 --check-baseline 通过。P0-1 / P0-3 仍 in_progress（P0-3 的 schema 源仍是临时参照 server/sql/schema.sql）。当前测试基线：449 passed（unit + integration；chain 与 e2e 各 0 条用例，-m chain 收 0 项时 pytest 返回 exit=5 而不是 0，不能算绿）。日常开发走源码运行（dev.py infra + serve），全栈容器只用于 P0-8/P0-9 的容器级验收。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞",
@@ -107,7 +107,7 @@
           "hours": 3,
           "deps": [],
           "verify": "cd frontend && npm run typecheck",
-          "note": "提交 2c3e583；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁"
+          "note": "提交 996cf777；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁"
         },
         {
           "id": "A0-3",
@@ -118,7 +118,7 @@
           "hours": 10,
           "deps": [],
           "verify": "uv run pytest -q",
-          "note": "提交 d8f1563；当时 307 项全绿（2026-10-11 复跑 449 passed）。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1"
+          "note": "提交 335aeb7e；当时 307 项全绿（2026-10-11 复跑 449 passed）。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1"
         },
         {
           "id": "SPEC-1",
@@ -870,7 +870,7 @@
     },
     {
       "risk": "存量库拒绝启动导致开发中断",
-      "trigger": "d8f1563 删除静默 create_all 后，无 alembic_version 的库启动失败",
+      "trigger": "335aeb7e 删除静默 create_all 后，无 alembic_version 的库启动失败",
       "mitigation": "P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md"
     },
     {

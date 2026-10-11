@@ -1,7 +1,7 @@
 # 进度报告
 
 > 本文件由 `scripts/sync_progress.py` 从 [`progress.json`](progress.json) 生成，**请勿手改**。
-> 数据截止 2026-10-11 · 基线 `6221147` · 投入 15-20 小时/周
+> 数据截止 2026-10-11 · 基线 `106f17dd` · 投入 15-20 小时/周
 
 ## 一句话现状
 
@@ -39,8 +39,8 @@
 
 | # | 任务 | 状态 | 证据 | 工时 | 依赖 | 验收命令 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A0-1 | 前端故障修复 + typecheck 进 CI 门禁（旧 A0-1） | 完成 | mock（要求 mock） | 3h | — | `cd frontend && npm run typecheck` | 提交 2c3e583；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁 |
-| A0-3 | 鉴权与运行安全修复（旧 A0-3） | 完成 | mock（要求 mock） | 10h | — | `uv run pytest -q` | 提交 d8f1563；当时 307 项全绿（2026-10-11 复跑 449 passed）。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1 |
+| A0-1 | 前端故障修复 + typecheck 进 CI 门禁（旧 A0-1） | 完成 | mock（要求 mock） | 3h | — | `cd frontend && npm run typecheck` | 提交 996cf777；apiFetch/BASE 未导入与上传路径缺前缀已修，4 处 TS18048 消除。typecheck 进 CI 门禁 |
+| A0-3 | 鉴权与运行安全修复（旧 A0-3） | 完成 | mock（要求 mock） | 10h | — | `uv run pytest -q` | 提交 335aeb7e；当时 307 项全绿（2026-10-11 复跑 449 passed）。token 分型/WS 回查/密钥 fail-fast/限流真生效/删静默 create_all 均只在 mock+integration 层验证，真实链路属 P1 |
 | SPEC-1 | spec 按四条原则重排 + 进度与可视化机制（08/09/04/06/README + progress.json/html/sync_progress.py） | 完成 | mock（要求 mock） | 8h | — | `uv run python scripts/sync_progress.py --check` | 路线改为 P0–P3；旧 Q1 与 Q5 的排期含义被取代，技术决策 Q2–Q8 沿用 |
 | FE-1 | 前端结构重构：唯一请求出口 api/ + 模块单例状态层 + R1–R11 机检门禁（docs/refactor/10） | 完成 | mock（要求 mock） | 12h | — | `cd frontend && npm run typecheck && npm run build && uv run python scripts/check_frontend.py && uv run python scripts/check_contracts.py` | 2026-10-09 指令「前端要重构，先按核心原则把前端结构做完整做完善」。api/ 七件（types/token/events/http/sse/ws/client）取代 services/api.ts；六个 composable 统一为模块级单例并把 DOM/对话框外移 utils/dialog；DTO 按契约纠形（rag_trace 是对象不是数组，此前 trace 面板恒空白即 F7）；axios 与 style.css、MessageBubble.vue 删除。check_frontend.py 执行 R1–R11，配套 tests/unit/test_check_frontend.py 每条规则一负一正，证明门禁会红不是恒过。浏览器级回归（FE-f）本机无 Docker/PG/LLM key，如实留到 P0-9 的 X7。 |
 | P0-0 | 统一命令入口与可复现环境（scripts/dev.py + marker 分层 + .env.example 清理 + .gitattributes + p0-environment.md） | 进行中 | 真实链路（要求 real） | 5h | — | `uv run python scripts/dev.py test -m unit` | 吸收旧 A0-0。dev.py 命令面 doctor/up/down/ps/logs/migrate/test 已落（seed 顺延 P1：种数据要先有上传链路）；marker 注册 + tests/conftest.py 目录即分层 + 9 项新用例；.env.example 删死键 AGENT_ENABLED/ENTAILMENT_BACKEND、补 APP_ENV、AICORE_INTERNAL_TOKEN 标注为 P0-7 预留；.gitattributes 钉 eol=lf 并清掉原来的 gitignore 语法行。X7 已 pass（2026-10-09 记 391/57/5、全量 448；2026-10-11 复跑 449 passed）。**环境实况更正（2026-10-10 二次更正，推翻上一版「缺一次重启」）**：真因是 Docker Desktop 根本没在运行——拉起后 5 秒引擎就绪；安装形态为系统级（`（Docker Desktop 安装目录）`，`com.docker.service` Manual/Stopped），实测 Client（本机实测） / Compose Compose（本机实测） / Desktop（本机实测），与上一版记的「per-user 安装 / CLI 29.8.2 / Desktop 4.94」不符。doctor 现在把两类失败分开报：compose 自身的错走 `docker compose config`（不需要 daemon，本机已实跑通过；顺手删掉废弃的 `version:` 字段，免得每次调用都吐告警），环境没起来另说；配一条用例证明这条校验会红而不是恒过。实测 exit=1 且只列两条阻塞（daemon 没跑、缺 .env）。**2026-10-10 本机实跑补齐**：doctor 全绿 → `up` 起 7 个容器、backend 转 healthy → `/health` 容器内与宿主机均 200（`{"status":"ok","version":"0.1.0"}`）→ `migrate` exit 0；unit 361/395 通过（另 34 项受沙箱临时目录限制，非仓库缺陷）、integration 56/57（余 1 项是「断言服务不可用」的旧设计，宿主上服务已在跑必然失败，已改为显式模拟依赖不可达）。起栈过程修掉三处真实缺陷：`.env.example` 行内注释被 dotenv 当成值（应用起不来 + 13 个测试文件收集失败）、compose 缺 `target: backend`（构建出 nginx 镜像 → 永远 unhealthy）、镜像名仍按旧目录名推导（已钉为 researchpilot-backend）。证据等级 real 已达成；仍不标 done——`down`/`logs` 未在本轮逐个实跑。**2026-10-11 路径补充**：新增 `dev.py infra`（只起中间件，postgres/redis/etcd/minio/milvus/attu）与 `dev.py serve`（宿主源码跑后端 uvicorn --reload），把「源码运行 + 中间件容器」列为一等路径——免于构建含 torch 的 16.5 GB backend 镜像，改代码也不必重建；同时修正 `up` 的健康等待：只请求部分服务时按实际请求的那几个等健康，原实现写死含 backend 的 HEALTH_CONTAINERS，会让 `dev.py up postgres` 一直等一个从未创建的容器直到超时。本机实测：infra 起 6 容器全 healthy 且零构建、serve 后 /health 与 /ready 均 200（database/redis/milvus 全 connected）、经 vite 代理的 /api/v1/* 与直连后端逐字一致；顺带记录两个坑——vite 5 只监听 ::1（访问用 localhost 而非 127.0.0.1）、探针路由不带 /api/v1 前缀。 |
@@ -175,7 +175,7 @@
 - **同一份业务状态被双写** ｜触发：切换窗口内 Python 仍在写 chat_messages ｜缓解：单写者原则 + feature flag + 写路径断言，接口逐个切换
 - **P1 的引用被当成证据链宣传** ｜触发：chunk 真相层尚未建立，引用来自 Milvus 截断副本 ｜缓解：前端与 README 显式标注非证据级；证据级属 P2 验收（Z1/Z3）
 - **6 周日程与 solo 投入不匹配** ｜触发：总纲按全职强度估 6 周；solo 15–20h/周下 P0+P1≈5–6.5 周，P2 落在 W7 后 ｜缓解：不可压缩项固定（P0 骨架/契约/认证、P1 E2E），日程在 progress.json 里显式标 overtime 而非偷改日期
-- **存量库拒绝启动导致开发中断** ｜触发：d8f1563 删除静默 create_all 后，无 alembic_version 的库启动失败 ｜缓解：P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md
+- **存量库拒绝启动导致开发中断** ｜触发：335aeb7e 删除静默 create_all 后，无 alembic_version 的库启动失败 ｜缓解：P0-2 给出人工补基准版本的操作步骤并写进 p0-environment.md
 
 ## 图例
 

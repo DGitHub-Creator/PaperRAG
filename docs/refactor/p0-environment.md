@@ -115,7 +115,7 @@ cd frontend && npm run dev            # vite dev server
 
 1. **换行**：容器里的 `entrypoint.sh` / Dockerfile 带 CRLF 会直接起不来。仓库 blob 全是 LF，
    `.gitattributes` 已钉 `* text=auto eol=lf`，不要再在 Windows 上手动改回 `core.autocrlf`。
-2. **`.env` 缺失或占位密钥**：`d8f1563` 起 `JWT_SECRET_KEY` 为空或是占位值即拒绝启动（fail-fast，
+2. **`.env` 缺失或占位密钥**：`335aeb7e` 起 `JWT_SECRET_KEY` 为空或是占位值即拒绝启动（fail-fast，
    这是有意的）。`dev.py doctor` 会先替你拦住这一步。
 3. **端口冲突**：5432 / 6379 / 19530 / 8000 被宿主上其他实例占用是 compose 起不来的第一原因，
    `doctor` 会逐个提示是谁在用。

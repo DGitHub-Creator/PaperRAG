@@ -39,7 +39,7 @@
 | Rerank 双轨、Context Expansion、查询改写（HyDE / Step-back） | 已实现 | `backend/rag/rag_pipeline.py` |
 | Agent 问答（LangGraph 工具调用、SSE / WebSocket） | 已实现 | SSE 目前**整段答案一次性下发**，非 token 级增量 |
 | 引用展示、RAG Trace、会话历史 | 已实现 | 引用校验只验 `[Source N]` 编号存在性，不做语义接地 |
-| 用户认证与权限 | 已实现 | JWT 分型、WS 回查用户表、限流按 `RATE_LIMIT` 真生效（`d8f1563`）。前端**未接 refresh 流程**，60 分钟到期需重登 |
+| 用户认证与权限 | 已实现 | JWT 分型、WS 回查用户表、限流按 `RATE_LIMIT` 真生效（`335aeb7e`）。前端**未接 refresh 流程**，60 分钟到期需重登 |
 | 前端结构（单一请求出口、单一 token 所有者、模块单例状态） | 已实现 | FE-1；由 `scripts/check_frontend.py` 的 R1–R11 机器执行 |
 | 契约目录与静态门禁 | 已实现 | P0-4 done；`scripts/check_contracts.py`（X3 本机 pass） |
 | Go 服务骨架（health/ready、错误信封、trace、panic 兜底） | 部分实现 | P0-1：`gofmt`/`vet`/`test` 本机绿（16 项）；**未接真库、未进 compose** |
@@ -275,7 +275,7 @@ CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progres
 - 全局限流只覆盖 HTTP；WebSocket 走自带的每用户 10 条/60 秒计数，不受 `RATE_LIMIT` 影响。
 - 部署在自有反代之后必须设 `TRUST_PROXY_HEADERS=true`，否则限流按代理 IP 计数，所有访客共用一个桶。
 
-启动行为变更（`d8f1563` 起）：
+启动行为变更（`335aeb7e` 起）：
 
 - `JWT_SECRET_KEY` 无默认值，缺失即**拒绝启动**；`ADMIN_INVITE_CODE` 未配置则注册接口不能创建 admin。
 - `init_db()` 不再在 Alembic 失败时回退 `create_all`；存量用 `create_all` 建表、无 `alembic_version` 的库
