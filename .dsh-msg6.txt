@@ -1,9 +1,0 @@
-﻿chore(privacy): 修正历史重写后失效的 SHA 引用，并记录本次重写
-
-第一轮 git filter-repo（替换正文 + mailmap 统一身份）已完成并强推。本轮补上：
-- 按 filter-repo 的 commit-map 把文档里失效的 4 个短 SHA 映射到新 SHA
-  （涉及 15 个文件，含 README、docs/refactor/*、docs/progress.json 的 baseline_commit）。
-- AGENTS.md §3 记录本次历史重写的事实与影响：此前所有提交 SHA 均已失效。
-
-注意：filter-repo --replace-text 只重写文件内容、不重写提交信息，因此紧接着还有第二轮
-（带 --replace-message）清理提交信息里的同类字面量；之后 SHA 会再变一次，届时同样按 commit-map 修正。
