@@ -101,53 +101,94 @@ flowchart TB
 Go 是唯一公开入口与唯一调度方；Python 只被动执行并如实上报，`proposed_tasks` /
 `evidence_candidates` 对 Go 是**建议**，不携带写权限。
 
-## 3. 快速开始
+## 3. 从一台全新电脑跑起来
 
-前置：**Docker Desktop 必须在运行**。引擎没起来时 `docker info` 只报一句 pipe-not-found，
-既不是缺组件、也不需要重装——启动 Docker Desktop 后约 5 秒引擎即就绪
-（详见 [p0-environment.md](docs/refactor/p0-environment.md) §4 第 8、14 条）。
+### 3.1 先装这几样（一次性，只需装宿主工具，装完不用管 Python 版本）
 
-统一入口是 `scripts/dev.py`（跨平台，Windows/macOS/Linux 同一套命令）。**两条路径，日常开发用第一条**：
+| 依赖 | 要求 | 用途 / 说明 |
+| --- | --- | --- |
+| **Git** | 较新版本 | 拉代码 |
+| **Docker Desktop** | 较新版本，**必须处于运行状态** | 只用来跑中间件（postgres / redis / etcd / minio / milvus / attu）。Windows 用 WSL2 后端；`docker info` 能返回即就绪 |
+| **uv** | 0.4+ | Python 依赖与解释器。**会自己装 Python 3.12**（仓库钉了 `.python-version = 3.12`），你不必单独装 Python |
+| **Node.js** | **20 或更高**（含 npm） | 前端 dev server（Dockerfile 用的也是 node:20-alpine） |
 
-### 3.1 源码运行（推荐）：只有中间件用 Docker
+只有做下面这些事时才需要额外安装：
 
-后端与前端都跑在宿主上，Docker 只负责 postgres / redis / etcd / minio / milvus / attu。
-好处是**不用构建 backend 镜像**（那是个把 `uv sync` 装进去、含 torch 的 16.5 GB 镜像），改代码即时生效。
+| 可选依赖 | 版本 | 什么时候需要 |
+| --- | --- | --- |
+| Go | **1.25.1**（见 `server/go.mod`） | 编译/测试 Go 侧（`server/`）。只跑 Python 后端不需要 |
+| sqlc | **v1.30.0**（版本钉死，`dev.py gen` 会校验） | 重新生成 Go 数据访问层（P0-3）。只跑项目不需要 |
+| git-lfs | 任意 | 仓库 `.gitattributes` 给 `models/**` 留了 LFS 规则；**当前 HEAD 没有 LFS 文件**，不装也能正常跑 |
+
+网络在中国大陆的话，提前做两件事（都是实测踩过的）：
 
 ```bash
-cp .env.example .env                  # 必填三项见 3.3
-uv sync --extra test                  # Python 依赖（可复现：uv.lock）
-uv run python scripts/dev.py doctor   # 起栈前自检（在 serve 之前跑，此时 8000 空闲）
-uv run python scripts/dev.py infra    # 只起中间件并等 healthy —— 不构建任何镜像
-uv run python scripts/dev.py serve    # 本机源码跑后端（uvicorn --reload）
-
-# 另开一个终端跑前端：
-cd frontend && npm install && npm run dev     # http://localhost:5173
+go env -w GOPROXY=https://goproxy.cn,direct     # proxy.golang.org 在大陆不可达（仅 Go 侧需要）
+# Docker Hub 若拉不动（DNS 污染），给 Docker Desktop 配镜像加速，或让引擎走本机代理
 ```
 
-无需额外环境变量：`DATABASE_URL` / `REDIS_URL` / `MILVUS_HOST` 的默认值已经指向 `127.0.0.1`。
+### 3.2 五步跑起来（推荐路径：源码运行，**不构建任何应用镜像**）
 
-实测（2026-10-11 本机）：`infra` 起 6 个容器全 healthy；`serve` 后 `/health` 与 `/ready` 均 200
-（`database` / `redis` / `milvus` 三项 connected）；`http://localhost:5173/api/v1/auth/me`
-经 vite 代理返回与直连后端一致（同为 401 `{"detail":"Not authenticated"}`）。
-注意 **vite 5 只监听 `::1`**：用 `localhost` 访问，用 `127.0.0.1` 会连接失败。
-探针路由**不带 `/api/v1` 前缀**（`/health`、`/ready`），业务接口与 WS 才在 `/api/v1` 下。
+```bash
+git clone <仓库地址> researchpilot && cd researchpilot
+cp .env.example .env                    # 然后填三个必填项，见 3.4
+uv sync --extra test                    # Python 依赖（uv.lock 可复现；顺带把 Python 3.12 装好）
+uv run python scripts/dev.py doctor     # 自检：docker、.env、密钥占位值、端口占用、compose 静态校验
+uv run python scripts/dev.py infra      # 只起中间件并等 healthy —— 不构建镜像
+uv run python scripts/dev.py serve      # 本机源码跑后端（uvicorn --reload，:8000）
 
-### 3.2 全栈容器：做容器级验收时用
+# 另开一个终端：
+cd frontend && npm install && npm run dev    # http://localhost:5173
+```
 
-P0-8（compose 起 go-api/go-worker/ai-core）与 P0-9（浏览器 E2E）要验的是**容器拓扑本身**，
-这时才需要构建 backend 镜像：
+**这就够了。** 后端与前端都跑在你的机器上，Docker 只提供中间件；
+不需要构建那个把全部依赖装进去的 16.5 GB backend 镜像（含 torch），改代码即时生效。
+数据库/缓存/向量库地址无需配置——`DATABASE_URL` / `REDIS_URL` / `MILVUS_HOST` 的默认值已指向 `127.0.0.1`。
+
+> 想严格保持 `uv.lock` 原样（镜像源配置不同时，不带 `--frozen` 的 `uv sync` 可能重写锁文件里的下载地址），
+> 就用 `uv sync --frozen --extra test`。
+
+### 3.3 怎么确认真的跑起来了
+
+| 检查 | 期望 |
+| --- | --- |
+| `curl http://127.0.0.1:8000/health` | `{"status":"ok","version":"0.1.0"}` |
+| `curl http://127.0.0.1:8000/ready` | 200，且 `database` / `redis` / `milvus` 三项都是 `connected` |
+| 浏览器打开 `http://localhost:5173` | 前端页面可注册/登录，侧栏显示用户名 |
+| `uv run python scripts/dev.py test -m unit` | 单元层全绿（全量基线：449 passed） |
+| `docker compose ps` | postgres / redis / etcd / minio / standalone / attu 六个容器 running（除 attu 外均 healthy） |
+
+两个最容易误判的点：
+
+- **vite 5 只监听 `::1`**：请用 `http://localhost:5173`；用 `http://127.0.0.1:5173` 会连接失败。
+- **健康探针不带 `/api/v1` 前缀**：`/health`、`/ready` 是裸挂载的；业务接口与 WebSocket 才在 `/api/v1` 下。
+
+### 3.4 `.env` 的三个必填项（缺失或占位即拒绝启动，均已实测）
+
+`JWT_SECRET_KEY`（`python -c "import secrets;print(secrets.token_urlsafe(32))"`）、`LLM_API_KEY`、`LLM_MODEL`——
+**后两个连"只验骨架"也必须非空**（`app.py` 的 startup 无条件调 `validate_config()`），占位值即可。
+`LLM_BASE_URL` 可选（走兼容 OpenAI 协议的自建网关时填）。
+
+### 3.5 全栈容器：只在做容器级验收时用
+
+P0-8（compose 起 go-api / go-worker / ai-core）与 P0-9（浏览器 E2E）验的是**容器拓扑本身**，
+这时才需要构建 backend 镜像（首次构建较慢）：
 
 ```bash
 uv run python scripts/dev.py up        # compose up -d（缺 backend 镜像就构建）并等 healthy
 uv run python scripts/dev.py migrate   # 容器内 alembic upgrade head
-uv run python scripts/dev.py test -m unit
+uv run python scripts/dev.py down      # 收工（不加 --volumes 不会删数据）
 ```
 
-### 3.3 `.env` 的三个必填项（缺失或占位即拒绝启动，均已实测）：`JWT_SECRET_KEY`
-（`python -c "import secrets;print(secrets.token_urlsafe(32))"`）、`LLM_API_KEY`、`LLM_MODEL`——
-**后两个连"只验骨架"也必须非空**（`app.py` 的 startup 无条件调 `validate_config()`），占位值即可。
-中国大陆网络另需 `go env -w GOPROXY=https://goproxy.cn,direct`（`proxy.golang.org` 不可达）。
+### 3.6 起不来时先看这三处
+
+1. `docker info` 只报 `pipe-not-found` → **Docker Desktop 没在运行**（不是缺组件、也不用重装，启动后约 5 秒引擎就绪）。
+2. `doctor` 报端口被占 → 5432 / 6379 / 19530 / 8000 被本机其它实例占用，`doctor` 会指出是谁在用。
+3. 上传的文件在容器里看不到 → Docker Desktop 的 File Sharing 需要包含项目所在盘
+   （`volumes/`、`models/`、`data/`、`logs/` 都是 bind mount）。
+
+更细的坑（`daemon.json` 的 BOM、代理键名大小写、`UseContainerdSnapshotter` 切换导致"镜像消失"、
+受限运行下跑测试要指定 TEMP 等）见 [p0-environment.md](docs/refactor/p0-environment.md) §4。
 
 完整序列（含首拉耗时、迁移、冒烟、收工）见 [p0-environment.md](docs/refactor/p0-environment.md) §2。
 

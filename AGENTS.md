@@ -77,6 +77,8 @@ cd frontend && npm run dev             # vite（只监听 ::1，用 localhost �
 uv run python scripts/dev.py up
 ```
 
+**全新电脑的完整安装步骤**（依赖版本要求、五步命令、跑起来后的验收方法、起不来的三处排查）见 [README §3](README.md)。
+
 ## 7. 绝对不能做
 
 - 不删 `parent_chunks` / `multimodal.py` / `layout_analyzer.py`（只降级能力口径，不删代码）。
