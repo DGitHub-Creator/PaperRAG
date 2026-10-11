@@ -12,6 +12,7 @@
 | 要知道什么 | 去哪看 |
 | --- | --- |
 | **最高约束**：四条第一性原则、阶段顺序律、任务卡规范、开发规范 | [docs/refactor/08-principles-and-conventions.md](docs/refactor/08-principles-and-conventions.md) |
+| **产品愿景**：五个入口、十项能力、V1–V4 路线、差异化与缺口清单 | [docs/refactor/11-product-vision.md](docs/refactor/11-product-vision.md) |
 | **现在该做什么**：P0 任务卡（输入/输出/依赖/验收/证据等级）+ X1–X8 退出标准 | [docs/refactor/09-milestone-p0.md](docs/refactor/09-milestone-p0.md) |
 | **进度多少 / 还差多少**：唯一真相源（`PROGRESS.md`、`progress.html` 是它的生成物） | [docs/progress.json](docs/progress.json) · [可视化看板](docs/progress.html) |
 | 契约（浏览器面 / Go↔Python 内部面 / 错误码 / 表写入矩阵） | [contracts/](contracts/) |
@@ -23,6 +24,8 @@
 被取代的旧计划全部移进 [docs/archive/](docs/archive/README.md)，**不作为实施依据**。
 里程碑口径只用 **P0 架构与契约 → P1 后端迁移/最小原型 → P2 功能拓展 → P3 多 Agent**；
 `Milestone A0/A/B/C` 属旧口径，对应关系见 [04-migration.md](docs/refactor/04-migration.md) §0。
+**这是工程架构轴**；产品价值轴（V1.0 可信学术 RAG → V4.0 Research OS）与两者的映射见
+[11-product-vision.md](docs/refactor/11-product-vision.md) §7——两条轴的编号不要混用。
 
 ## 1. 能力状态（三档口径，不含糊）
 
@@ -228,8 +231,10 @@ cd server && gofmt -l . && go vet ./... && go test ./...
 CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progress / docker。
 
 **证据等级**：`none < mock < real < e2e`，写在 `docs/progress.json` 每张卡上，
-`sync_progress.py` 会拦住「标了 done 但证据等级不够」。当前所有 real / e2e 级退出标准均为 `not_run`：
-本机 Docker daemon 起不来（WSL2 可选组件装完待重启），没有真实 PG/Redis/Milvus，也没有 LLM 密钥。
+`sync_progress.py` 会拦住「标了 done 但证据等级不够」。**2026-10-11 状态**：本机 Docker 已可正常运行，
+中间件 6 个容器与 `dev.py infra` / `serve` 两条路径均已实跑；P0-0 已取得 real 级证据
+（`up` / `/health` 200 / `migrate` exit 0），X3/X7/X8 三条 pass 仍属 mock 级；其余 real / e2e 级退出标准
+（X1/X2/X4/X5/X6 以及 P1 之后的全部）仍是 `not_run`。
 **mock 绿灯不等于完成**——这是原则②。
 
 ## 7. 改名收口（2026-10-10 完成）

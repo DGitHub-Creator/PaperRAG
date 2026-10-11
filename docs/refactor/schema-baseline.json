@@ -1,0 +1,417 @@
+{
+  "source": "live-postgres",
+  "tables": [
+    "alembic_version",
+    "chat_messages",
+    "chat_sessions",
+    "citation_edges",
+    "glossary_entries",
+    "paper_nodes",
+    "parent_chunks",
+    "users",
+    "workspace_members",
+    "workspaces"
+  ],
+  "alembic": "head:add_paper_knowledge_graph",
+  "session_timezone": "Etc/UTC",
+  "log_timezone": "Etc/UTC",
+  "server_version": "15.18 (Debian 15.18-1.pgdg13+1)",
+  "indexes": [
+    {
+      "tablename": "alembic_version",
+      "indexname": "alembic_version_pkc",
+      "indexdef": "CREATE UNIQUE INDEX alembic_version_pkc ON public.alembic_version USING btree (version_num)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "chat_messages_pkey",
+      "indexdef": "CREATE UNIQUE INDEX chat_messages_pkey ON public.chat_messages USING btree (id)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "ix_chat_messages_id",
+      "indexdef": "CREATE INDEX ix_chat_messages_id ON public.chat_messages USING btree (id)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "ix_chat_messages_session_ref_id",
+      "indexdef": "CREATE INDEX ix_chat_messages_session_ref_id ON public.chat_messages USING btree (session_ref_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "chat_sessions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX chat_sessions_pkey ON public.chat_sessions USING btree (id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_id ON public.chat_sessions USING btree (id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_session_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_session_id ON public.chat_sessions USING btree (session_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_user_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_user_id ON public.chat_sessions USING btree (user_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_workspace_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_workspace_id ON public.chat_sessions USING btree (workspace_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "uq_user_session",
+      "indexdef": "CREATE UNIQUE INDEX uq_user_session ON public.chat_sessions USING btree (user_id, session_id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "citation_edges_pkey",
+      "indexdef": "CREATE UNIQUE INDEX citation_edges_pkey ON public.citation_edges USING btree (id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_id ON public.citation_edges USING btree (id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_source_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_source_id ON public.citation_edges USING btree (source_id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_target_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_target_id ON public.citation_edges USING btree (target_id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "glossary_entries_pkey",
+      "indexdef": "CREATE UNIQUE INDEX glossary_entries_pkey ON public.glossary_entries USING btree (id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "ix_glossary_entries_id",
+      "indexdef": "CREATE INDEX ix_glossary_entries_id ON public.glossary_entries USING btree (id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "ix_glossary_entries_paper_id",
+      "indexdef": "CREATE INDEX ix_glossary_entries_paper_id ON public.glossary_entries USING btree (paper_id)"
+    },
+    {
+      "tablename": "paper_nodes",
+      "indexname": "ix_paper_nodes_filename",
+      "indexdef": "CREATE UNIQUE INDEX ix_paper_nodes_filename ON public.paper_nodes USING btree (filename)"
+    },
+    {
+      "tablename": "paper_nodes",
+      "indexname": "paper_nodes_pkey",
+      "indexdef": "CREATE UNIQUE INDEX paper_nodes_pkey ON public.paper_nodes USING btree (id)"
+    },
+    {
+      "tablename": "parent_chunks",
+      "indexname": "ix_parent_chunks_filename",
+      "indexdef": "CREATE INDEX ix_parent_chunks_filename ON public.parent_chunks USING btree (filename)"
+    },
+    {
+      "tablename": "parent_chunks",
+      "indexname": "parent_chunks_pkey",
+      "indexdef": "CREATE UNIQUE INDEX parent_chunks_pkey ON public.parent_chunks USING btree (chunk_id)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "ix_users_id",
+      "indexdef": "CREATE INDEX ix_users_id ON public.users USING btree (id)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "ix_users_username",
+      "indexdef": "CREATE UNIQUE INDEX ix_users_username ON public.users USING btree (username)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "users_pkey",
+      "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_id ON public.workspace_members USING btree (id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_user_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_user_id ON public.workspace_members USING btree (user_id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_workspace_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_workspace_id ON public.workspace_members USING btree (workspace_id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "workspace_members_pkey",
+      "indexdef": "CREATE UNIQUE INDEX workspace_members_pkey ON public.workspace_members USING btree (id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "ix_workspaces_id",
+      "indexdef": "CREATE INDEX ix_workspaces_id ON public.workspaces USING btree (id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "ix_workspaces_owner_id",
+      "indexdef": "CREATE INDEX ix_workspaces_owner_id ON public.workspaces USING btree (owner_id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "workspaces_pkey",
+      "indexdef": "CREATE UNIQUE INDEX workspaces_pkey ON public.workspaces USING btree (id)"
+    }
+  ],
+  "constraints": [
+    {
+      "table_name": "alembic_version",
+      "conname": "alembic_version_pkc",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_messages",
+      "conname": "chat_messages_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_messages",
+      "conname": "chat_messages_session_ref_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "chat_sessions_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "chat_sessions_user_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "fk_chat_sessions_workspace_id",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "uq_user_session",
+      "contype": "u"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_source_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_target_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "glossary_entries",
+      "conname": "glossary_entries_paper_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "glossary_entries",
+      "conname": "glossary_entries_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "paper_nodes",
+      "conname": "paper_nodes_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "parent_chunks",
+      "conname": "parent_chunks_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "users",
+      "conname": "users_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_user_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_workspace_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspaces",
+      "conname": "workspaces_owner_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspaces",
+      "conname": "workspaces_pkey",
+      "contype": "p"
+    }
+  ],
+  "column_diff": [
+    {
+      "table": "alembic_version",
+      "column": "version_num",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "chat_messages",
+      "column": "content",
+      "kind": "no_server_default",
+      "db": "text"
+    },
+    {
+      "table": "chat_messages",
+      "column": "message_type",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "chat_messages",
+      "column": "rag_trace",
+      "kind": "no_server_default",
+      "db": "json"
+    },
+    {
+      "table": "chat_messages",
+      "column": "session_ref_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "chat_sessions",
+      "column": "session_id",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "chat_sessions",
+      "column": "user_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "chat_sessions",
+      "column": "workspace_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "citation_edges",
+      "column": "source_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "citation_edges",
+      "column": "target_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "definition",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "paper_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "term",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "paper_nodes",
+      "column": "filename",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "chunk_id",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "filename",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "text",
+      "kind": "no_server_default",
+      "db": "text"
+    },
+    {
+      "table": "users",
+      "column": "password_hash",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "users",
+      "column": "username",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "workspace_members",
+      "column": "user_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "workspace_members",
+      "column": "workspace_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    },
+    {
+      "table": "workspaces",
+      "column": "name",
+      "kind": "no_server_default",
+      "db": "varchar"
+    },
+    {
+      "table": "workspaces",
+      "column": "owner_id",
+      "kind": "no_server_default",
+      "db": "integer"
+    }
+  ]
+}

@@ -21,6 +21,10 @@
 | [05-database-migration.md](05-database-migration.md) | Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量文献重建 | 实施 |
 | [07-e2e-test-plan.md](07-e2e-test-plan.md) | 最小真实 E2E 方案：分层、断言纪律、T1–T8 用例、契约测试、CI 分工 | 实施（由 P0-9 落地） |
 | [p0-environment.md](p0-environment.md) | P0-0 产物：从零到 `/health` 200 的可复制启动序列 + §3 实跑记录表 + 已知坑 | 实施 |
+| [11-product-vision.md](11-product-vision.md) | **产品愿景（产品价值轴）**：五个产品入口、十项核心能力、三个惊艳功能、V1–V4 路线、差异化与目标用户、ARTEX 架构借鉴、**尚未登记的缺口清单** | 愿景 |
+
+> **两条轴别混用编号**：工程阶段是上表的 **P0–P3**（`04` 定义）；产品价值是 **V1–V4**（`11` 定义）。
+> 两者的映射关系与三处顺序冲突见 [11](11-product-vision.md) §7。
 
 进度与日程：[../progress.json](../progress.json)（唯一真相）→ [../PROGRESS.md](../PROGRESS.md) / [../progress.html](../progress.html)（生成物，双击可开）。
 
