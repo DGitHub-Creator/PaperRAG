@@ -98,17 +98,44 @@ Go 是唯一公开入口与唯一调度方；Python 只被动执行并如实上�
 既不是缺组件、也不需要重装——启动 Docker Desktop 后约 5 秒引擎即就绪
 （详见 [p0-environment.md](docs/refactor/p0-environment.md) §4 第 8、14 条）。
 
-统一入口是 `scripts/dev.py`（跨平台，Windows/macOS/Linux 同一套命令）：
+统一入口是 `scripts/dev.py`（跨平台，Windows/macOS/Linux 同一套命令）。**两条路径，日常开发用第一条**：
+
+### 3.1 源码运行（推荐）：只有中间件用 Docker
+
+后端与前端都跑在宿主上，Docker 只负责 postgres / redis / etcd / minio / milvus / attu。
+好处是**不用构建 backend 镜像**（那是个把 `uv sync` 装进去、含 torch 的 16.5 GB 镜像），改代码即时生效。
 
 ```bash
-cp .env.example .env            # 必填三项见下
-uv sync --extra test            # Python 依赖（可复现：uv.lock）
-uv run python scripts/dev.py doctor   # 自检：docker、.env、密钥占位值、端口占用、compose 静态校验
-uv run python scripts/dev.py up       # 起基础设施 + 服务，等 healthy
+cp .env.example .env                  # 必填三项见 3.3
+uv sync --extra test                  # Python 依赖（可复现：uv.lock）
+uv run python scripts/dev.py doctor   # 起栈前自检（在 serve 之前跑，此时 8000 空闲）
+uv run python scripts/dev.py infra    # 只起中间件并等 healthy —— 不构建任何镜像
+uv run python scripts/dev.py serve    # 本机源码跑后端（uvicorn --reload）
+
+# 另开一个终端跑前端：
+cd frontend && npm install && npm run dev     # http://localhost:5173
+```
+
+无需额外环境变量：`DATABASE_URL` / `REDIS_URL` / `MILVUS_HOST` 的默认值已经指向 `127.0.0.1`。
+
+实测（2026-10-11 本机）：`infra` 起 6 个容器全 healthy；`serve` 后 `/health` 与 `/ready` 均 200
+（`database` / `redis` / `milvus` 三项 connected）；`http://localhost:5173/api/v1/auth/me`
+经 vite 代理返回与直连后端一致（同为 401 `{"detail":"Not authenticated"}`）。
+注意 **vite 5 只监听 `::1`**：用 `localhost` 访问，用 `127.0.0.1` 会连接失败。
+探针路由**不带 `/api/v1` 前缀**（`/health`、`/ready`），业务接口与 WS 才在 `/api/v1` 下。
+
+### 3.2 全栈容器：做容器级验收时用
+
+P0-8（compose 起 go-api/go-worker/ai-core）与 P0-9（浏览器 E2E）要验的是**容器拓扑本身**，
+这时才需要构建 backend 镜像：
+
+```bash
+uv run python scripts/dev.py up        # compose up -d（缺 backend 镜像就构建）并等 healthy
+uv run python scripts/dev.py migrate   # 容器内 alembic upgrade head
 uv run python scripts/dev.py test -m unit
 ```
 
-`.env` 的三个必填项（缺失或占位即拒绝启动，均已实测）：`JWT_SECRET_KEY`
+### 3.3 `.env` 的三个必填项（缺失或占位即拒绝启动，均已实测）：`JWT_SECRET_KEY`
 （`python -c "import secrets;print(secrets.token_urlsafe(32))"`）、`LLM_API_KEY`、`LLM_MODEL`——
 **后两个连"只验骨架"也必须非空**（`app.py` 的 startup 无条件调 `validate_config()`），占位值即可。
 中国大陆网络另需 `go env -w GOPROXY=https://goproxy.cn,direct`（`proxy.golang.org` 不可达）。

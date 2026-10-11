@@ -5,7 +5,9 @@
 `docker compose`，避免 README 里出现只适用于某个 shell 的启动命令。
 
     uv run python scripts/dev.py doctor              # 起栈前自检：docker/.env/端口/uv
-    uv run python scripts/dev.py up                  # compose up -d 并等 healthy
+    uv run python scripts/dev.py infra               # 只起中间件（源码跑后端的推荐路径，不构建镜像）
+    uv run python scripts/dev.py serve               # 本机源码跑后端（uvicorn --reload）
+    uv run python scripts/dev.py up                  # compose up -d 并等 healthy（全栈容器，含 backend 镜像）
     uv run python scripts/dev.py ps
     uv run python scripts/dev.py logs -f backend
     uv run python scripts/dev.py migrate             # 容器内 alembic upgrade head
@@ -37,6 +39,21 @@ SQLC_VERSION = "v1.30.0"
 
 # compose 里被 depends_on 或健康检查依赖的服务容器名（与 docker-compose.yml 的 container_name 一致）
 HEALTH_CONTAINERS = ["researchpilot-postgres", "researchpilot-redis", "milvus-standalone", "researchpilot-backend"]
+
+# 服务名 → 容器名。只请求部分服务时要按"这次真正起的"等健康：否则
+# `dev.py up postgres` 会一直等一个根本没被创建的 backend 容器，直到超时失败。
+SERVICE_CONTAINERS = {
+    "postgres": "researchpilot-postgres",
+    "redis": "researchpilot-redis",
+    "etcd": "milvus-etcd",
+    "minio": "milvus-minio",
+    "standalone": "milvus-standalone",
+    "attu": "milvus-attu",
+    "backend": "researchpilot-backend",
+}
+
+#: 源码跑后端时需要的中间件（不含 backend —— 它由 `dev.py serve` 在本机跑）
+INFRA_SERVICES = ["postgres", "redis", "etcd", "minio", "standalone", "attu"]
 HOST_PORTS = {5432: "postgres", 6379: "redis", 19530: "milvus", 8000: "backend"}
 SECRET_PLACEHOLDERS = ("replace-with-strong-random-secret", "dev-only-insecure-jwt-secret")
 
@@ -172,8 +189,13 @@ def cmd_up(args: argparse.Namespace) -> int:
         return rc
     if args.no_wait:
         return 0
+    # 只等这次真正请求的服务；不传 svc 时才是全套 HEALTH_CONTAINERS。
+    if args.svc:
+        targets = [SERVICE_CONTAINERS[s] for s in args.svc if s in SERVICE_CONTAINERS]
+    else:
+        targets = list(HEALTH_CONTAINERS)
     deadline = time.monotonic() + args.timeout
-    pending = list(HEALTH_CONTAINERS)
+    pending = list(targets)
     while pending and time.monotonic() < deadline:
         pending = [name for name in pending if container_health(name) not in ("healthy", "none")]
         if pending:
@@ -185,6 +207,31 @@ def cmd_up(args: argparse.Namespace) -> int:
         return 1
     print("全部容器 healthy。")
     return 0
+
+
+def cmd_infra(args: argparse.Namespace) -> int:
+    """只起中间件，后端在本机源码跑（见 `serve`）。
+
+    这条路径不构建 backend 镜像（含 torch 的 16.5 GB 镜像），改代码也不用重建；
+    config 层默认值已经指向 127.0.0.1（DATABASE_URL / REDIS_URL / MILVUS_HOST），
+    因此除 `.env` 的必填项外无需额外环境变量。
+    """
+    ns = argparse.Namespace(svc=list(INFRA_SERVICES), no_wait=args.no_wait, timeout=args.timeout)
+    return cmd_up(ns)
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """在本机（当前解释器）跑后端，等价于 uvicorn backend.app:app。
+
+    前置：中间件已就绪（`dev.py infra`）、依赖已装（`uv sync --extra test`）。
+    """
+    cmd = [
+        sys.executable, "-m", "uvicorn", "backend.app:app",
+        "--host", args.host, "--port", str(args.port),
+    ]
+    if not args.no_reload:
+        cmd.append("--reload")
+    return run(cmd)
 
 
 def cmd_down(args: argparse.Namespace) -> int:
@@ -270,11 +317,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="起栈前自检：docker/.env/端口/uv").set_defaults(func=cmd_doctor)
 
-    up = sub.add_parser("up", help="compose up -d 并等待健康")
+    up = sub.add_parser("up", help="compose up -d 并等待健康（全栈容器）")
     up.add_argument("svc", nargs="*", help="只起指定服务")
     up.add_argument("--timeout", type=int, default=300, help="等待 healthy 的秒数")
     up.add_argument("--no-wait", action="store_true", help="只起不等")
     up.set_defaults(func=cmd_up)
+
+    infra = sub.add_parser("infra", help="只起中间件（源码跑后端；不构建 backend 镜像）")
+    infra.add_argument("--timeout", type=int, default=300, help="等待 healthy 的秒数")
+    infra.add_argument("--no-wait", action="store_true", help="只起不等")
+    infra.set_defaults(func=cmd_infra)
+
+    serve = sub.add_parser("serve", help="本机源码跑后端（uvicorn）；前置：infra 已就绪")
+    serve.add_argument("--host", default="0.0.0.0")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--no-reload", action="store_true", help="关掉热重载")
+    serve.set_defaults(func=cmd_serve)
 
     down = sub.add_parser("down", help="停止栈")
     down.add_argument("--volumes", action="store_true", help="连数据卷一起删（会清空 PG/Milvus 数据）")

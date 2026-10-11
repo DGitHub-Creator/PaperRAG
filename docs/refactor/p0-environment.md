@@ -66,6 +66,25 @@ uv run python scripts/dev.py down
 P0-1 之后会多出 `go-api` / `go-worker` / `ai-core` 三个服务，以及 nginx upstream 切换（P0-8）。
 那之后的入口仍是 `dev.py up`，命令面不变，只改 `docker-compose.yml`。
 
+### 2.1 源码运行（日常开发的推荐路径）
+
+只有中间件用 Docker，后端与前端跑在宿主上——**不构建 backend 镜像**（含 torch 的 16.5 GB）：
+
+```bash
+uv run python scripts/dev.py infra    # 只起 postgres/redis/etcd/minio/milvus/attu 并等 healthy
+uv run python scripts/dev.py serve    # 本机 uvicorn --reload
+cd frontend && npm run dev            # vite dev server
+```
+
+`DATABASE_URL` / `REDIS_URL` / `MILVUS_HOST` 的默认值已指向 `127.0.0.1`，无需额外环境变量。
+2026-10-11 本机实测：`infra` 起 6 容器全 healthy（且未构建任何镜像）→ `serve` 后 `/health` 与
+`/ready` 均 200（database / redis / milvus 三项 connected）→ `http://localhost:5173/api/v1/auth/me`
+经 vite 代理的返回与直连后端逐字一致。**vite 5 只监听 `::1`**：用 `localhost` 访问，
+用 `127.0.0.1` 会连接失败。探针路由**不带 `/api/v1` 前缀**（`/health`、`/ready`），
+业务接口与 WS 才在 `/api/v1` 下。
+
+上面 §2 的全栈容器序列仍是 **P0-8/P0-9 的验收路径**——那两卡验的是容器拓扑本身。
+
 ## 3. 实跑记录（填这张表才算 real 级验收）
 
 | # | 步骤 | 主机 / 环境 | 日期 | 结果 | 备注 |
