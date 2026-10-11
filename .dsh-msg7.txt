@@ -1,0 +1,7 @@
+﻿chore(privacy): 历史重写收尾——修正最后一个失效 SHA，并完成第二轮（提交信息）清理
+
+第二轮 git filter-repo 带 --replace-message，清掉提交信息里的同类字面量；
+现在文件内容与提交信息两侧对隐私模式的命中均为 0。
+
+SHA 引用修正：335aeb7e 与 996cf777 未被本轮改动、仍然有效；2b38af35 已被清理出仓库，
+按提交标题重新定位为 542fd77a 并更新（仅涉及 docs/refactor/12-known-code-issues.md）。

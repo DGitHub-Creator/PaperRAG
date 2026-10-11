@@ -30,6 +30,6 @@
 | # | 事项 | 结论 |
 | --- | --- | --- |
 | C12 | `.env.example` 的 `KEY= #值` 行内注释会让应用起不来 | 2026-10-10 已改为整行注释（11 行） |
-| C13 | compose 的 backend 缺 `target: backend` → 构建出 nginx 镜像 | 已修（`2b38af35` 之前那批） |
+| C13 | compose 的 backend 缺 `target: backend` → 构建出 nginx 镜像 | 已修（`542fd77a` 之前那批） |
 | C14 | `progress.json` 的 `current` / `risks[0]` 与现状矛盾（"Docker 起不来""未安装 Docker Desktop"） | 2026-10-11 已改写并记入 `AGENTS.md` §4「已被推翻的旧结论」 |
 | C15 | `.pytest-cache/` 目录权限被占，`Remove-Item` 被拒 | 纯本机整洁问题，已被 `.gitignore` 忽略；需用户在自有终端删除 |
