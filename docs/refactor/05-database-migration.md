@@ -30,15 +30,36 @@
 | 2.2 | 生成 `server/migrations/000001_baseline.{up,down}.sql` | 内容 = §1 核查出的**实际结构**（不是 ORM 声明），含**真库 10 张表**（9 张业务表 + `alembic_version`）+ 索引 + 约束 |
 | 2.3 | 存量库打基线戳 | `migrate version 1`（只写 `schema_migrations`，不执行 DDL）；新库走 `000001_baseline.up.sql` |
 | 2.4 | `alembic/` 保留为只读历史 | 在 `alembic/README` 与 CI 中标注 FROZEN；禁止新增 revision。`models.py` 继续用于 Python 侧 ORM 读，但**不再作为 schema 来源** |
-| 2.5 | 漂移修复作为第一个后续迁移 | `000002_fix_drift`：补 `ix_paper_nodes_id`；`paper_nodes.filename` 唯一索引转 UNIQUE 约束（**先核查是否与现网语义等价**，等价则记为"不改"，避免无收益 DDL） |
+| 2.5 | 漂移修复作为**第二个**后续迁移 | `000003_fix_drift`：补 `ix_paper_nodes_id`；`paper_nodes.filename` 唯一索引转 UNIQUE 约束（**先核查是否与现网语义等价**，等价则记为"不改"，避免无收益 DDL）。编号让位的原因见 §2.6 |
 
 **幂等纪律**：所有迁移可重复执行安全检查；`down` 必须真实可回退，禁止 `down` 里写 `DROP TABLE IF EXISTS` 掩盖问题。
+
+### 2.6 迁移编号分配与新表口径（2026-10-12 拍板）
+
+`000002` 这个号此前被**三处各自预定给了不同的表**（本节 2.5 的 `fix_drift`、§3 的 `paper_chunks` 占了 `000003`、`09:100` 条件式的 `auth_compat`），而台账 C5 与 P0-7 要的是 `ai_executions`。编号在 golang-migrate 里**就是执行顺序**，所以按"实际开工顺序"重新分配，并把它定成规则：
+
+| 号 | 内容 | 归属 | 状态 |
+| --- | --- | --- | --- |
+| `000001` | 存量库结构基线（10 表 / 59 列） | P0-2 | 已落，real |
+| `000002` | `ai_executions`（Python 独占写的执行记录） | P0-7 | **2026-10-12 已落**（mock，见下） |
+| `000003` | `fix_drift`（基线两处已知漂移的处置） | P0-2 尾 | 未开工 |
+| `000004` | `paper_chunks` 等 chunk 可信化新表 | P2-1 / §3 | 未开工 |
+| 下一个空位 | `auth_compat`（`09:100` 的条件式预留：仅在 D3 拍「保留旧哈希兼容」时才需要） | P1 | 不预定号 |
+
+规则两条：**(a)** 号按依赖顺序给，谁先被运行链路需要谁靠前，`fix_drift` 修的是基线所以紧随其后；**(b)** 条件式的预留**不占号**——占了一个用不上的号，后来的人只能继续往后挪，挪到最后没人知道哪个号对应哪件事。
+
+`ai_executions` 是**第一张由本文档新建的表**，不是对存量的登记，所以四条口径与基线不同，都拍在此处（新表照此办理）：
+
+- **时间列一律 `TIMESTAMPTZ`**。基线 10 张表全是 `timestamp without time zone`，那是真库现状的如实登记（转换归 §4）；§4 末「新表一律 timestamptz」原文只点名 `paper_*`/`research_*`，本表未被点名，按同一方向处理。依据不是偏好而是契约：`schemas.py:94-99` 强制 `deadline` 必须带时区，naive 列存不下这个语义，实现写的也是 `datetime.now(timezone.utc)`。机检可见——`server/internal/db/models.go` 里这张表的三个时间戳生成为 `pgtype.Timestamptz`，与基线表的 `pgtype.Timestamp` 是两种类型。
+- **"可空语义"用 `NOT NULL DEFAULT ''` 承载，不用 NULL**。PG 的 UNIQUE 把 NULL 视为互不相等，所以 `UNIQUE(run_id, idempotency_key)` 在所有 `run_id IS NULL` 的行上会**静默失效**——幂等是这张表的第一语义，不能建在一个会漏的约束上。代价是"缺失"与"空串"在库里合并，写这一列的 Python PG 后端负责 `None ↔ ''` 映射。
+- **新表的 `created_at`/`updated_at` 不给库侧 DEFAULT**。基线有 `DEFAULT now()` 是存量事实；新表由写入方显式给 UTC 值，因为库默认值会把"记录时间"变成"落库时间"并掩盖漏写。
+- **只建实现真正读写的列**。§3.4 的租约设计提 `lease_owner/lease_token/lease_expires_at` 三列，`executions.py:36` 只用 `lease_token`，P0-7 也只验到"结果落库前比对 token"；另两列等 Go worker 起租约时随语义同批 `ADD COLUMN`（非破坏、可幂等）。同理本文件**不写 GRANT**：`contracts/table-acl.md:3` 说 ACL 靠 PG 角色落实，但角色名在任何地方都还没定义，给不存在的角色授权等于把纪律写成一条必失败的语句。
 
 ## 3. Chunk 可信化：新表设计
 
 现状问题（03 §2）：叶子块正文只在 Milvus 且 `VARCHAR(2000)` 截断；`parent_chunks` 只收 level 1/2 而 PDF 默认路径不产 → 实际近空；无版本、无定位、无哈希。
 
-新增（`server/migrations/000003_paper_chunks.sql`，**P2-1** 交付；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
+新增（`server/migrations/000004_paper_chunks.sql`，**P2-1** 交付；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
 
 ```sql
 CREATE TABLE papers (

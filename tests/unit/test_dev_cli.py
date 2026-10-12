@@ -202,7 +202,13 @@ class TestGenPrechecks:
     def test_schema_list_is_read_from_the_real_config(self):
         sources = dev._sqlc_schema_sources()
         assert sources is not None
-        assert sources == ["migrations/000001_baseline.up.sql"], "sqlc 只该看得见逐个列出的 *.up.sql"
+        assert sources, "sqlc 的 schema 源为空等于 Go 看不见任何表"
+        # 逐条列出而不是写目录：目录里 down 排在 up 前面，sqlc 按文件名顺序读 → 先 DROP 再 CREATE。
+        # 这里不断言具体清单（加一张表就要改一次测试，那是把门禁变成 chores），
+        # 断言的是"每条都是一个存在的 *.up.sql"这个形状。
+        for src in sources:
+            assert src.endswith(".up.sql"), f"schema 源不该是目录或 down 文件：{src}"
+            assert (dev.SERVER_DIR / src).is_file(), f"schema 源指向不存在的文件：{src}"
 
     def test_unparseable_schema_list_refuses_instead_of_treating_it_as_empty(self, tmp_path, monkeypatch):
         """解析不出列表时不能"当作没配"然后照常生成——这个函数的存在意义就是确认覆盖面。"""

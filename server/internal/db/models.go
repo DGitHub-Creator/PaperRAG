@@ -8,6 +8,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AiExecution struct {
+	ExecutionID        string
+	TaskID             string
+	TaskType           string
+	IdempotencyKey     string
+	Status             string
+	Deadline           pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	RunID              string
+	TraceID            string
+	LeaseToken         string
+	Result             []byte
+	ResultRef          pgtype.Text
+	ProposedTasks      []byte
+	EvidenceCandidates []byte
+	Usage              []byte
+	Errors             []byte
+}
+
 type AlembicVersion struct {
 	VersionNum string
 }

@@ -22,14 +22,16 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 5 | `docs/refactor/00-audit.md`、`01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状** |
 | 6 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
 
-## 3. 现在的事实（2026-10-11）
+## 3. 现在的事实（2026-10-12）
 
 - 进度 **12%**（45/372 h）；38 张卡：done 6 / in_progress 4 / pending 28；24 条退出标准 pass **4**（X3 契约机检、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；P0 38%，P1/P2/P3 = 0%。
 - **P0-0 已取得 real 级证据**：`doctor` 全绿 → `up` 起 7 容器、backend healthy → `/health` 容器内与宿主机均 200 → `migrate` exit 0（未标 done 仅因 `down`/`logs` 未逐个实跑）。
 - **P0-2 真库基线已交付（evidence 升到 real，X6 转 pass）**：`docs/refactor/schema-baseline.json` 由 `--live` 导出（PG 15.18，**10 张表**，alembic head `add_paper_knowledge_graph`，ORM 与真库漂移 23 处），`server/migrations/000001_baseline.{up,down}.sql`（10 表 / 59 列）已落地；离线 `--check-baseline` exit 0，并已把真库结构复制到临时库**连跑两遍均 exit 0**（幂等）。原挂的收尾（`sqlc.yaml` 指到 `migrations/`，与 `dev.py gen --check` 同一原子改动）**已于 2026-10-12 完成**。**本卡仍未 done 的两件都要 Docker**：现存快照是补 `columns` 之前导的，新命令 `--verify-columns` 如实返回 2；`probe_timestamps.py` 与时间列语义审计未产（X6 验收的第三问「每表时间列判定」）。
 - **P0-3 done（2026-10-12，mock）**：sqlc 的 schema 源已从临时参照改指真基线，`server/sql/schema.sql` 已删除；此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model。`dev.py gen` 同批加三条生成前置检查（schema 源是含 `.down.sql` 的目录 → 拒绝；`migrations/*.up.sql` 未登记 → 拒绝；生成物有孤儿 `X.sql.go` → 拒绝），各有负向用例。
-- 测试基线 **472 passed**（unit + integration）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
+- 测试基线 **475 passed**（unit + integration）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
 - Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）；当前 11 个镜像 / 约 4.3 GB，**没有 backend 镜像**（按需构建）。
+- **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
+- **`000002_ai_executions.{up,down}.sql` 已落地但从未在真 PG 执行过**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`，`--check-baseline` exit 0。所以 P0-7 仍停 mock，不缺迁移文件而缺真库幂等验证 + compose 端口（P0-8）。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
 - **2026-10-11 做过一次历史重写**（把个人信息与设备信息从仓库历史里清除）：102 个提交的作者/提交者统一为
   `ResearchPilot Dev <DGitHub-Creator@users.noreply.github.com>`；用户名、本机绝对路径、OS 与软件版本号、

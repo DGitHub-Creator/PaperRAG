@@ -164,7 +164,8 @@ CREATE TABLE IF NOT EXISTS paper_nodes (
     CONSTRAINT paper_nodes_pkey PRIMARY KEY (id)
 );
 
--- 已知漂移，如实登记、不在基线里"修正"（05 §1 / §2.5 交给 000002_fix_drift）：
+-- 已知漂移，如实登记、不在基线里"修正"（05 §1 / §2.5 交给 000003_fix_drift；
+-- 000002 已按 05 §2.6 的开工顺序分配给 ai_executions）：
 --   1) 唯一性由这条 unique index 承载，真库**没有** UNIQUE 约束（sqlc 用 contype='u' 查不到它）；
 --   2) 真库**没有** ix_paper_nodes_id —— models.py 的 index=True 从未落库，所以这里也不建。
 CREATE UNIQUE INDEX IF NOT EXISTS ix_paper_nodes_filename ON paper_nodes (filename);

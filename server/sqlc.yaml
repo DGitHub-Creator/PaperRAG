@@ -15,6 +15,7 @@ sql:
     # 由 `dev.py gen` 的覆盖检查机检（漏了直接拒绝生成）。
     schema:
       - "migrations/000001_baseline.up.sql"
+      - "migrations/000002_ai_executions.up.sql"
     queries:
       - "sql/queries"
     gen:

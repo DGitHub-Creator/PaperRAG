@@ -8,7 +8,6 @@
 
 | # | 问题 | 证据（可复核） | 影响 | 建议改法 | 归属 |
 | --- | --- | --- | --- | --- | --- |
-| **C5** | `backend/internal_api/` 的 7 条路径已就位，但缺 `ai_executions` 迁移 | P0-7 note；`server/migrations/` 目前只有 `000001_baseline` | P0-7 无法 done；内部执行面的幂等/取消/超时语义没有真实存储支撑 | C3/C4 已闭（2026-10-12），schema 源就绪 → 直接补 `000002_ai_executions`（注意 `contracts/table-acl.md` 里 `ai_executions` 是 **Python 独占写**；新 up 文件必须同时登记进 `sqlc.yaml` 的 schema 列表，`dev.py gen` 会机检这条） | P0-7 |
 | **C6** | compose 里**还没有 Go 服务**；Python 后端仍是唯一 backend，且其镜像需构建（16.5 GB） | `docker-compose.yml` 只有 postgres/redis/etcd/minio/standalone/backend/attu；Dockerfile 的 backend 阶段用 `uv sync` 装 `sentence-transformers`（拖入 torch） | P0-8 未开工；镜像体积影响日常构建与磁盘 | P0-8 加 `go-api` / `go-worker` / `ai-core`（`ai-core` 不发布宿主端口）；镜像瘦身（CPU-only torch 索引 / 分层裁剪）可作为独立优化项 | P0-8 |
 
 ## B. 愿景驱动的代码缺口（V1–V3 依赖）
@@ -29,6 +28,7 @@
 | C2 | `--check-baseline` 的 up 剥注释、down 用原文匹配，两套规则 | **2026-10-12 已统一**：两者都走 `_strip_comments()`。`000001_baseline.down.sql` 头注释里"校验器按原文匹配、连注释一起算"那句随之失效，已改写 |
 | C3 | 临时参照 `server/sql/schema.sql` 在 `users.created_at` / `users.role` 上失真（库里其实有 DEFAULT） | **2026-10-12 已消解，但原建议改法被证伪**。该文件已删除，schema 源换成真基线。切过去之后那次 `git diff` **一个字都没变**——`User` struct 与三条查询的生成类型完全一致。原因是 **sqlc 不把列默认值编码进 Go 类型**，所以"切到真基线后在 diff 里专门核对这两列"这条改法物理上做不到：diff 门禁能抓的只有类型、可空性、列/表存在性。DEFAULT 的核查因此改由 `--verify-columns` 承担（见 C1）。业务层的后果单独记在 `05 §4.2.1`：`role`/`created_at` 仍显式给值，因为 `DEFAULT now()` 取会话时区而 §4 的 UTC 审计未完成 |
 | C4 | `sqlc.yaml` 仍指向临时参照，P0-3 无法 done | **2026-10-12 已切**并与 `dev.py gen --check` 同批落地；P0-3 转 done（mock）。实际收益不是字段纠偏而是**覆盖面**：此前 Go 只看得见 `users` 一张表，切换后 10 张表 / 59 字段全部进 model。⚠️ 顺带推翻一条工具记录：本卡原写「本机目前没有 sqlc 二进制，需 `go install`」——**错**，`$HOME/go/bin/sqlc.exe` 就是钉的 v1.30.0，`dev.py` 早就优先用本机二进制、找不到才退回 `go run`。同批补三条生成前置检查（schema 目录含 `.down.sql` 拒绝、`migrations/*.up.sql` 未登记拒绝、`internal/db/X.sql.go` 孤儿输出拒绝），前两条是本机真踩出来的：把目录整个交给 sqlc 会按文件名顺序先执行 down 再执行 up，生成物等于按回退后的库产出 |
+| C5 | `backend/internal_api/` 七条路径已就位，但缺 `ai_executions` 迁移，P0-7 的幂等/取消/超时语义没有真实存储支撑 | **2026-10-12 已交付迁移文件（证据等级 mock）**：`server/migrations/000002_ai_executions.{up,down}.sql`，17 列**逐列回指** `executions.py:26-42` 的 dataclass（这张表的列清单此前没有任何文档逐字写过）；已登记进 `sqlc.yaml` 并生成 `AiExecution` model。四个拍板与新表规则记在 `05 §2.6`：TIMESTAMPTZ、`run_id NOT NULL DEFAULT ''`（否则 `UNIQUE(run_id, idempotency_key)` 在 NULL 行上静默失效）、新表三个时间戳不给库侧 DEFAULT、只建实现读写的列且不写 GRANT。⚠️ **未在真 PG 上执行过**——本机 Docker daemon 本轮不可达，"PG 15 接受这份 DDL"目前只有两个间接证据：sqlc 的 PG 解析器吃下了它、`parse_ddl_columns` 吃下了它（`test_audit_schema.py` 增至 37 项，新增 3 条把「整个 migrations/ 可解析」与「`check_baseline` 对真目录返回空」钉进用例）。P0-7 仍 in_progress：`-m chain -k ai_executions` 要等 compose 里的 PG。编号分配同时改了 `05 §2.5/§3` 与 `09:100`（`000003=fix_drift`、`000004=paper_chunks`、条件式的 `auth_compat` **不占号**） |
 | C12 | `.env.example` 的 `KEY= #值` 行内注释会让应用起不来 | 2026-10-10 已改为整行注释（11 行） |
 | C13 | compose 的 backend 缺 `target: backend` → 构建出 nginx 镜像 | 已修（`542fd77a` 之前那批） |
 | C14 | `progress.json` 的 `current` / `risks[0]` 与现状矛盾（"Docker 起不来""未安装 Docker Desktop"） | 2026-10-11 已改写并记入 `AGENTS.md` §4「已被推翻的旧结论」 |

@@ -223,6 +223,39 @@ class TestParseDdlColumns:
         assert len(tables) == 10, sorted(tables)
         assert sum(len(cols) for cols in tables.values()) == 59
 
+    def test_every_shipped_up_migration_parses(self):
+        """`--verify-columns` 遍历 migrations/ 里**每一个** up 文件，所以整个目录都得能解析。
+
+        新迁移最常见的死法不是列写错，而是用了类型词典里没有的写法——解析器遇到不认识的
+        类型是 raise 而不是猜（猜错等于把失真放过去），那就让它在提交前对着真表撞一次。
+        """
+        files = sorted(MIGRATIONS.glob("*.up.sql"))
+        assert files, "migrations/ 里没有 up 文件，这条测试就失去对象了"
+        tables = {}
+        for p in files:
+            tables.update(parse_ddl_columns(p.read_text(encoding="utf-8")))
+        assert "users" in tables and "ai_executions" in tables, sorted(tables)
+
+    def test_shipped_migrations_pass_the_baseline_shape_check(self):
+        """把 CLI 的 exit 0 钉进用例：`--check-baseline` 是 X6 的验收命令，不能只在文档里"记得跑过"。"""
+        assert check_baseline(MIGRATIONS) == []
+
+    def test_ai_executions_ddl_records_the_p0_7_decisions(self):
+        """这张表把四个拍板写进了 DDL，所以拍板必须有机检守着：
+        新表一律 TIMESTAMPTZ、run_id 用空串承载缺失（否则唯一键静默失效）、三个时间戳不给
+        库侧默认、租约只建实现真正读写的那一列。改成别的口径要先过这里。"""
+        text = (MIGRATIONS / "000002_ai_executions.up.sql").read_text(encoding="utf-8")
+        cols = parse_ddl_columns(text)["ai_executions"]
+        assert cols["deadline"]["type"] == "timestamp with time zone"
+        assert cols["created_at"]["type"] == "timestamp with time zone"
+        assert cols["created_at"]["has_default"] is False, "created_at 由写入方给 UTC 值，库侧 now() 会掩盖漏写"
+        assert cols["run_id"]["nullable"] is False and cols["run_id"]["has_default"] is True
+        assert "lease_owner" not in cols and "lease_expires_at" not in cols
+        assert cols["result"]["nullable"] is True and cols["errors"]["nullable"] is False
+        # 两条 CHECK 与两条 UNIQUE 都带逗号/引号，切错就会凭空多出半列
+        assert len(cols) == 17, sorted(cols)
+        assert not [c for c in cols if c.startswith(("ck_", "uq_", "ai_executions_pkey"))]
+
     def test_table_constraints_and_nested_parens_are_not_columns(self):
         cols = parse_ddl_columns(DDL_UP)["users"]
         assert list(cols) == ["id", "username", "role", "prefs", "workspace_id"]

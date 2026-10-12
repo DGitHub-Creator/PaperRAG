@@ -44,12 +44,12 @@
 | 契约目录与静态门禁 | 已实现 | P0-4 done；`scripts/check_contracts.py`（X3 本机 pass） |
 | Go 服务骨架（health/ready、错误信封、trace、panic 兜底） | 部分实现 | P0-1：`gofmt`/`vet`/`test` 本机绿（16 项）；**未接真库、未进 compose** |
 | Go 数据访问层（sqlc 生成物入库 + 连接池） | 部分实现 | P0-3 done（mock）：schema 源已从临时参照改指 P0-2 真库基线 `server/migrations/000001_baseline.up.sql`，10 张表全部生成 model；**仍未接进 compose**，池子只在有 `DATABASE_URL` 时启动 |
-| ai-core 内部执行面（`/internal/v1/ai/*` 七条路径） | 部分实现 | P0-7：Python 侧 29 条 HTTP 级用例 + 幂等/取消/超时语义；**`ai_executions` 表与容器级链路未实现** |
+| ai-core 内部执行面（`/internal/v1/ai/*` 七条路径） | 部分实现 | P0-7：Python 侧 29 条 HTTP 级用例 + 幂等/取消/超时语义；`ai_executions` 表已有迁移文件 `server/migrations/000002_ai_executions.{up,down}.sql`（17 列，逐条回指 `executions.py`）并登记进 sqlc，但**未在真 PG 上执行过**；容器级链路仍未实现 |
 | 学术文档解析（PDF/Word/Excel、清洗、分块） | 部分实现 | 默认 PDF 结构分块只产叶级块，缺层级父块（`document_loader.py:_split_structural`） |
 | 学术结构识别（定理/证明/公式/引文/术语） | 部分实现 | 提取器在分块期生效，但元数据未写入检索层（`milvus_writer.py` 字段映射不含这些列） |
 | Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块 → 合并数恒为 0 |
 | 文档上传与任务进度 | 部分实现 | 任务状态默认存**进程内存**，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切 Redis；根治属 P3 的 Go Frontier） |
-| Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：三模式已落——`--check-baseline`（文件形态：非破坏 + 幂等 + down 配对）、`--verify-columns`（与快照逐列比类型/varchar 长度/NOT NULL/DEFAULT）、只读 `--live`（34 项判定单测）。`migrations/000001_baseline` 已在真库结构的临时副本上连跑两遍幂等。剩余：时间列语义探针（要往库写）与列级比对的实跑（要重导含 `columns` 的快照） |
+| Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：三模式已落——`--check-baseline`（文件形态：非破坏 + 幂等 + down 配对）、`--verify-columns`（与快照逐列比类型/varchar 长度/NOT NULL/DEFAULT）、只读 `--live`（37 项判定单测）。`migrations/000001_baseline` 已在真库结构的临时副本上连跑两遍幂等；`000002_ai_executions` 只过了离线形态检查，未在真库执行过。剩余：时间列语义探针（要往库写）与列级比对的实跑（要重导含 `columns` 的快照） |
 | 公式感知检索 | **未实现** | 索引构建函数零调用点，检索分支恒返回空 → P2-2 |
 | 多模态图表检索、ML 布局分析、论文知识图谱 | **未实现** | 模块与单测存在但无调用方；图谱三张表零写入 → P2 |
 | `paper_chunks` 真相层（PG 持正文，Milvus 只存可重建索引） | **未实现** | 现在叶级正文**只在 Milvus**且 `VARCHAR(2000)` 截断 → P2-1 |
