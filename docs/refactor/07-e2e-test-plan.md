@@ -15,7 +15,7 @@
 
 方案立项时的现状是 280 项测试全绿，但对三处真实故障完全盲（[03](03-gap-analysis.md) §1）：
 `useAuth` 的 `apiFetch` 未导入、上传 URL 缺前缀、`_build_formula_index` 零调用点。
-根因是测试把 LangGraph / sentence_transformers / Milvus 全 mock 掉（提交 `4a5e806` 自陈），
+根因是测试把 LangGraph / sentence_transformers / Milvus 全 mock 掉（提交 `a552a5c` 自陈；2026-10-12 历史重写后本分支上的等价 SHA，此前这里写的 `4a5e806` 只在重写前的 `main`/备份分支上存在），
 且 `pyproject.toml` 的 `fail_under=40` 允许低覆盖。
 **mock 测试证明的是"函数按我以为的方式被调用"，不是"用户能用到这个功能"**——这句话是原则②的由来。
 
@@ -29,7 +29,7 @@
 
 | 层 | marker | 依赖 | 断言对象 | 运行位置 | 落地卡片 |
 | --- | --- | --- | --- | --- | --- |
-| L0 单元 | `unit` | 无（可 mock） | 纯函数、状态机、解析器 | 每次提交 | 已有 391 项 |
+| L0 单元 | `unit` | 无（可 mock） | 纯函数、状态机、解析器 | 每次提交 | 已有 458 项（2026-10-12） |
 | L1 集成-数据 | `integration` | 真实 PG + Redis（compose） | 仓储层读写、缓存一致、任务状态、鉴权 | 每次提交 | 已有 57 项（**mock 级**：无真库）；真实化属 P1-6 |
 | L2 集成-检索 | `integration` | 真实 PG + Redis + Milvus | embedding/BM25/hybrid/rerank/auto-merge/公式索引 | PR + nightly | **未实现**（P1-6 / P2-2） |
 | L3 链路 | `chain` | 上述 + LLM key | 上传→入库→检索→回答→引用可回溯 | nightly（花真钱） | **未实现**（P1-6；`chain` 目录当前不存在） |
@@ -126,7 +126,7 @@
 | 数据隔离 | L1–L3 每模块独立 database（`template1` clone）或 `TRUNCATE` + 事务回滚；L2 每模块独立 Milvus collection（前缀 + pytest xdist id），**teardown 必须删干净** | 未实现；现网 `drop_collection` 零调用点，说明该能力从未被验证过 |
 | 密钥 | 仅 nightly 需要：GitHub Actions secrets；PR 上 L4 走 stub LLM，零成本 | 未实现 |
 | CI 分工 | 每次提交：`unit` + `integration` + 契约静态门禁；PR 合并前：加真实 PG/Redis 的 `integration`；nightly：`chain` + `e2e`(real) + 科研问题集记录 | **部分**：`.github/workflows/ci.yml` 现有 backend/go/frontend/progress/docker 五个 job，全部是 mock 级；nightly 工作流未实现 |
-| 时间预算 | L1 单模块 ≤30s，全量 `unit+integration` ≤6min（超则拆分并行）；nightly ≤25min | 本机全量 449 项约 40s |
+| 时间预算 | L1 单模块 ≤30s，全量 `unit+integration` ≤6min（超则拆分并行）；nightly ≤25min | 本机全量 **515 项约 40s**（2026-10-12 复测；此前记的 449 项是 2026-10-11 的读数） |
 | 可复用性约束 | 所有对 URL/端点的引用集中在 `contracts/` 与 `tests/e2e/fixtures.ts`；测试里**不出现** Python 专有概念，只断言对外形状 | 前端侧已由 FE-1 的 R6（DTO 只在 `api/types.ts`）保证一半 |
 
 ## 9. 与里程碑卡片的关系

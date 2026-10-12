@@ -6,7 +6,11 @@
 > 基线：`main @ 106f17dd`（前端与鉴权安全修复已在 `996cf777` / `335aeb7e` 落地）。
 > 规模：solo 15–20h/周，P0 约 2–2.5 周（W1–W2）。每张卡一个独立提交，前缀 `feat(p0):` / `test(p0):` / `docs(p0):`。
 
-## 0. 退出标准（全部可机检；当前状态一律 `not_run`）
+## 0. 退出标准（全部可机检；当前状态见 `docs/progress.json`，本节末行同步于 2026-10-12）
+
+> **现状读数**：8 条里 **pass 4**（X3/X6/X7/X8）、**fail 3**（X2/X4/X5，判定脚本已落、跑出来是红的）、
+> **not_run 1**（X1，要 `docker compose up`）。此前本节写「当前状态一律 `not_run`」已失效；
+> `fail` 与 `not_run` 要分开读：前者是**已判定且不合格**，后者是**还没判**。
 
 | # | 标准 | 判定命令（仓库根执行，除非注明） | 期望输出 | 等级 |
 | --- | --- | --- | --- | --- |
@@ -15,8 +19,8 @@
 | X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K4 已定案落地，契约只剩 `{"detail": ...}` 一种信封；K2/K3 已定案，落点分别在 P0-3/P0-8，见 §3 | mock |
 | X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向）。**2026-10-12 实跑 rc=1**：`server/internal/auth` 这个包还不存在（是 P0-6 的产出，不是环境问题）。已核实 `go test` 在包缺失时报错退出 1，不会退化成"没有测试也算过" | real |
 | X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users`。**2026-10-12：导出件已落**——`contracts/pbkdf2_golden.json` 10 条向量（6 正 4 负），形状轴覆盖 `04` §风险表点名的三件事（标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000）再加 UTF-8 口令；每条的期望值都由生产裁判 `backend/core/auth.py:verify_password` 现算，裁判不一致就拒绝导出。**文件里没有明文口令**：口令由 `vector_id` 按 `password_rule` 重建，真库 `password_hash` 有意不导出（`--from-db` 只取形状统计）。`TestVerifyLegacyHash` 仍不存在 → 整条命令 rc=1 | mock→real |
-| X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
-| X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test -- tests/unit/test_pytest_layering.py` | unit 310 / integration 23 / 分层机检 5 全绿，无 `PytestUnknownMarkWarning`。chain、e2e 两层的用例由 P0-5 与 P0-9 提供，此刻为 0 条属预期（`pytest -m chain --collect-only` 对空选择返回 rc=5，不能当判据） | mock |
+| X6 | Go 不重复建表 | **判定命令以 `docs/progress.json` 的 X6 为准**：`uv run python scripts/audit_schema.py --check-baseline`；幂等那条用「临时库法」人工实跑（`pg_dump --schema-only \| psql -d <临时库>` 复制真库结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变）。~~`cd server && migrate -path migrations -database $DATABASE_URL version`~~——**这一半今天跑不了**：golang-migrate 从未接线（PATH 上无 `migrate`，`server/go.mod` 无该依赖，`dev.py migrate` 实际执行的是容器内 `alembic upgrade head`）。所以本行此前写的命令与 progress.json 记录的命令**不一致**，已按后者更正；残余缺口记台账 C18（`schema_migrations` 版本与设计一致这一问要等执行器，落 P0-8/P1） | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致（**待执行器**）；alembic 与 golang-migrate 不冲突 | real |
+| X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test -- tests/unit/test_pytest_layering.py` | 三层全绿且无 `PytestUnknownMarkWarning`：**unit 458 / integration 57 / 分层机检 5**（2026-10-12 实测；本行此前写 unit 310 / integration 23，是 P0-4/P0-7/FE-1 之后没跟上的旧读数）。chain、e2e 两层的用例由 P0-5 与 P0-9 提供，此刻为 0 条属预期（`pytest -m chain --collect-only` 对空选择返回 rc=5，不能当判据） | mock |
 | X8 | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
 
 ## 1. 任务卡
@@ -26,7 +30,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`335aeb7e` 后缺失即拒绝启动） |
-| 输出 | `scripts/dev.py`（新，跨平台统一入口：`doctor/up/down/ps/logs/migrate/test`；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/refactor/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
+| 输出 | `scripts/dev.py`（新，跨平台统一入口；**当前命令面 10 个子命令**：`doctor/up/infra/serve/down/ps/logs/migrate/test/gen`——本卡原先列的六项只是 P0-0 当时的面，`infra`/`serve` 由 2026-10-11 补、`gen` 由 P0-3 补；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/refactor/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
 | 依赖 | 无 |
 | 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
 | 等级 | real（启动序列必须**实跑**，不是照抄文档） |
@@ -55,7 +59,7 @@
 | 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
 | 等级 | real |
 | 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`335aeb7e` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
-| 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测，含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论。<br>**2026-10-12 两处推进**：①列级失真终于有了机检——`--live` 的 payload 补 `columns`，新增离线模式 `--verify-columns` 逐列比类型/varchar 长度/NOT NULL/DEFAULT（`test_audit_schema.py` 由 19 项增至 34 项，含"解析真基线得 10 表/59 列"这条防解析器脱节的用例），up/down 的注释规则也统一了（台账 C1/C2）；②本卡最后挂着的收尾（`sqlc.yaml` 指到 `migrations/` 并与 `dev.py gen --check` 同原子改动）已完成，临时参照删除（台账 C3/C4）。**仍未 done 的两条**：`--verify-columns` 只到 mock——仓库里现存那份 `schema-baseline.json` 是补 `columns` 之前导的，命令如实返回 2，要等 Docker 起来重导一次；`probe_timestamps.py` 与 `timestamp-audit.md` 未产（本机 Docker daemon 当前不可达，且"每表时间列判定"是 X6 验收明文要求的一项） |
+| 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测（今天这套是 37 项，见下），含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论。<br>**2026-10-12 两处推进**：①列级失真终于有了机检——`--live` 的 payload 补 `columns`，新增离线模式 `--verify-columns` 逐列比类型/varchar 长度/NOT NULL/DEFAULT（`test_audit_schema.py` 由 19 项增至 **37 项**：15 项列级机检随 `--verify-columns` 落，另 3 项随 `000002` 落地补上——"每张已交付的 up 都能被解析器读懂""`ai_executions` 的 DDL 记的是 P0-7 拍板的那几条""后一张迁移新增的表只算提示不算漂移"；含"解析真基线得 10 表/59 列"这条防解析器脱节的用例），up/down 的注释规则也统一了（台账 C1/C2）；②本卡最后挂着的收尾（`sqlc.yaml` 指到 `migrations/` 并与 `dev.py gen --check` 同原子改动）已完成，临时参照删除（台账 C3/C4）。**仍未 done 的两条**：`--verify-columns` 只到 mock——仓库里现存那份 `schema-baseline.json` 是补 `columns` 之前导的，命令如实返回 2，要等 Docker 起来重导一次；`probe_timestamps.py` 与 `timestamp-audit.md` 未产（本机 Docker daemon 当前不可达，且"每表时间列判定"是 X6 验收明文要求的一项） |
 
 ### P0-3 Go 数据访问层
 
@@ -108,7 +112,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 输入 | `02` §3 端点与请求体、§3.4 幂等/取消/超时/租约语义、`backend/services/agent_runner.py` 等现有可复用能力 |
+| 输入 | `02` §3 端点与请求体、§3.4 幂等/取消/超时/租约语义、`backend/services/` 现有可复用能力（**实际接线的是 `document_loader` 与 `milvus_writer`，经 `core/dependencies.py` 的 `get_document_loader`/`get_milvus_writer` 取，见 `internal_api/registry.py:13`**；本行此前点名 `agent_runner.py`——该文件不存在，`backend/services/` 里只有 `agent.py`/`cache.py`/`conversation_storage.py`/`tools.py`/`upload_jobs.py`） |
 | 输出 | `backend/internal_api/{router.py,schemas.py,registry.py,executions.py}`（新：`/internal/v1/ai/execute`、`POST /executions`、`GET /executions/{id}`、`GET /executions/{id}/result`、`POST /executions/{id}/cancel`、`healthz/readyz`）、`task_type` 注册表（P0 只接 `PARSE_PAPER`、`INDEX_PAPER` 两种，内部调用现有 `document_loader`/`milvus_writer`）、`AICORE_INTERNAL_TOKEN` 校验中间件、`ai_executions` 表迁移（出自 `server/migrations/`，Python 侧只读写自己那张表）、compose 中 `ai-core` **不发布宿主端口** |
 | 依赖 | P0-4 |
 | 验收 | `uv run pytest -m chain -k ai_executions`：提交→轮询→领取结果，重复 `task_id` 不重跑模型（幂等），`cancel` 后过期结果被丢弃；`GET /internal/v1/ai/healthz` 无 token 时 401 |
@@ -126,7 +130,7 @@
 | 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据） |
 | 等级 | real |
 | 规模/风险 | M / 切换 upstream 是 P0 里唯一会影响现网可用性的动作：保留"一条配置回退到 Python"的回滚路径（`04` §5），且必须在切换前后各跑一次 X2 与前端手测 |
-| 当前状态 | 2026-10-12 只落了它的**判据**：`scripts/check_nginx_routes.py`（X2 与 Y4 共用）把"Go 是唯一公开入口"拆成 R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 compose 里 `ai-core` 不发布宿主端口；今天跑真仓库配置如实 **exit 1**（R1 中，`/api/` 还指向 `backend:8000`），R2/R3 已过，R4 因为 `ai-core` 还没进 compose 只记提示。本卡本体（三个新服务、upstream 切换）一行未动 |
+| 当前状态 | 2026-10-12 只落了它的**判据**：`scripts/check_nginx_routes.py`（X2 与 Y4 共用）把"Go 是唯一公开入口"拆成 R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 compose 里 `ai-core` 不发布宿主端口；今天跑真仓库配置如实 **exit 1**（R1 中，`/api/` 还指向 `backend:8000`），R2/R3 已过，R4 因为 `ai-core` 还没进 compose 只记提示。本卡本体（三个新服务、upstream 切换）一行未动。<br>**开工前必须先拍 D8**（台账 C18）：`server/migrations/` 现在有文件、**没有执行器**——PATH 上无 `migrate`、`server/go.mod` 无 golang-migrate 依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`（`dev.py:257-259`）。所以本卡除了三个服务定义，还要一并决定"Go 迁移由谁执行、什么时候执行、失败怎么办"，`09` X6 那句"`schema_migrations` 版本与设计一致"才有判据可依 |
 
 ### P0-9 P0 端到端演示与退出复核
 
@@ -170,7 +174,11 @@ P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
 可独立提交的顺序：**P0-0 → P0-1 → P0-4 → P0-2 → P0-3 → P0-5 → P0-6 → P0-7 → P0-8 → P0-9**。
 （P0-4 提前到 P0-2 之前：契约先于数据层，避免 P1 期间改契约。）
 
-## 3. 决策记录（K1–K4 已于 2026-10-09 定案，D1–D3 待拍）
+## 3. 决策记录（K1–K4 已于 2026-10-09 定案；待拍决策**以 `docs/progress.json` 的 `decisions_pending` 为准，现为 D1–D8**）
+
+> ⚠️ **两个 D  Namespace 别混**：`03` 里的 D1/D2/D3 指**功能断链**（公式检索、分层分块、元数据入库），
+> 本节与 `progress.json` 里的 D1–D8 指**待拍决策**。本轮新增 **D8**（Go 侧迁移由谁执行，见台账 C18），
+> 它把 P0-8 的一张子问题正式挂进了排期。本行此前写"D1–D3 待拍"，是只数了最早的三条。
 
 | # | 决策 | 结论与落点 | 状态 |
 | --- | --- | --- | --- |

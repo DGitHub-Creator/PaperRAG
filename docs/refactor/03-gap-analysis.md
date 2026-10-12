@@ -27,7 +27,7 @@
 | G13 | **没有 papers/documents 关系实体**：清单靠 Milvus 聚合 + 无锁文件 `ingested.json` | `documents.py:384,73-99` | A | L |
 | G14 | 无文献版本概念：同名重传硬覆盖，旧版本不可寻址，无别名切换；`drop_collection` 零调用 | `milvus_client.py:303` | A | XL |
 | G15 | `chat_messages` 覆盖式写（先 `.delete()` 再整批重插）→ 无法承载 evidence/finding 关联 | `conversation_storage.py:80` | A | M |
-| G16 | 时间戳 naive/aware 混用且列是 `timestamp without time zone`；ORM/迁移漂移 3 处 | 00-audit §4 | **A0** | L |
+| G16 | 时间戳 naive/aware 混用且列是 `timestamp without time zone`；ORM/迁移漂移 3 处（**审计时的口径**：索引/UNIQUE/时区三类）。2026-10-11 `--live` 实测 `column_diff` 是 **23 条**，口径不同且**不含类型漂移**：22 条 `no_server_default`（`chat_messages.content`、`users.username` 这类 NOT NULL 文本列——ORM 给的是 Python 侧 `default=`，库侧本就没有 server DEFAULT，基线照库抄所以也不给）＋ 1 条 `only_in_db`（`alembic_version.version_num`）。G16 点名的三件事里只有"时区"一条会进这 23 条之外的判据，索引/UNIQUE 两条记在 `05 §2.5`。读数与出处见 `AGENTS.md` §3 | 00-audit §4 | **A0** | L |
 | G17 | BM25 词频落文件、上传任务落内存/Redis TTL，均与 DB 无事务关系 | `embedding.py:80`、`upload_jobs.py:102,332` | A | L |
 | G18 | `ParentChunk` docstring 的层级语义与实现相反（文档 0=叶，实现 3=叶） | `models.py:207-210` vs `rag_utils.py:727` | **A0** | S |
 
@@ -96,7 +96,7 @@
 | 缺口 | 现状 | 里程碑 |
 | --- | --- | --- |
 | 真实浏览器 E2E | **完全没有**（0 个 Playwright/Cypress） | A0 起建，A 扩展 |
-| 依赖真实 PG 的集成测试 | 没有；会话/文档测试全 mock（`4a5e806` 提交即"mock langgraph/sentence_transformers"） | A0 |
+| 依赖真实 PG 的集成测试 | 没有；会话/文档测试全 mock（提交 `a552a5c` 即"mock langgraph/sentence_transformers"，历史重写后的等价 SHA） | A0 |
 | 依赖真实 Milvus 的集成测试 | 没有 | A0 |
 | **上传→入库→查询** 链路测试 | 没有；这正是 D1/D2/D3 能长期潜伏的原因 | **A0** |
 | 跨语言契约测试（Go↔Python） | 不存在（Go 尚未引入） | A |

@@ -138,8 +138,9 @@ requires: mock | real | e2e                 # 宣称 done 所需的最低等级
    禁止把关键流程写成仅 bash 可用的脚本；禁止 `sed -i`、`/proc`、`realpath` 等平台专属用法。
 2. **路径**：Python 侧一律 `pathlib`，Go 侧 `filepath`；文档中的路径示例给相对路径。
 3. **换行**：仓库根 `.gitattributes` 固定 `* text=auto eol=lf`（Go 与构建脚本对 CRLF 敏感）。
-4. **版本只声明下限**：Go ≥ 1.25、Node ≥ 20、Python ≥ 3.11、Docker Desktop ≥ 4.x，
-   不绑定具体补丁版本；CI 与本地用同一下限。
+4. **版本只声明下限**：Go ≥ 1.25、Node ≥ 20、Python ≥ 3.12、Docker Desktop ≥ 4.x，
+   不绑定具体补丁版本；CI 与本地用同一下限。下限以 `pyproject.toml` 的
+   `requires-python = ">=3.12"` 与 `.python-version` 为准（本条此前写 3.11，是文档偏离了约束源）。
 5. **容器优先**：`real`/`e2e` 级验证必须在 `docker compose` 起的环境里跑，避免"本机恰好装了某服务"。
 6. **端口与主机名**不硬编码；一律从 compose 环境变量或配置读取。
 

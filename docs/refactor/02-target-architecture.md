@@ -43,7 +43,7 @@ ResearchPilot/
 │   │   ├── storage/            # ObjectStorage 接口（本地卷 → S3）
 │   │   └── observability/      # slog、metrics、trace 传播
 │   ├── sql/                    # sqlc 查询
-│   ├── migrations/             # golang-migrate SQL（唯一后续 schema 来源）
+│   ├── migrations/             # golang-migrate SQL（唯一后续 schema 来源；**执行器尚未接线**，今天只有 `audit_schema.py` 与 sqlc 在读它——见 12 C18 / 决策 D8）
 │   └── go.mod
 ├── backend/                    # Python AI Core（保留现路径，逐步退掉 api 层）
 │   ├── internal_api/           # 新增：/internal/v1/ai/* 执行面

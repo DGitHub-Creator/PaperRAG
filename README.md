@@ -50,6 +50,7 @@
 | Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块 → 合并数恒为 0 |
 | 文档上传与任务进度 | 部分实现 | 任务状态默认存**进程内存**，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切 Redis；根治属 P3 的 Go Frontier） |
 | Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：三模式已落——`--check-baseline`（文件形态：非破坏 + 幂等 + down 配对）、`--verify-columns`（与快照逐列比类型/varchar 长度/NOT NULL/DEFAULT）、只读 `--live`（37 项判定单测）。`migrations/000001_baseline` 已在真库结构的临时副本上连跑两遍幂等；`000002_ai_executions` 只过了离线形态检查，未在真库执行过。剩余：时间列语义探针（要往库写）与列级比对的实跑（要重导含 `columns` 的快照） |
+| **Go 侧迁移执行器** | **未实现** | `server/migrations/` 只有**文件**，没有任何东西把它应用到库上：PATH 无 `migrate`、`server/go.mod` 无 golang-migrate 依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`。今天读这两份 up 的只有两个离线工具（`audit_schema.py` 与 sqlc）。属 P0-8，先拍 D8（谁执行 / 何时执行 / 失败怎么办） |
 | 入口路由机检（`scripts/check_nginx_routes.py`） | 已实现（判据） | X2/Y4 的判定：R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 对外 location、R4 compose 里 `ai-core` 不发布宿主端口。21 项单测。**今天对真仓库配置如实 exit 1**（R1 命中，`/api/` 还指向 Python）——切 upstream 是 P0-8 的活 |
 | PBKDF2 golden vectors（`scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json`） | 已实现（导出侧，mock 级） | X5 的输入件：10 条向量（6 正 4 负），覆盖标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000 与 UTF-8 口令；期望值由生产 `verify_password` 现算，`--check` 防漂移。**文件不含明文口令，也不含真库 `password_hash`**（`--from-db` 只取形状统计）。Go 侧 `TestVerifyLegacyHash` 未写 → X5 仍 fail（P0-6） |
 | 公式感知检索 | **未实现** | 索引构建函数零调用点，检索分支恒返回空 → P2-2 |
@@ -157,7 +158,7 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 | `curl http://127.0.0.1:8000/health` | `{"status":"ok","version":"0.1.0"}` |
 | `curl http://127.0.0.1:8000/ready` | 200，且 `database` / `redis` / `milvus` 三项都是 `connected` |
 | 浏览器打开 `http://localhost:5173` | 前端页面可注册/登录，侧栏显示用户名 |
-| `uv run python scripts/dev.py test -m unit` | 单元层全绿（全量基线：449 passed） |
+| `uv run python scripts/dev.py test -m unit` | 单元层全绿（全量基线：515 passed，其中 unit 458 / integration 57） |
 | `docker compose ps` | postgres / redis / etcd / minio / standalone / attu 六个容器 running（除 attu 外均 healthy） |
 
 两个最容易误判的点：
@@ -285,10 +286,14 @@ uv run python scripts/dev.py gen --check          # sqlc 生成物无漂移（�
 CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progress / docker。
 
 **证据等级**：`none < mock < real < e2e`，写在 `docs/progress.json` 每张卡上，
-`sync_progress.py` 会拦住「标了 done 但证据等级不够」。**2026-10-11 状态**：本机 Docker 已可正常运行，
-中间件 6 个容器与 `dev.py infra` / `serve` 两条路径均已实跑；P0-0 已取得 real 级证据
-（`up` / `/health` 200 / `migrate` exit 0），X3/X7/X8 三条 pass 仍属 mock 级；其余 real / e2e 级退出标准
-（X1/X2/X4/X5/X6 以及 P1 之后的全部）仍是 `not_run`。
+`sync_progress.py` 会拦住「标了 done 但证据等级不够」。**2026-10-12 状态**：本机 Docker 已装且可用
+（前提是 Docker Desktop 在运行；daemon 没起时 `docker info` 只报 pipe-not-found），中间件 6 个容器与
+`dev.py infra` / `serve` 两条路径均已实跑；P0-0 已取得 real 级证据（`up` / `/health` 200 / `migrate` exit 0）。
+P0 的 8 条退出标准现在是 **pass 4（X3/X6/X7/X8）· fail 3（X2/X4/X5）· not_run 1（X1）**：
+fail 那三条的判定脚本已在 2026-10-12 落地并真的跑过——X2 红在 `/api/` 还指向 Python（P0-8），
+X4/X5 红在 `server/internal/auth` 这个 Go 包还不存在（P0-6）。
+**`fail` 与 `not_run` 是两回事**：前者已判定且不合格，后者还没判。X6 虽是 pass，
+但它列出的 `migrate -path migrations` 那一半**跑不了**（golang-migrate 未接线，见 `docs/refactor/12` C18）。
 **mock 绿灯不等于完成**——这是原则②。
 
 ## 7. 改名收口（2026-10-10 完成）

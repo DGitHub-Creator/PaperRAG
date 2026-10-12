@@ -24,7 +24,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 
 ## 3. 现在的事实（2026-10-12）
 
-- 进度 **12%**（45/372 h）；38 张卡：done 6 / in_progress 4 / pending 28；24 条退出标准 pass **4**（X3 契约机检、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；P0 38%，P1/P2/P3 = 0%。
+- 进度 **12%**（45/372 h）；38 张卡：done 6 / in_progress 4 / pending 28；24 条退出标准 pass **4**（X3 契约机检、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；P0 38%，P1/P2/P3 = 0%。**fail 3**（X2/X4/X5，见本节末条）、**not_run 只有 X1**。⚠️ X6 虽 pass，但它在 `09` 里列的第二条判据 `migrate -path migrations` **今天跑不了**——golang-migrate 从未接线（台账 C18 / 决策 D8）。
 - **P0-0 已取得 real 级证据**：`doctor` 全绿 → `up` 起 7 容器、backend healthy → `/health` 容器内与宿主机均 200 → `migrate` exit 0（未标 done 仅因 `down`/`logs` 未逐个实跑）。
 - **P0-2 真库基线已交付（evidence 升到 real，X6 转 pass）**：`docs/refactor/schema-baseline.json` 由 `--live` 导出（PG 15.18，**10 张表**，alembic head `add_paper_knowledge_graph`，ORM 与真库漂移 23 处），`server/migrations/000001_baseline.{up,down}.sql`（10 表 / 59 列）已落地；离线 `--check-baseline` exit 0，并已把真库结构复制到临时库**连跑两遍均 exit 0**（幂等）。原挂的收尾（`sqlc.yaml` 指到 `migrations/`，与 `dev.py gen --check` 同一原子改动）**已于 2026-10-12 完成**。**本卡仍未 done 的两件都要 Docker**：现存快照是补 `columns` 之前导的，新命令 `--verify-columns` 如实返回 2；`probe_timestamps.py` 与时间列语义审计未产（X6 验收的第三问「每表时间列判定」）。
 - **P0-3 done（2026-10-12，mock）**：sqlc 的 schema 源已从临时参照改指真基线，`server/sql/schema.sql` 已删除；此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model。`dev.py gen` 同批加三条生成前置检查（schema 源是含 `.down.sql` 的目录 → 拒绝；`migrations/*.up.sql` 未登记 → 拒绝；生成物有孤儿 `X.sql.go` → 拒绝），各有负向用例。
@@ -38,8 +38,18 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - **2026-10-11 做过一次历史重写**（把个人信息与设备信息从仓库历史里清除）：102 个提交的作者/提交者统一为
   `ResearchPilot Dev <DGitHub-Creator@users.noreply.github.com>`；用户名、本机绝对路径、OS 与软件版本号、
   本机代理、设备级 SSH 别名已从**文件内容与提交信息**中一并清除。**此前的提交 SHA 全部改变**——
-  文档里的 SHA 引用已按 `git filter-repo` 的 commit-map 修正；若外部笔记/Issue 里还留着更早的 SHA，
-  它们指向的提交已不存在，请用 `git log --grep=<标题>` 重新定位。
+  文档里的 SHA 引用**大部分**已按 `git filter-repo` 的 commit-map 修正，但 2026-10-12 逐条核reachable性时
+  查出三类残留，处置如下（判据统一是 `git merge-base --is-ancestor <sha> HEAD`）：
+  - **已改**：`03`/`07` 里引用的 `4a5e806` → 重写后的等价提交 `a552a5c`。
+  - **故意不改**（`AGENTS.md` §7 的规则优先）：`00-audit.md` 里的 `c55129e`（审计基线声明"main @ c55129e"）
+    与 `4a5e806`、`docs/archive/refactor-06-milestone-a0.md` 里的 `2c3e58e`——dated 事实与归档件正文逐字保留。
+    前两处指向的是**重写前的对象**，它们在本地仍可从 `main` / `backup/main-pre-rewrite-20261012` 解析
+    （等价重写后分别是 `6e8c1a9` / `a552a5c`），但 `gc` 之后会消失。
+  - `2c3e58e` 另有一层：**它不是重写造成的**，是**笔误**。同一提交（A0-1"修复 apiFetch/BASE 未导入…typecheck
+    纳入 CI 门禁"）在重写前是 `2c3e583`、重写后是 `996cf777`（同文件另一处引用的正是后者），
+    末位 `e`↔`3` 一位之差。所以按 `--grep=<标题>` 定位即可，别去找回一个从来没存在过的对象。
+  - 因此外部笔记/Issue 里更老的 SHA 一律按 "`git log --all --grep=<提交标题>` 重新定位" 处理，
+    不要直接 `git show`。
 
 ## 4. ⚠️ 已被推翻的旧结论（**不要重复相信**）
 
@@ -48,7 +58,10 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「本机缺一次重启才能用 Docker」「WSL2 可选组件装完待重启」 | **错**。真因是 Docker Desktop 没在运行；启动后 **5 秒**引擎即就绪 |
 | 「Docker Desktop 是 per-user 安装 / CLI 29.8.2 / Desktop 4.94」 | **错**。系统级安装（不是 per-user）；具体版本号已从文档移除（避免暴露设备信息） |
 | 「只验骨架可跳过 LLM key」 | **错**。`app.py` 的 startup 无条件调 `validate_config()`，缺 `LLM_API_KEY`/`LLM_MODEL` 即 `RuntimeError` 拒绝启动 |
-| 「测试基线 448 / 333 / 307 项」 | 现状 **515 passed**（2026-10-12，unit 458 / integration 57）；那些数字是 2026-10-09 的历史记录 |
+| 「测试基线 448 / 333 / 307 项」 | 现状 **515 passed**（2026-10-12 复跑，39.8s；unit 458 / integration 57）；那些数字是 2026-10-09 的历史记录 |
+| 「`09` X6 有两条判定命令，`pass` 等于两条都跑过」 | **只跑过一条**。`cd server && migrate -path migrations -database $DATABASE_URL version` **今天无法执行**：PATH 上没有 `migrate`，`server/go.mod` 里没有 golang-migrate 依赖，`dev.py migrate` 实际是容器内 `alembic upgrade head`（`dev.py:257-259`）。`server/migrations/` 现在只有 `audit_schema.py` 与 sqlc 两个**离线读者**，没有执行器。X6 的 real 级幂等证据来自「临时库法」人工实跑。命令列已按 `progress.json` 更正，接线属 P0-8/P1（台账 C18） |
+| 「文档里的数量/命令面是按机器现状写的」 | **不是**。2026-10-12 扫了一遍，全部已就地更正：`09` 的 unit 310/integration 23 → **458/57**、`dev.py` 命令面六项 → **10 个子命令**（漏 `infra`/`serve`/`gen`）、`audit_schema` 判定单测 19/34 → **37**、`07` 的 391 → 458 与 449 → 515、`08` 的 Python ≥ 3.11 → **≥ 3.12**（约束源是 `pyproject` 的 `requires-python`）、`05 §2.5` 的"第二个后续迁移" → **第三个**（`000002` 已被 `ai_executions` 占了）、`05 §3` 的 `000004_paper_chunks.sql` → **`.{up,down}.sql` 且必须同批登记 sqlc**。还修掉两处**互相矛盾**的记录：`p0-environment.md` §4 曾让人把 `TEMP`/`TMP` 指到**工作区内**，与 §5 的"必须指到工作区外、否则产生删不掉的毒目录"正相反——以 §5 为准 |
+| `09` P0-7 的输入行点名 `backend/services/agent_runner.py` | **该文件不存在**（目录里只有 `agent.py`/`cache.py`/`conversation_storage.py`/`tools.py`/`upload_jobs.py`）。P0-7 真正接线的复用点是 `core/dependencies.py` 的 `get_document_loader`/`get_milvus_writer`（见 `internal_api/registry.py:13`），已按实引用改写 |
 | 「X2/X5 有判定命令，所以它们是 not_run（等着跑）」 | **错**。那两条命令引用的 `scripts/check_nginx_routes.py`、`scripts/export_pbkdf2_golden.py` **当时根本不存在**，等于退出标准没有判据。2026-10-12 两个脚本落地，三条退出（X2/X4/X5）转 `fail` 并写明红在哪；`sync_progress.py` 同批加了"命令里引用的脚本必须存在"的机检 |
 | 「`cp .env.example .env` 就能起」 | **旧模板会炸**：`KEY= #值` 的行内注释被 python-dotenv 当成真实值（`int('#1024')`），2026-10-10 已把 11 行改成整行注释 |
 | 「compose 的 backend 开箱可用」 | **缺 `target: backend`**：Dockerfile 多阶段且末阶是 nginx，不写 target 会构建出 nginx 镜像 → 永远 unhealthy（已修） |

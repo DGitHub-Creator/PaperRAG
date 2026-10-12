@@ -97,6 +97,9 @@ cd frontend && npm run dev            # vite dev server
 | 4 | `dev.py migrate` | 同上 | 2026-10-10 | ✅ pass | exit 0；backend 启动时已自动 `alembic upgrade head`，手动复跑无变更 |
 | 5 | `test -m unit` / `-m integration` | Windows（本机） | 2026-10-09 | ✅ pass | 391 / 57 通过；容器环境需复现一次 |
 | 6 | 全量 `uv run pytest -q` | Windows（本机） | 2026-10-09 | ✅ pass | 448 通过（2026-10-09 本机基线）；`-m chain` 当前收集 0 项、exit=5，不是绿 |
+| 5b | `test -m unit` / `-m integration` | Windows（本机） | 2026-10-12 | ✅ pass | **458 / 57**；`--collect-only` 取的数，X7 期望列读的就是这两个数（此前 `09` 写的 310 / 23 是 2026-10-09 的读数） |
+| 6b | 全量 `uv run pytest -q` | Windows（本机） | 2026-10-12 | ✅ pass | **515 passed / 39.75s**；前置是本机那条——`TEMP`/`TMP` 指到**工作区外**的空目录，否则 42 项 `tmp_path` 用例以 `PermissionError` 假失败（见 §4 第 15 条） |
+| 7 | **X7 的整条判定命令**（`dev.py test -m unit && -m integration && test -- tests/unit/test_pytest_layering.py`） | Windows（本机） | 2026-10-12 | ✅ exit 0 | 三段都跑通，分层机检 **5** 项绿；这就是 `progress.json` 里 X7 `result=pass` 对应的实跑，此前这张表只记过逐层单独跑（第 5 行），"整条命令"这一级没留过痕 |
 
 **2026-10-10 状态更正（推翻 2026-10-09 那版"缺一次重启"的结论）**：真因不是 WSL 组件待重启，
 而是 **Docker Desktop 根本没在运行**——`Start-Process 'Docker Desktop.exe'` 之后 **5 秒**引擎就绪，
@@ -174,11 +177,20 @@ cd frontend && npm run dev            # vite dev server
    后旧数据盘被重新挂载、数据无损失）。注意 Docker Desktop 会重写该文件：代理键名是
    `ProxyHTTPMode`（大写 HTTP），写错大小写等于没写。
 15. **受限运行下 `tmp_path` 类测试必失败**：`PermissionError: [WinError 5] ...\Temp\pytest-of-<用户名>`，
-   与仓库无关——把 `TEMP`/`TMP` 指到工作区内可写目录再跑即可（本机实测集成层由
-   `46 passed / 1 failed / 10 errors` 变为 `56 passed / 1 failed`）。
+   与仓库无关。**做法是把 `TEMP`/`TMP` 指到工作区外的一个空目录**再跑（本机用 `/d/tmp/rp-tmp`），
+   不要把临时目录放进仓库——留在工作区内的 `pytest-of-*`/`.tmp-pytest` 会带上创建时的完整性标签，
+   权限策略一变就变成**谁都删不掉的毒目录**（详见 `AGENTS.md` §5）。也不要给 pytest 传 `--basetemp`
+   指向工作区内的既有目录。最早那次实测是集成层 `46 passed / 1 failed / 10 errors` → `56 passed / 1 failed`；
+   全量口径下不改临时目录会报成 `407 passed, 42 errors`，改指工作区外后 2026-10-12 实测 **515 passed / 39.8s**。
 
 ## 5. 与本卡之外的关系
 - `dev.py seed` 不在本卡：种开发数据需要先跑通上传→入库链路（属 P1），
   现在写只会是一个假装能用的空壳命令。已在 `09` P0-0 输出项标注顺延。
-- Go 侧的 schema 迁移用 `server/migrations/` + golang-migrate（P0-2 起），与这里的 alembic
-  并存到有单一写者为止；两者操作的表由 `contracts/table-acl.md`（P0-4）划界。
+- **Go 侧的 schema 迁移目前只有"文件"，没有"执行器"**：`server/migrations/` 由 `000001_baseline`
+  与 `000002_ai_executions` 两份 up/down 组成，但**没有任何东西会把它应用到库上**——PATH 上没有 `migrate`，
+  `server/go.mod` 里没有 golang-migrate 依赖，`dev.py migrate` 实际执行的是容器内的
+  `alembic upgrade head`（`scripts/dev.py:257-259`）。今天读这两份 up 的只有两个离线工具：
+  `audit_schema.py --check-baseline`（审文件形态）与 sqlc（生成 model）。
+  基线的 real 级幂等证据来自「临时库法」人工实跑（`AGENTS.md` §5），不是某条已接线的命令。
+  **接线属 P0-8/P1**，残余缺口记台账 C18；届时才与这里的 alembic 并存到有单一写者为止，
+  两者操作的表由 `contracts/table-acl.md`（P0-4）划界。
