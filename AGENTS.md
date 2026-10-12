@@ -28,7 +28,9 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - **P0-0 已取得 real 级证据**：`doctor` 全绿 → `up` 起 7 容器、backend healthy → `/health` 容器内与宿主机均 200 → `migrate` exit 0（未标 done 仅因 `down`/`logs` 未逐个实跑）。
 - **P0-2 真库基线已交付（evidence 升到 real，X6 转 pass）**：`docs/refactor/schema-baseline.json` 由 `--live` 导出（PG 15.18，**10 张表**，alembic head `add_paper_knowledge_graph`，ORM 与真库漂移 23 处），`server/migrations/000001_baseline.{up,down}.sql`（10 表 / 59 列）已落地；离线 `--check-baseline` exit 0，并已把真库结构复制到临时库**连跑两遍均 exit 0**（幂等）。原挂的收尾（`sqlc.yaml` 指到 `migrations/`，与 `dev.py gen --check` 同一原子改动）**已于 2026-10-12 完成**。**本卡仍未 done 的两件都要 Docker**：现存快照是补 `columns` 之前导的，新命令 `--verify-columns` 如实返回 2；`probe_timestamps.py` 与时间列语义审计未产（X6 验收的第三问「每表时间列判定」）。
 - **P0-3 done（2026-10-12，mock）**：sqlc 的 schema 源已从临时参照改指真基线，`server/sql/schema.sql` 已删除；此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model。`dev.py gen` 同批加三条生成前置检查（schema 源是含 `.down.sql` 的目录 → 拒绝；`migrations/*.up.sql` 未登记 → 拒绝；生成物有孤儿 `X.sql.go` → 拒绝），各有负向用例。
-- 测试基线 **475 passed**（unit + integration）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
+- 测试基线 **515 passed**（unit 458 / integration 57）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
+- **2026-10-12：X2/X4/X5 从 `not_run` 改为 `fail`**——判定命令现在**都可跑**（新建 `scripts/check_nginx_routes.py`＋`scripts/export_pbkdf2_golden.py`→`contracts/pbkdf2_golden.json`），跑出来是红的：X2 红在 `/api/` 还指向 Python（P0-8），X4/X5 红在 `server/internal/auth` 这个 Go 包不存在（P0-6）。已核实 `go test ./internal/auth/...` 与 `go test -run <不存在的测试>` 都 **exit 1 而不是 0**（不会"没测试也算过"）。`sync_progress.py` 新增机检：**in_progress/done 阶段**的退出命令引用的 `scripts/*.py` 必须存在（未来阶段允许预留，否则门禁天天红）。
+- **golden vectors 的"不含密码明文"落成了可机检的形式**：向量是合成口令的摘要，口令由 `vector_id` 按文件内 `password_rule` 重建（`password = "ResearchPilot golden vector " + vector_id`，UTF-8）；每条期望值都由**生产裁判** `backend/core/auth.py:verify_password` 现算，不一致就拒绝导出。真库 `password_hash` **有意不导出**（提交进仓库就是离线爆破机），`--from-db` 只取形状统计并检查覆盖面（含"库里还有 bcrypt 族 → Go 接管会把这批人锁死"）。
 - Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）；当前 11 个镜像 / 约 4.3 GB，**没有 backend 镜像**（按需构建）。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已落地但从未在真 PG 执行过**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`，`--check-baseline` exit 0。所以 P0-7 仍停 mock，不缺迁移文件而缺真库幂等验证 + compose 端口（P0-8）。
@@ -46,7 +48,8 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「本机缺一次重启才能用 Docker」「WSL2 可选组件装完待重启」 | **错**。真因是 Docker Desktop 没在运行；启动后 **5 秒**引擎即就绪 |
 | 「Docker Desktop 是 per-user 安装 / CLI 29.8.2 / Desktop 4.94」 | **错**。系统级安装（不是 per-user）；具体版本号已从文档移除（避免暴露设备信息） |
 | 「只验骨架可跳过 LLM key」 | **错**。`app.py` 的 startup 无条件调 `validate_config()`，缺 `LLM_API_KEY`/`LLM_MODEL` 即 `RuntimeError` 拒绝启动 |
-| 「测试基线 448 / 333 / 307 项」 | 现状 **472 passed**（2026-10-12）；那些数字是 2026-10-09 的历史记录 |
+| 「测试基线 448 / 333 / 307 项」 | 现状 **515 passed**（2026-10-12，unit 458 / integration 57）；那些数字是 2026-10-09 的历史记录 |
+| 「X2/X5 有判定命令，所以它们是 not_run（等着跑）」 | **错**。那两条命令引用的 `scripts/check_nginx_routes.py`、`scripts/export_pbkdf2_golden.py` **当时根本不存在**，等于退出标准没有判据。2026-10-12 两个脚本落地，三条退出（X2/X4/X5）转 `fail` 并写明红在哪；`sync_progress.py` 同批加了"命令里引用的脚本必须存在"的机检 |
 | 「`cp .env.example .env` 就能起」 | **旧模板会炸**：`KEY= #值` 的行内注释被 python-dotenv 当成真实值（`int('#1024')`），2026-10-10 已把 11 行改成整行注释 |
 | 「compose 的 backend 开箱可用」 | **缺 `target: backend`**：Dockerfile 多阶段且末阶是 nginx，不写 target 会构建出 nginx 镜像 → 永远 unhealthy（已修） |
 | 「旧名 PaperRAG 还留在 go module path / Redis 前缀 / Prometheus 指标名 / 契约 $id」 | 2026-10-10 全部改为 `researchpilot`；**唯一保留旧字面量的是安全黑名单**（`paperrag-admin-2026`，删了等于把泄露口令重新变成可用口令） |
@@ -95,11 +98,17 @@ uv run python scripts/dev.py up
 
 ## 8. 提交纪律
 
-Conventional Commits（`fix(p0):` / `feat(dev):` / `chore(repo):` …）＋**每提交同更 `docs/progress.json`**（并重跑生成物）＋ 三个门禁全绿：
+Conventional Commits（`fix(p0):` / `feat(dev):` / `chore(repo):` …）＋**每提交同更 `docs/progress.json`**（并重跑生成物）＋ 门禁全绿：
 
 ```bash
 uv run python scripts/sync_progress.py --check
 uv run python scripts/check_contracts.py
 uv run python scripts/check_frontend.py
-uv run python -m pytest -q            # 现状 449 passed
+uv run python scripts/audit_schema.py --check-baseline
+uv run python scripts/export_pbkdf2_golden.py --check
+uv run python -m pytest -q            # 现状 515 passed（unit 458 / integration 57）
+cd server && gofmt -l . && go vet ./... && go test ./...
 ```
+
+**`check_nginx_routes.py` 不在这份清单里**：它是 X2/Y4 的判据，今天必然红（`/api/` 还指向
+Python）。把一个阶段性的真实状态挂成提交门禁，结果只会是人人加 `|| true`，把判据废掉。

@@ -65,6 +65,39 @@ class TestStructuralRules:
         data["phases"][0]["exits"][0]["command"] = ""
         assert any("缺判定命令" in e for e in sync_progress.validate(data))
 
+    def test_current_phase_exit_may_not_reference_a_missing_script(self):
+        """判定命令里写的 scripts/*.py 不存在 → 违规。
+
+        这条规则防的是"退出标准看起来有办法、实际上跑不动"：X2/X5 曾经就是这样，
+        progress.json 里有命令，仓库里没有那个脚本。
+        """
+        data = make_data()
+        data["phases"][0]["exits"][0]["command"] = "uv run python scripts/no_such_gate.py"
+        errors = sync_progress.validate(data)
+        assert any("scripts/no_such_gate.py" in e for e in errors), errors
+
+    def test_future_phase_may_reserve_a_script_it_has_not_written_yet(self):
+        """P2/P3 的命令引用的是那一阶段要新建的脚本。
+
+        要求它现在就存在会把"未来的活"变成"今天的违规"，门禁天天红，人人绕过——
+        那是把检查废掉的另一种方式，所以规则只管 in_progress/done 的阶段。
+        """
+        data = make_data()
+        data["phases"][0]["status"] = "pending"
+        data["phases"][0]["exits"][0]["command"] = "uv run python scripts/rebuild_chunks.py"
+        assert sync_progress.validate(data) == []
+
+    def test_exit_command_with_an_existing_script_passes(self):
+        data = make_data()
+        data["phases"][0]["exits"][0]["command"] = "uv run python scripts/check_nginx_routes.py && echo ok"
+        assert sync_progress.validate(data) == []
+
+    def test_only_script_paths_are_checked(self):
+        """命令里提到 openapi.yaml / 别的 .py 不该被当成脚本引用。"""
+        data = make_data()
+        data["phases"][0]["exits"][0]["command"] = "uv run python scripts/check_contracts.py"
+        assert sync_progress.validate(data) == []
+
     def test_unknown_dependency(self):
         data = make_data()
         data["phases"][0]["tasks"][0]["deps"] = ["P9-9"]

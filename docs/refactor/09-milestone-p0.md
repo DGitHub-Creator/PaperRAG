@@ -11,10 +11,10 @@
 | # | 标准 | 判定命令（仓库根执行，除非注明） | 期望输出 | 等级 |
 | --- | --- | --- | --- | --- |
 | X1 | 骨架能起来 | `docker compose up -d` 后 `curl http://localhost/api/v1/health` 与 `/api/v1/ready` | 两条均 200；`compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running | real |
-| X2 | Go 是唯一公开入口 | `docker compose exec nginx grep -R "proxy_pass" /etc/nginx/conf.d/`（或读 `nginx/nginx.conf`）+ 浏览器 Network 面板核对 | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location | e2e |
+| X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py`（默认同时读 `nginx/nginx.conf` 与 `docker-compose.yml`） | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location；compose 里 `ai-core` 不发布宿主端口。**2026-10-12 判定脚本已落**（`tests/unit/test_check_nginx_routes.py` 21 项，每条规则一正一篡改）；真配置今天**如实 exit 1**（R1：`/api/` 还指向 `backend`），这是 P0-8 的活，不是脚本缺陷。level 仍是 e2e：静态判定只证明"配置写对了"，运行中的 nginx 与配置一致要等 `docker compose up` | e2e |
 | X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K4 已定案落地，契约只剩 `{"detail": ...}` 一种信封；K2/K3 已定案，落点分别在 P0-3/P0-8，见 §3 | mock |
-| X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向） | real |
-| X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users` | mock→real |
+| X4 | 认证垂直切片可用 | `cd server && go test ./internal/auth/... ` + `uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向）。**2026-10-12 实跑 rc=1**：`server/internal/auth` 这个包还不存在（是 P0-6 的产出，不是环境问题）。已核实 `go test` 在包缺失时报错退出 1，不会退化成"没有测试也算过" | real |
+| X5 | 旧密码不被锁死 | `uv run python scripts/export_pbkdf2_golden.py` 后 `cd server && go test -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users`。**2026-10-12：导出件已落**——`contracts/pbkdf2_golden.json` 10 条向量（6 正 4 负），形状轴覆盖 `04` §风险表点名的三件事（标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000）再加 UTF-8 口令；每条的期望值都由生产裁判 `backend/core/auth.py:verify_password` 现算，裁判不一致就拒绝导出。**文件里没有明文口令**：口令由 `vector_id` 按 `password_rule` 重建，真库 `password_hash` 有意不导出（`--from-db` 只取形状统计）。`TestVerifyLegacyHash` 仍不存在 → 整条命令 rc=1 | mock→real |
 | X6 | Go 不重复建表 | `cd server && migrate -path migrations -database $DATABASE_URL version` 与 `uv run python scripts/audit_schema.py --check-baseline` | 基线迁移为**非破坏性**（无 DROP）；`schema_migrations` 版本与设计一致；alembic 与 golang-migrate 不冲突 | real |
 | X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test -- tests/unit/test_pytest_layering.py` | unit 310 / integration 23 / 分层机检 5 全绿，无 `PytestUnknownMarkWarning`。chain、e2e 两层的用例由 P0-5 与 P0-9 提供，此刻为 0 条属预期（`pytest -m chain --collect-only` 对空选择返回 rc=5，不能当判据） | mock |
 | X8 | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
@@ -97,11 +97,12 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | `backend/core/auth.py` 现状语义（`335aeb7e`）：token `type` 分型、角色以 DB 为准、`ADMIN_INVITE_CODE` 未配置则禁 admin 注册、`JWT_SECRET_KEY` 无默认值；P0-3 数据层 |
-| 输出 | `server/internal/auth/{jwt.go,password.go,handler.go,service.go}`、`scripts/export_pbkdf2_golden.py`（新，从真实库导出 N 条哈希做 golden vectors，**不含密码与盐明文**）、`server/migrations/_auth_compat.*.sql`（仅在需要补列时；**号不预定**，按 `05 §2.6` 取当时的下一个空位——`000002` 已给 `ai_executions`） |
+| 输出 | `server/internal/auth/{jwt.go,password.go,handler.go,service.go}`、`scripts/export_pbkdf2_golden.py`（**2026-10-12 已交付**，导出件 `contracts/pbkdf2_golden.json`；口径按 `07` §兼容面表"不含密码与盐明文"落成"**不含明文口令、也不含真库 password_hash**"——向量是合成口令的摘要，口令由 `vector_id` 按文件里的 `password_rule` 重建；真库只在 `--from-db` 下贡献**形状统计**，摘要一律不带出仓库）、`server/migrations/_auth_compat.*.sql`（仅在需要补列时；**号不预定**，按 `05 §2.6` 取当时的下一个空位——`000002` 已给 `ai_executions`） |
 | 依赖 | P0-3、P0-4 |
 | 验收 | X4、X5；`cd frontend && npm run typecheck` 仍 0 error（Go 侧响应形状与前端一致） |
 | 等级 | real（Python↔Go 互验 token 必须真实跑） |
 | 规模/风险 | L / 最高风险是 PBKDF2 编码差异（标准 vs urlsafe b64、盐长度、迭代数）。**Go 接管 `users` 的前置条件就是 X5 全绿**，未过则切片停在"只签发不接管"状态 |
+| 当前状态 | 2026-10-12 只动了输入件：`scripts/export_pbkdf2_golden.py` 与 `contracts/pbkdf2_golden.json` 落地（10 条向量：6 正 4 负，覆盖三轴编码差异 + UTF-8 口令 + 三种破坏形状），`tests/unit/test_export_pbkdf2_golden.py` 15 项把它钉在四件事上——期望值等于生产裁判的返回值、形状确实在变、文件可逐字重建（`--check`）、`coverage_check` 能指出未覆盖的 rounds/盐长与**残留 bcrypt 族**（那批人会被锁死，必须显式处置）。**Go 侧一行未写**：`server/internal/auth` 目录还不存在，所以 X4/X5 两条命令今天都是 rc=1（已核实不是"没测试也算过"的假绿）。`07` §兼容面表里与它并列的 JWT golden tokens（X4 的互验）同样未产 |
 
 ### P0-7 ai-core 内部执行面
 
@@ -125,6 +126,7 @@
 | 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据） |
 | 等级 | real |
 | 规模/风险 | M / 切换 upstream 是 P0 里唯一会影响现网可用性的动作：保留"一条配置回退到 Python"的回滚路径（`04` §5），且必须在切换前后各跑一次 X2 与前端手测 |
+| 当前状态 | 2026-10-12 只落了它的**判据**：`scripts/check_nginx_routes.py`（X2 与 Y4 共用）把"Go 是唯一公开入口"拆成 R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 compose 里 `ai-core` 不发布宿主端口；今天跑真仓库配置如实 **exit 1**（R1 中，`/api/` 还指向 `backend:8000`），R2/R3 已过，R4 因为 `ai-core` 还没进 compose 只记提示。本卡本体（三个新服务、upstream 切换）一行未动 |
 
 ### P0-9 P0 端到端演示与退出复核
 

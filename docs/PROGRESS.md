@@ -6,7 +6,7 @@
 ## 一句话现状
 
 - **完成了多少**：12%（按工时加权；45/372 小时，任务完成 6/38，验收 4/24 通过）
-- **现在在哪**：2026-10-12 现场实况：进度 12%（45/372 h），38 张卡 done 6 / in_progress 4 / pending 28，24 条退出标准 pass 4（X3/X6/X7/X8）。本轮把 Go 数据访问层收口：**P0-3 done（mock）**——`sqlc.yaml` 的 schema 源从临时参照切到 P0-2 真基线 `server/migrations/000001_baseline.up.sql`，此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model，`server/sql/schema.sql` 已删除；切换那次 diff 的诚实结论是 `User` struct 与三条查询逐字未变，因为 **sqlc 不把列默认值编码进 Go 类型**，所以「靠 diff 核对 DEFAULT」这条原计划做不到，DEFAULT/varchar 长度/NOT NULL 的机检改由新命令 `audit_schema.py --verify-columns` 承担（台账 C1–C4 闭）。`dev.py gen` 同批加三条生成前置检查（schema 源是含 .down.sql 的目录 / 新 up 未登记 / 生成物有孤儿），三条都在入口生效并各有负向用例。**P0-2 仍 in_progress**，两条剩余都要 Docker：仓库现存 `schema-baseline.json` 没有 `columns`（`--verify-columns` 如实返回 2，要重跑 `--live`）、`probe_timestamps.py` 与时间列语义审计未产。Docker Desktop 本身可用（启动后 5 秒引擎就绪），本轮 daemon 不可达所以 real 级补证排队。P0-0 证据 real（down/logs 未逐个实跑，故不标 done）；P0-1 的 real 缺口同样是 Docker。P0-7 的 `ai_executions` 迁移本轮已落地（`000002_ai_executions.{up,down}.sql`，17 列逐条回指 `executions.py` 的 dataclass，已登记进 sqlc 并生成 `AiExecution`，`--check-baseline` 过），但它**从未在真 PG 上跑过**，所以这张卡仍停 mock：距 done 差「真库连跑两次验幂等」＋ compose 端口（属 P0-8）。当前测试基线：unit + integration 全绿（本轮 475 passed；chain 与 e2e 各 0 条用例，`-m chain` 收 0 项时 pytest 返回 exit=5 而不是 0，不能算绿）。日常开发走源码运行（`dev.py infra` + `serve`），全栈容器只用于 P0-8/P0-9 的容器级验收。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞
+- **现在在哪**：2026-10-12 现场实况：进度 12%（45/372 h），38 张卡 done 6 / in_progress 4 / pending 28，24 条退出标准 pass 4（X3/X6/X7/X8）。本轮把 Go 数据访问层收口：**P0-3 done（mock）**——`sqlc.yaml` 的 schema 源从临时参照切到 P0-2 真基线 `server/migrations/000001_baseline.up.sql`，此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model，`server/sql/schema.sql` 已删除；切换那次 diff 的诚实结论是 `User` struct 与三条查询逐字未变，因为 **sqlc 不把列默认值编码进 Go 类型**，所以「靠 diff 核对 DEFAULT」这条原计划做不到，DEFAULT/varchar 长度/NOT NULL 的机检改由新命令 `audit_schema.py --verify-columns` 承担（台账 C1–C4 闭）。`dev.py gen` 同批加三条生成前置检查（schema 源是含 .down.sql 的目录 / 新 up 未登记 / 生成物有孤儿），三条都在入口生效并各有负向用例。**P0-2 仍 in_progress**，两条剩余都要 Docker：仓库现存 `schema-baseline.json` 没有 `columns`（`--verify-columns` 如实返回 2，要重跑 `--live`）、`probe_timestamps.py` 与时间列语义审计未产。Docker Desktop 本身可用（启动后 5 秒引擎就绪），本轮 daemon 不可达所以 real 级补证排队。P0-0 证据 real（down/logs 未逐个实跑，故不标 done）；P0-1 的 real 缺口同样是 Docker。P0-7 的 `ai_executions` 迁移本轮已落地（`000002_ai_executions.{up,down}.sql`，17 列逐条回指 `executions.py` 的 dataclass，已登记进 sqlc 并生成 `AiExecution`，`--check-baseline` 过），但它**从未在真 PG 上跑过**，所以这张卡仍停 mock：距 done 差「真库连跑两次验幂等」＋ compose 端口（属 P0-8）。当前测试基线：unit + integration 全绿（本轮 515 passed；chain 与 e2e 各 0 条用例，`-m chain` 收 0 项时 pytest 返回 exit=5 而不是 0，不能算绿）。**X2/X4/X5 三条从 not_run 改成 fail 并写明理由**：判定命令现在都可跑了（`scripts/check_nginx_routes.py` 与 `scripts/export_pbkdf2_golden.py`＋`contracts/pbkdf2_golden.json` 已落），跑出来是红的——X2 红在 `/api/` 还指向 Python（P0-8 的活），X4/X5 红在 `server/internal/auth` 这个 Go 包还不存在（P0-6 的活）；已核实 `go test` 在包缺失时报错退 1，不会假绿。`sync_progress.py` 同批新增一条机检：正在验收的阶段（in_progress/done）里，退出标准命令引用的 `scripts/*.py` 必须存在（未来阶段保留预留权）。日常开发走源码运行（`dev.py infra` + `serve`），全栈容器只用于 P0-8/P0-9 的容器级验收。K1–K4 已定案，剩 D1/D2/D3 待拍且均不阻塞
 - **还差多少**：待办 28 项 / 292 小时（约 14.6-19.5 周），进行中 4 项；可立即开工：P0-6
 
 ## 阶段进度
@@ -27,10 +27,10 @@
 | # | 标准 | 判定命令 | 等级 | 结果 |
 | --- | --- | --- | --- | --- |
 | X1 | Go/ai-core/基础设施都能起来 | `docker compose up -d && curl http://localhost/api/v1/health` | 真实链路 | ⬜ 未跑 |
-| X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py` | 端到端 | ⬜ 未跑 |
+| X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py` | 端到端 | ❌ fail |
 | X3 | 契约已锁定且有结构校验 | `uv run python scripts/check_contracts.py` | mock | ✅ pass |
-| X4 | 认证垂直切片可用且跨语言互验 token | `cd server && go test ./internal/auth/... && uv run pytest -m chain -k go_auth` | 真实链路 | ⬜ 未跑 |
-| X5 | Go 能验旧密码哈希（接管 users 的前置条件） | `uv run python scripts/export_pbkdf2_golden.py && cd server && go test -run TestVerifyLegacyHash` | 真实链路 | ⬜ 未跑 |
+| X4 | 认证垂直切片可用且跨语言互验 token | `cd server && go test ./internal/auth/... && uv run pytest -m chain -k go_auth` | 真实链路 | ❌ fail |
+| X5 | Go 能验旧密码哈希（接管 users 的前置条件） | `uv run python scripts/export_pbkdf2_golden.py && cd server && go test -run TestVerifyLegacyHash` | 真实链路 | ❌ fail |
 | X6 | Go 不重复建表，基线迁移非破坏性且幂等 | `uv run python scripts/audit_schema.py --check-baseline` | 真实链路 | ✅ pass |
 | X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit && uv run python scripts/dev.py test -m integration && uv run python scripts/dev.py test -- tests/unit/test_pytest_layering.py` | mock | ✅ pass |
 | X8 | 进度产物与真相源一致（每次提交的同步门禁） | `uv run python scripts/sync_progress.py --check` | mock | ✅ pass |

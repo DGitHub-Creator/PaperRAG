@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "algorithm": "pbkdf2_sha256",
+  "password_rule": "password = \"ResearchPilot golden vector \" + vector_id, encoded as UTF-8",
+  "warning": "本文件的 hash 字段是合成口令的摘要，不是任何真实用户的凭据；真库的 password_hash 有意不导出（可离线爆破），只以 live_shape 的形式记录形状。",
+  "vectors": [
+    {
+      "vector_id": "baseline",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$40000$9rJ5dAGBilpVauA9RZKx2w==$2lSsqdV2T0bsuMnz5oZWcPmwMcDdxl22CYzpbeDYV+g=",
+      "note": "今天生产写入的形状：16 字节盐 + 标准 base64，Python 与 Go 都必须接受"
+    },
+    {
+      "vector_id": "legacy-260000",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 260000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$260000$xCLt4UdvUT+bZFNG+UFxaQ==$y659iZoYb6u8G/NOY2NR2rt2O0d1mmGbvAempRhCajc=",
+      "note": "旧迭代数（260000 曾在测试里出现过），格式解析必须与迭代数无关"
+    },
+    {
+      "vector_id": "short-salt",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 8,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$40000$NAGXdRq2RMY=$xfKWxjhqxFn1Rs1/sS3u3/qHDH3IN+3pa83N+iEhDHo=",
+      "note": "盐长度不是常量：按 16 硬编码的实现会在这里露出来"
+    },
+    {
+      "vector_id": "long-salt",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 32,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$40000$w1OQMWMxL91wLaGh8/Ia4J8LLJUaNLpSdyMLYrE0nPg=$VSG9Nedgr1JSaPecrQhe54gUVLsBHb3FdddVOXE7s/o=",
+      "note": "同上，另一侧"
+    },
+    {
+      "vector_id": "urlsafe-salt",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "urlsafe",
+      "expect_verify": false,
+      "hash": "pbkdf2_sha256$40000$-__7__v_-__7__v_-__7_w==$Q5e5kJ71LAqgSbLSxzLlffZkBxEbOrHmHaV4jw3WRv4=",
+      "note": "04 §风险表点名的第一条：标准 vs urlsafe。固定 salt 字节含 0xFB 0xFF，保证标准编码里的 `+/` 在 urlsafe 里变成 `-_`。实测 Python 自己**验不过**这条（b64decode 要么抛异常要么把 `-_` 当非法字符丢掉），所以库里不可能存在这种串——它是负向向量：Go 若宽容到把 urlsafe 也接了，就会在这里返回 true，与裁判不一致，而那正是「旧密码被误接受」的方向"
+    },
+    {
+      "vector_id": "中文🔒",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$40000$rCUok3q3JUm0xi9k2thweA==$oZKHFq2zpW+qQA91onq6lvn/35IH98gl1XKMRgw6FUA=",
+      "note": "口令必须按 UTF-8 字节进 KDF。这条故意把 vector_id 本身写成非 ASCII——按上面的规则重建口令时，Go 拿到的就是含多字节字符的串，按 Latin-1 展开或先做 NFC 归一化的实现会在这里与裁判分道"
+    },
+    {
+      "vector_id": "production-rounds",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 310000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": true,
+      "hash": "pbkdf2_sha256$310000$5eDkopMP0HFrJYkp1veJgg==$ZekjE1Sh4P7KasKmF+T+RFi0iH0GyGRDJfllybX1E8k=",
+      "note": "生产真实迭代数（core/config/auth.py 的默认值），只 1 条，避免测试变慢"
+    },
+    {
+      "vector_id": "wrong-digest",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 32,
+      "b64_variant": "standard",
+      "expect_verify": false,
+      "hash": "pbkdf2_sha256$40000$TtuDh+/a6Ah61Ezu9bR61w==$2AGeQlv6P/OZSGVEnMPHo1M7LkoQpDuXiqhrFNnwB7c=",
+      "note": "摘要改一个 bit 必须验不过"
+    },
+    {
+      "vector_id": "truncated-digest",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 16,
+      "b64_variant": "standard",
+      "expect_verify": false,
+      "hash": "pbkdf2_sha256$40000$U66Kbp+m/mzCvRgGF51w6w==$moVdHVEVCWi3oTurZffIPQ==",
+      "note": "摘要长度不足（截到 16 字节）必须验不过，不能左对齐补零后放过"
+    },
+    {
+      "vector_id": "malformed-segments",
+      "algorithm": "pbkdf2_sha256",
+      "rounds": 40000,
+      "salt_bytes": 16,
+      "digest_bytes": 0,
+      "b64_variant": "standard",
+      "expect_verify": false,
+      "hash": "pbkdf2_sha256$40000$gUlwFMBJ1hEqpMRHYLDWYg==",
+      "note": "少一段的字符串不是本格式，必须拒绝而不是抛异常"
+    }
+  ]
+}

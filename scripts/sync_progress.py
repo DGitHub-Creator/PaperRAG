@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -32,6 +33,9 @@ STATUS_LABEL = {
     "cancelled": "取消",
 }
 LEVEL_LABEL = {"none": "未验证", "mock": "mock", "real": "真实链路", "e2e": "端到端"}
+
+# 判定命令里出现的 scripts/xxx.py（前面可以是 uv run python / python3 / 空格）
+SCRIPT_RE = re.compile(r"(?:^|[\s&;])(scripts/[\w./-]+\.py)")
 
 
 class ValidationError(Exception):
@@ -66,6 +70,17 @@ def validate(data: dict) -> list[str]:
                 errors.append(f"阶段 {pid} 退出标准 {ex.get('id')} 缺判定命令")
             if ex.get("result") not in EXIT_RESULT:
                 errors.append(f"阶段 {pid} 退出标准 {ex.get('id')} result 非法：{ex.get('result')}")
+            # 判定命令里引用的 scripts/*.py 必须存在：写一条跑不动的命令，等于这条退出标准
+            # 永远只能 not_run，而 progress.json 看起来却像"有验收办法"。X2/X5 曾正是这样。
+            # 只管**正在验收的阶段**（in_progress/done）：P2/P3 的命令引用的是那一阶段要新建
+            # 的脚本（如 rebuild_chunks.py），要求它现在就存在会把"未来的活"变成"今天的违规"，
+            # 门禁立刻常态化地红，于是所有人都去绕过它——那才是真的把检查废掉。
+            if phase.get("status") in ("in_progress", "done"):
+                for script in SCRIPT_RE.findall(ex.get("command") or ""):
+                    if not (ROOT / script).is_file():
+                        errors.append(
+                            f"阶段 {pid} 退出标准 {ex.get('id')} 的判定命令引用了不存在的 {script}"
+                        )
             levels.add(ex.get("level"))
         # 原则①：阶段必须有端到端级（real 或 e2e）验收，不能全是 mock
         if not levels & {"real", "e2e"}:

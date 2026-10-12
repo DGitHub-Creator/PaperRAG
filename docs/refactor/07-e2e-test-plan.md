@@ -111,7 +111,7 @@
 | 浏览器 API | OpenAPI 3.1；对比 Go 与 Python 对同一请求的**状态码 + 响应体 JSON 结构 + 关键头**（错误信封已统一为 `{"detail": ...}`，K1/K4） | 未实现（P0-5） |
 | 流式帧 | 逐帧比对：`data:` 前缀、事件 `type` 顺序、`[DONE]` / `{"type":"done"}` 差异（[01](01-current-architecture.md) §4）——录制-回放（同一 prompt、同 stub LLM）产出字节序列 diff | 未实现（P0-5） |
 | AI 执行契约 | [`ai-execution.schema.json`](../../contracts/ai-execution.schema.json)；Python 侧 Pydantic 严格校验已落（P0-7，29 条 HTTP 级用例），Go 侧 struct 与逐码测试未实现 | **半实现**：Python 侧 mock 级已有；Go 侧属 P0-5 |
-| 密码哈希 | golden vectors：Python 生成若干 `pbkdf2_sha256$...` 串，Go 必须逐条验证通过（**导出物不含密码与盐明文**） | 未实现（P0-6 / X5） |
+| 密码哈希 | golden vectors：Python 生成若干 `pbkdf2_sha256$...` 串，Go 必须逐条验证通过（**导出物不含密码与盐明文**） | **导出侧已实现（2026-10-12，mock 级）**：`scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json` 10 条（6 正 4 负），期望值由生产 `verify_password` 现算；"不含密码与盐明文"落成"不含明文口令、也不含真库摘要"（口令由 `vector_id` 按 `password_rule` 重建，真库只在 `--from-db` 下给形状统计）。**Go 侧逐条验证未实现（P0-6 / X5）** |
 | JWT | golden tokens：Python 签发 → Go 校验（含 `type` 语义、过期、错误 secret） | 未实现（P0-6 / X4） |
 
 契约测试跑在真实两个服务上（compose profile `contract`），不允许用 testdouble 代替任一端。

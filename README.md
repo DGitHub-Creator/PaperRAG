@@ -50,6 +50,8 @@
 | Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块 → 合并数恒为 0 |
 | 文档上传与任务进度 | 部分实现 | 任务状态默认存**进程内存**，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切 Redis；根治属 P3 的 Go Frontier） |
 | Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：三模式已落——`--check-baseline`（文件形态：非破坏 + 幂等 + down 配对）、`--verify-columns`（与快照逐列比类型/varchar 长度/NOT NULL/DEFAULT）、只读 `--live`（37 项判定单测）。`migrations/000001_baseline` 已在真库结构的临时副本上连跑两遍幂等；`000002_ai_executions` 只过了离线形态检查，未在真库执行过。剩余：时间列语义探针（要往库写）与列级比对的实跑（要重导含 `columns` 的快照） |
+| 入口路由机检（`scripts/check_nginx_routes.py`） | 已实现（判据） | X2/Y4 的判定：R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 对外 location、R4 compose 里 `ai-core` 不发布宿主端口。21 项单测。**今天对真仓库配置如实 exit 1**（R1 命中，`/api/` 还指向 Python）——切 upstream 是 P0-8 的活 |
+| PBKDF2 golden vectors（`scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json`） | 已实现（导出侧，mock 级） | X5 的输入件：10 条向量（6 正 4 负），覆盖标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000 与 UTF-8 口令；期望值由生产 `verify_password` 现算，`--check` 防漂移。**文件不含明文口令，也不含真库 `password_hash`**（`--from-db` 只取形状统计）。Go 侧 `TestVerifyLegacyHash` 未写 → X5 仍 fail（P0-6） |
 | 公式感知检索 | **未实现** | 索引构建函数零调用点，检索分支恒返回空 → P2-2 |
 | 多模态图表检索、ML 布局分析、论文知识图谱 | **未实现** | 模块与单测存在但无调用方；图谱三张表零写入 → P2 |
 | `paper_chunks` 真相层（PG 持正文，Milvus 只存可重建索引） | **未实现** | 现在叶级正文**只在 Milvus**且 `VARCHAR(2000)` 截断 → P2-1 |
@@ -223,7 +225,8 @@ ResearchPilot/            # 仓库名、包名、镜像名、指标名已统一�
   server/                 Go 主后端（P0-1 起）：cmd/api、cmd/worker、internal/{config,db,httpapi,observability}
   frontend/               Vue 3 + Vite + TS：src/{api,composables,components,utils,i18n}
   contracts/              契约唯一真相源：openapi.yaml、ai-execution.schema.json、error-codes.md、table-acl.md
-  scripts/                dev.py（统一入口）、check_contracts.py、check_frontend.py、audit_schema.py、sync_progress.py
+  scripts/                dev.py（统一入口）、check_contracts.py、check_frontend.py、check_nginx_routes.py、
+                          audit_schema.py、export_pbkdf2_golden.py、sync_progress.py
   tests/                  unit/ integration/（chain/ e2e/ 尚未建立）
   docs/refactor/          现行 spec（08 最高约束、09 任务卡、10 前端结构、00–05/07 事实与实施）
   docs/archive/           已归档的旧计划（不作为实施依据）
@@ -259,20 +262,24 @@ ResearchPilot/            # 仓库名、包名、镜像名、指标名已统一�
 
 | 层 | marker | 依赖 | 现状 |
 | --- | --- | --- | --- |
-| L0 单元 | `unit` | 无 | 391 项，每次提交 |
+| L0 单元 | `unit` | 无 | 458 项，每次提交 |
 | L1 集成 | `integration` | TestClient（真库属 P1-6） | 57 项，每次提交 |
 | L3 链路 | `chain` | compose 全栈 + LLM key | **0 项**（`-m chain` 返回 exit=5，不是绿） |
 | L4 浏览器 | `e2e` | 全栈 + Playwright | **0 项**（P0-9） |
 
 ```bash
-uv run pytest -q                                  # 全量 449 项
+uv run pytest -q                                  # 全量 515 项
 uv run pytest -m unit -q                          # 分层
 uv run ruff check backend/ tests/ scripts/
 uv run python scripts/check_contracts.py          # 契约双向吻合 + 错误码逐字一致
 uv run python scripts/check_frontend.py           # 前端结构 R1–R11
 uv run python scripts/sync_progress.py --check    # 进度产物与真相源一致
+uv run python scripts/audit_schema.py --check-baseline   # 迁移非破坏 + 幂等 + down 配对
+uv run python scripts/export_pbkdf2_golden.py --check    # golden vectors 与生成器不漂移
+uv run python scripts/check_nginx_routes.py       # X2/Y4 判据；今天如实红（/api/ 仍指 Python）
 cd frontend && npm run typecheck && npm run build
 cd server && gofmt -l . && go vet ./... && go test ./...
+uv run python scripts/dev.py gen --check          # sqlc 生成物无漂移（要先 git add，它比的是索引）
 ```
 
 CI（`.github/workflows/ci.yml`）五个 job：backend / go / frontend / progress / docker。
