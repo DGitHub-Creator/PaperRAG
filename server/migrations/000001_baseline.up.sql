@@ -4,13 +4,16 @@
 --   * 对象集合权威 = docs/refactor/schema-baseline.json（audit_schema.py --live 从真库只读导出：
 --     source=live-postgres、PG 15.18、10 张表、alembic head=add_paper_knowledge_graph）。
 --     本文件的每一条索引与约束都逐字对应它的 indexes / constraints 两段。
---   * 该 JSON **不含列清单**（脚本的 payload 只有 tables/indexes/constraints/column_diff），
+--   * 该 JSON 导出时**不含列清单**（旧版脚本的 payload 只有 tables/indexes/constraints/column_diff），
 --     因此列名、类型、NOT NULL、DEFAULT 抄自真正建出这个库的 alembic 链
 --     （21f6caf0b15b_init → add_workspaces → add_paper_knowledge_graph，head 与 baseline 的
 --     alembic 字段一致），并用 column_diff 逐项交叉验证通过：
 --       - 22 条 no_server_default 与本文件"无 DEFAULT"的列一一对应；
 --       - 1 条 only_in_db（alembic_version.version_num）就是本文件第 10 张表；
 --       - column_diff 里没有任何 only_in_orm / type 条目 ⇒ 列集合与类型基名与真库一致。
+--   * 2026-10-12 起 `--live` 会连列清单一起导出，`audit_schema.py --verify-columns` 能把本文件的
+--     每一列比到快照（类型 / varchar 长度 / NOT NULL / DEFAULT 四项）。**现存那份快照仍是旧版导出的、
+--     没有 columns**，所以此刻跑它如实返回 2；等 Docker 起来重导一次才算真比过（C1 的 real 缺口）。
 --   * 禁止 ORM 生成：不照抄 models.py 的 Python 侧默认值。真库与 ORM 声明的差异如实登记，
 --     不在此"修正"（paper_nodes.id 在真库**没有** ix_paper_nodes_id；users.username 与
 --     paper_nodes.filename 的唯一性由 unique index 承载而**不是** UNIQUE 约束）。

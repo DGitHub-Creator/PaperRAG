@@ -50,8 +50,8 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「`progress.json` 说本机未安装 Docker Desktop」 | 已改为「已解除」，并把推翻过程写进 `risks[0]` |
 | 「真库有 9 张表」（`05 §2.2`） | **错**。真库是 **10 张表**（含 `alembic_version`）；`alembic_version` 是否该进 Go 基线仍待拍 |
 | 「`users.created_at` / `users.role` 在库里没有 DEFAULT」（`05 §4`、`server/sql/schema.sql`） | **错**。真库有 `DEFAULT now()` 与 `DEFAULT 'user'`（否则这两列会出现在 `column_diff` 里）。切 `sqlc.yaml` 时要把这份失真当已知差异核对 |
-| 「`--check-baseline` 通过 = 基线与真库一致」 | **错**。它只校验**文件形态**（up 非破坏 + 幂等、down 配对），**不比对内容**；且它的 down 规则不剥注释、up 规则剥注释（注释里写 `DROP TABLE IF EXISTS` 会被误判） |
-| 「`schema-baseline.json` 里有列清单可直接抄」 | **错**。`--live` 的 payload 只有 tables/alembic/tz/server_version/indexes/constraints/column_diff，**没有 columns**。基线列名/类型/NOT NULL/DEFAULT 来自 alembic 链并用 column_diff 交叉验证；varchar 长度与 NOT NULL **目前无机检覆盖** |
+| 「`--check-baseline` 通过 = 基线与真库一致」 | **仍错**。它只校验**文件形态**（up 非破坏 + 幂等、down 配对），**不比对内容**。内容比对是另一条命令 `--verify-columns`（2026-10-12 落地，需要快照带 `columns`）。同一版的 down 规则不剥注释、up 剥（注释里写 `DROP TABLE IF EXISTS` 会被误判）——**已修**，两边现在一致 |
+| 「`schema-baseline.json` 里有列清单可直接抄」 | **错**。旧版 `--live` 的 payload 只有 tables/alembic/tz/server_version/indexes/constraints/column_diff，**没有 columns**，所以基线的 varchar 长度与 NOT NULL 长期无机检。2026-10-12 已给 payload 补上 `columns` 并加了 `--verify-columns`，但**仓库里现存那份快照仍是旧版导出的、没有列清单**——要等 Docker 起来重跑 `--live` 才真的比得上 |
 
 ## 5. 本机环境要点
 
@@ -59,7 +59,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - `.env` **三个必填**：`JWT_SECRET_KEY`、`LLM_API_KEY`、`LLM_MODEL`（后两个连只验骨架也要有非空占位值）。
 - 中国大陆：`go env -w GOPROXY=https://goproxy.cn,direct`；`docker.io` 被 DNS 污染 → 用镜像源或本机代理（本机代理 `本机代理端口`）。
 - **BuildKit 取 `# syntax=docker/dockerfile:1` 不走 Docker Desktop 代理**：Docker Hub 不可达时必挂；先用 daemon 把 `docker/dockerfile:1`、`node:20-alpine`、`python:3.12-slim`、`nginx:alpine` 拉到本地即可。
-- `scripts/audit_schema.py --live` **需要显式导出 `DATABASE_URL`**（脚本不读 config 的默认值），否则它会以为本机没有 PG；它导出的 `schema-baseline.json` **不含列清单**（见 §4 最后一行）。
+- `scripts/audit_schema.py --live` **需要显式导出 `DATABASE_URL`**（脚本不读 config 的默认值），否则它会以为本机没有 PG。2026-10-12 起它会连列清单一起导出（`columns`），配套的离线比对是 `--verify-columns`；**现存那份快照还是旧版导出的、没有 `columns`**，此时 `--verify-columns` 如实返回 2 而不是假装比过（见 §4 末两行）。
 - 验证基线迁移是否真的幂等，可用「临时库」法（不碰真库）：`pg_dump --schema-only langchain_app | psql -d <临时库>` 复制结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变。
 - Docker 数据盘是 VHDX，**删数据不会自动缩小**；真正回收要压缩/稀疏化。
 - 受限沙箱下：docker 的命名管道、uv 的缓存、git 写 `.git/index.lock` 都可能被拒。**跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**（本机实测），否则 41–42 个 `tmp_path` 用例会以 `PermissionError: [WinError 5]` **假失败**（表现为 `407 passed, 42 errors`——**不是仓库缺陷**）；也**不要**用 `--basetemp` 指到工作区内的既有目录。这些临时目录会带上创建时的完整性标签，策略在 `workspace-write` 与 `danger-full-access` 之间切换后就可能变成**谁都删不掉的毒目录**（本机出现过 `.tmp-pytest`/`.pytest-bt`/`pytest-of-<用户名>`/`tmp*/`），只能靠更高权限运行或用户自有终端清理。

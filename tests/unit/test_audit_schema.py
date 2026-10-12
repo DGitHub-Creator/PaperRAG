@@ -12,9 +12,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.audit_schema import (  # noqa: E402
+    MIGRATIONS,
     alembic_state,
     check_baseline,
     diff_columns,
+    parse_ddl_columns,
+    verify_columns,
 )
 
 GOOD_UP = """
@@ -77,6 +80,12 @@ class TestCheckBaseline:
     def test_drop_table_if_exists_in_down_is_caught(self, tmp_path):
         errs = check_baseline(_write(tmp_path, down="DROP TABLE IF EXISTS users;"))
         assert any("DROP TABLE IF EXISTS" in e for e in errs), errs
+
+    def test_down_rule_ignores_comments_just_like_up(self, tmp_path):
+        """C2：up 剥注释、down 原文匹配是两套规则，写基线的人只能靠猜。
+        现在两边一致——在注释里解释"为什么不用 IF EXISTS"不该被判违规。"""
+        down = "-- 这里刻意不写 DROP TABLE IF EXISTS，理由见 05 §2\nDROP TABLE users;\n"
+        assert check_baseline(_write(tmp_path, down=down)) == []
 
 
 class TestAlembicState:
@@ -153,3 +162,151 @@ class TestDiffColumns:
             self._row_in("events", "payload", "character varying", "''"),
         ]
         assert diff_columns(rows, declared) == []
+
+
+# ── C1：基线 DDL 的列清单比对（类型长度与 NOT NULL 此前无机检覆盖）──────
+
+DDL_UP = """
+CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL       NOT NULL,
+    username      VARCHAR(100) NOT NULL,
+    role          VARCHAR(20)  NOT NULL DEFAULT 'user',
+    prefs         JSON         NOT NULL DEFAULT '{"a": 1, "b": 2}',
+    workspace_id  INTEGER      NULL,
+    CONSTRAINT users_pkey PRIMARY KEY (id),
+    CONSTRAINT users_ws_fkey FOREIGN KEY (workspace_id)
+        REFERENCES workspaces (id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username);
+"""
+
+
+def _snap(table, col, data_type, *, nullable="NO", default=None, length=None):
+    return {
+        "table_name": table,
+        "column_name": col,
+        "data_type": data_type,
+        "is_nullable": nullable,
+        "column_default": default,
+        "character_maximum_length": length,
+    }
+
+
+def _snapshot_rows():
+    """与 DDL_UP 逐项对应的一版真库列快照。"""
+    return [
+        _snap("users", "id", "integer", default="nextval('users_id_seq'::regclass)"),
+        _snap("users", "username", "character varying", length=100),
+        _snap("users", "role", "character varying", default="'user'::character varying", length=20),
+        _snap("users", "prefs", "json", default="'{\"a\": 1, \"b\": 2}'::json"),
+        _snap("users", "workspace_id", "integer", nullable="YES"),
+    ]
+
+
+def _snapshots(rows, tables=("users",)):
+    return {"tables": list(tables), "columns": rows}
+
+
+def _migrations(tmp, up=DDL_UP):
+    d = tmp / "migrations"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "000001_baseline.up.sql").write_text(up, encoding="utf-8")
+    return d
+
+
+class TestParseDdlColumns:
+    def test_real_baseline_parses_into_the_documented_shape(self):
+        """解析器必须能吃下真正那份基线：10 张表 / 59 列是 --live 快照记下的数。
+        这条挂了说明解析器已经跟不上 DDL 写法，`--verify-columns` 就成了摆设。"""
+        text = (MIGRATIONS / "000001_baseline.up.sql").read_text(encoding="utf-8")
+        tables = parse_ddl_columns(text)
+        assert len(tables) == 10, sorted(tables)
+        assert sum(len(cols) for cols in tables.values()) == 59
+
+    def test_table_constraints_and_nested_parens_are_not_columns(self):
+        cols = parse_ddl_columns(DDL_UP)["users"]
+        assert list(cols) == ["id", "username", "role", "prefs", "workspace_id"]
+        assert cols["id"] == {
+            "type": "integer",
+            "length": None,
+            "nullable": False,
+            "has_default": False,
+            "serial": True,
+        }
+        assert cols["username"]["length"] == "100"
+        assert cols["role"]["has_default"] is True
+        assert cols["workspace_id"]["nullable"] is True
+
+    def test_comma_inside_a_string_default_does_not_split_the_column(self):
+        """DEFAULT 里的 JSON 字符串带逗号，切错了就会凭空多出半列。"""
+        cols = parse_ddl_columns(DDL_UP)["users"]
+        assert cols["prefs"]["type"] == "json"
+        assert cols["prefs"]["nullable"] is False
+
+    def test_unrecognised_type_raises_instead_of_guessing(self):
+        with pytest.raises(ValueError, match="无法识别的列类型"):
+            parse_ddl_columns("CREATE TABLE IF NOT EXISTS t (a CITVTYPE NOT NULL);")
+
+
+class TestVerifyColumns:
+    def test_matching_snapshot_passes(self, tmp_path):
+        errs, notes = verify_columns(_migrations(tmp_path), _snapshots(_snapshot_rows()))
+        assert (errs, notes) == ([], [])
+
+    def test_varchar_length_drift_is_caught(self, tmp_path):
+        """C1 的正主：长度此前完全没有机检。DDL 写 100、库里是 255 必须红。"""
+        rows = _snapshot_rows()
+        rows[1] = _snap("users", "username", "character varying", length=255)
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("长度不一致" in e and "username" in e for e in errs), errs
+
+    def test_ddl_without_length_but_db_limits_it_is_caught(self, tmp_path):
+        rows = _snapshot_rows()
+        rows[1] = _snap("users", "username", "character varying", length=100)
+        up = DDL_UP.replace("VARCHAR(100)", "TEXT")
+        errs, _ = verify_columns(_migrations(tmp_path, up=up), _snapshots(rows))
+        assert any("没写长度" in e for e in errs), errs
+
+    def test_not_null_drift_is_caught(self, tmp_path):
+        rows = _snapshot_rows()
+        rows[1] = _snap("users", "username", "character varying", nullable="YES", length=100)
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("NOT NULL 不一致" in e for e in errs), errs
+
+    def test_missing_server_default_is_caught(self, tmp_path):
+        rows = _snapshot_rows()
+        rows[2] = _snap("users", "role", "character varying", length=20)  # 库里没有 DEFAULT
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("DEFAULT 不一致" in e and "role" in e for e in errs), errs
+
+    def test_serial_that_lost_its_sequence_is_caught(self, tmp_path):
+        """SERIAL 在 DDL 里不写 DEFAULT、库侧靠 nextval 兜——两边都按有默认算才不会假红；
+        真库里 nextval 没了（比如被改成 plain integer）就必须红。"""
+        rows = _snapshot_rows()
+        rows[0] = _snap("users", "id", "integer")
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("id" in e and "DEFAULT" in e for e in errs), errs
+
+    def test_column_in_db_but_not_in_ddl_is_caught(self, tmp_path):
+        rows = _snapshot_rows() + [_snap("users", "legacy", "text")]
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("基线 DDL 没写" in e and "legacy" in e for e in errs), errs
+
+    def test_column_in_ddl_but_not_in_db_is_caught(self, tmp_path):
+        rows = [r for r in _snapshot_rows() if r["column_name"] != "prefs"]
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows))
+        assert any("真库没有" in e and "prefs" in e for e in errs), errs
+
+    def test_snapshot_table_without_any_ddl_is_caught(self, tmp_path):
+        errs, _ = verify_columns(
+            _migrations(tmp_path),
+            _snapshots(_snapshot_rows(), tables=("users", "workspaces")),
+        )
+        assert any("workspaces" in e and "不建它" in e for e in errs), errs
+
+    def test_table_added_by_a_later_migration_is_a_note_not_an_error(self, tmp_path):
+        """快照是加新表之前导的，把它算成错误等于每加一张表都要先重导快照。"""
+        up = DDL_UP + "\nCREATE TABLE IF NOT EXISTS ai_executions (id SERIAL NOT NULL);\n"
+        errs, notes = verify_columns(_migrations(tmp_path, up=up), _snapshots(_snapshot_rows()))
+        assert errs == []
+        assert any("ai_executions" in n for n in notes), notes

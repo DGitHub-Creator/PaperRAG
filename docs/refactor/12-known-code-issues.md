@@ -1,15 +1,13 @@
-# 12 — 代码问题台账（本轮只记录，不改代码）
+# 12 — 代码问题台账（记录 → 逐条处置）
 
-> **本文状态（2026-10-11）**：性质=**问题清单**。用来承接"按产品愿景（[11](11-product-vision.md)）检查仓库"时发现的**代码层**问题——
-> 本轮**只改文档**，所以这些一律没有动手，逐条给出证据、影响、建议改法与归属卡片。
-> 处置后请把对应条目移到已解决（或直接删除），别让它长期停留在"待办"里变成噪音。
+> **本文状态（2026-10-12）**：性质=**问题清单 + 处置记录**。用来承接"按产品愿景（[11](11-product-vision.md)）检查仓库"时发现的**代码层**问题。
+> 2026-10-11 那轮**只改文档**，所以 A 组当时一律没有动手；2026-10-12 起按 P0 顺序逐条处置，
+> **处置完的条目移进 §C 并写清证据等级**，别让它长期停留在"待办"里变成噪音。
 
 ## A. 阻塞当前阶段（P0）的问题
 
 | # | 问题 | 证据（可复核） | 影响 | 建议改法 | 归属 |
 | --- | --- | --- | --- | --- | --- |
-| **C1** | `scripts/audit_schema.py --live` 导出的 `schema-baseline.json` **不含列清单** | 导出文件顶层键只有 `tables` / `alembic` / `session_timezone` / `log_timezone` / `server_version` / `indexes` / `constraints` / `column_diff` | 基线 DDL 的列名/类型/NOT NULL/DEFAULT 只能从 alembic 链推导；**`varchar` 长度与 NOT NULL 完全没有任何机检覆盖** | 给 payload 增加 `columns`（每表：name/type/nullable/default），并给 `--check-baseline` 加一个"与基线 JSON 逐列比对"的可选模式 | P0-2 收尾 |
-| **C2** | `--check-baseline` 的判定规则**前后不一致**：up 先剥注释再判，down 用**原始全文**判 | 代码：up 路径剥 `--` 与 `/* */`；down 路径直接正则匹配 `DROP TABLE IF EXISTS` | 注释里写这四个词会被判违规（P0-2 的迁移首版就被误伤）；规则的"注释不算数"只对 up 成立 | down 的判定也先剥注释 | P0-2 收尾 |
 | **C3** | `server/sql/schema.sql`（P0-3 的**临时参照**）在 `users.created_at` / `users.role` 两列上**失真** | 真库这两列有 `DEFAULT now()` / `DEFAULT 'user'`——依据是它们**没有**出现在 `column_diff` 的 23 条里（说明与 ORM 声明一致，否则会被登记为 `no_server_default`） | 切 sqlc 时若信这份参照，Go 侧会漏掉 DEFAULT 语义 | 切到真基线后重生成，在 diff 里专门核对这两列 | P0-3 |
 | **C4** | `server/sqlc.yaml` 仍指向**临时参照** `sql/schema.sql`，未指向 `server/migrations/` | `sqlc.yaml` 内容 + P0-3 note | P0-3 无法 done；`dev.py gen --check` 这个漂移门禁建立在失真的 schema 源上 | 与 `dev.py gen --check` 作为**同一原子改动**切换（本机目前没有 sqlc 二进制，需 `go install …/cmd/sqlc@v1.30.0`） | P0-3 |
 | **C5** | `backend/internal_api/` 的 7 条路径已就位，但缺 `ai_executions` 迁移 | P0-7 note；`server/migrations/` 目前只有 `000001_baseline` | P0-7 无法 done；内部执行面的幂等/取消/超时语义没有真实存储支撑 | 依赖 C3/C4 的 schema 源就绪后补 `000002_ai_executions`（注意 `contracts/table-acl.md` 里 `ai_executions` 是 **Python 独占写**） | P0-7 |
@@ -29,6 +27,8 @@
 
 | # | 事项 | 结论 |
 | --- | --- | --- |
+| C1 | `--live` 快照不含列清单 ⇒ 基线 DDL 的 varchar 长度与 NOT NULL 无机检覆盖 | **2026-10-12 已补机制**：payload 增加 `columns`；新增离线模式 `--verify-columns` 逐列比类型/长度/NOT NULL/DEFAULT，SERIAL 的 nextval 按库侧口径算，快照缺 `columns` 时如实 exit 2（不把"比不了"说成"比过了"）。⚠️ **证据等级只到 mock**（15 条新单测，`test_audit_schema.py` 共 34 项，含"解析真基线得 10 表/59 列"这条防解析器脱节的用例）；实跑要等 Docker 重导快照——仓库里现存那份仍是旧版导出的，命令现在返回 2 |
+| C2 | `--check-baseline` 的 up 剥注释、down 用原文匹配，两套规则 | **2026-10-12 已统一**：两者都走 `_strip_comments()`。`000001_baseline.down.sql` 头注释里"校验器按原文匹配、连注释一起算"那句随之失效，已改写 |
 | C12 | `.env.example` 的 `KEY= #值` 行内注释会让应用起不来 | 2026-10-10 已改为整行注释（11 行） |
 | C13 | compose 的 backend 缺 `target: backend` → 构建出 nginx 镜像 | 已修（`542fd77a` 之前那批） |
 | C14 | `progress.json` 的 `current` / `risks[0]` 与现状矛盾（"Docker 起不来""未安装 Docker Desktop"） | 2026-10-11 已改写并记入 `AGENTS.md` §4「已被推翻的旧结论」 |
