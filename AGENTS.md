@@ -41,6 +41,12 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已落地但从未在真 PG 执行过**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`，`--check-baseline` exit 0。所以 P0-7 仍停 mock，不缺迁移文件而缺真库幂等验证 + compose 端口（P0-8）。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
+- **分支布局（2026-10-12 收口）：远端只剩 `main`，本地工作分支就是 `main`（跟踪 `origin/main`）**，
+  旧的 `main-sync`（本地与远端）已删除。⚠️ 两条容易踩的：
+  ①**本地 `main` 已被重置到重写后的历史**，重写前的 92 个提交只在 `backup/main-pre-rewrite-20261012`（tip `e6cc211`）——
+  **那条备份分支与"把本地 main 挪回去"这两件事都碰不得**，后者会把已清除的个人信息/设备信息写回工作区；
+  ②`backup/…` 是本地分支，没有远端副本，**不要 push 它**，也别删（它是那些重写前 SHA 唯一还能解析的地方，`gc` 前）。
+  PR 入口形态：`https://github.com/DGitHub-Creator/ResearchPilot/pull/new/<分支名>`。
 - **2026-10-11 做过一次历史重写**（把个人信息与设备信息从仓库历史里清除）：102 个提交的作者/提交者统一为
   `ResearchPilot Dev <DGitHub-Creator@users.noreply.github.com>`；用户名、本机绝对路径、OS 与软件版本号、
   本机代理、设备级 SSH 别名已从**文件内容与提交信息**中一并清除。**此前的提交 SHA 全部改变**——
@@ -49,8 +55,11 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   - **已改**：`03`/`07` 里引用的 `4a5e806` → 重写后的等价提交 `a552a5c`。
   - **故意不改**（`AGENTS.md` §7 的规则优先）：`00-audit.md` 里的 `c55129e`（审计基线声明"main @ c55129e"）
     与 `4a5e806`、`docs/archive/refactor-06-milestone-a0.md` 里的 `2c3e58e`——dated 事实与归档件正文逐字保留。
-    前两处指向的是**重写前的对象**，它们在本地仍可从 `main` / `backup/main-pre-rewrite-20261012` 解析
-    （等价重写后分别是 `6e8c1a9` / `a552a5c`），但 `gc` 之后会消失。
+    前两处指向的是**重写前的对象**，它们在本地**只**可从 `backup/main-pre-rewrite-20261012` 解析
+    （2026-10-12 分支收口后，本地 `main` 已重置到重写后的 `origin/main`，不再携带重写前的提交；
+    此前这里写的"可从 `main` / `backup/…` 解析"只剩后半为真。等价重写后分别是 `6e8c1a9` / `a552a5c`），
+    但 `gc` 之后会消失。**别为了找回它们把本地 main 挪回 `e6cc211`**——那 92 个提交携带已清除的
+    个人信息与设备信息，checkout 它们会把那些内容写回工作区。
   - `2c3e58e` 另有一层：**它不是重写造成的**，是**笔误**。同一提交（A0-1"修复 apiFetch/BASE 未导入…typecheck
     纳入 CI 门禁"）在重写前是 `2c3e583`、重写后是 `996cf777`（同文件另一处引用的正是后者），
     末位 `e`↔`3` 一位之差。所以按 `--grep=<标题>` 定位即可，别去找回一个从来没存在过的对象。
