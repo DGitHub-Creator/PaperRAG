@@ -8,10 +8,91 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AlembicVersion struct {
+	VersionNum string
+}
+
+type ChatMessage struct {
+	ID           int32
+	SessionRefID int32
+	MessageType  string
+	Content      string
+	Timestamp    pgtype.Timestamp
+	RagTrace     []byte
+}
+
+type ChatSession struct {
+	ID           int32
+	UserID       int32
+	SessionID    string
+	MetadataJson []byte
+	UpdatedAt    pgtype.Timestamp
+	CreatedAt    pgtype.Timestamp
+	WorkspaceID  pgtype.Int4
+}
+
+type CitationEdge struct {
+	ID        int32
+	SourceID  int32
+	TargetID  int32
+	Context   string
+	CreatedAt pgtype.Timestamp
+}
+
+type GlossaryEntry struct {
+	ID         int32
+	PaperID    int32
+	Term       string
+	Definition string
+	ChunkID    string
+	CreatedAt  pgtype.Timestamp
+}
+
+type PaperNode struct {
+	ID            int32
+	Filename      string
+	Title         string
+	Year          int32
+	Authors       string
+	Abstract      string
+	CitationCount int32
+	CreatedAt     pgtype.Timestamp
+}
+
+type ParentChunk struct {
+	ChunkID       string
+	Text          string
+	Filename      string
+	FileType      string
+	FilePath      string
+	PageNumber    int32
+	ParentChunkID string
+	RootChunkID   string
+	ChunkLevel    int32
+	ChunkIdx      int32
+	UpdatedAt     pgtype.Timestamp
+}
+
 type User struct {
 	ID           int32
 	Username     string
 	PasswordHash string
 	Role         string
 	CreatedAt    pgtype.Timestamp
+}
+
+type Workspace struct {
+	ID        int32
+	Name      string
+	OwnerID   int32
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+}
+
+type WorkspaceMember struct {
+	ID          int32
+	WorkspaceID int32
+	UserID      int32
+	Role        string
+	CreatedAt   pgtype.Timestamp
 }

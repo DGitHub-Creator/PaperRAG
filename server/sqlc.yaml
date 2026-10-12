@@ -8,10 +8,13 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    # P0-2 收编后把这里切成 ["migrations"] 并重跑 gen：
-    # 参照 schema 与真实基线的任何字段差异都会在生成的 struct 上变成可见 diff。
+    # schema 源 = P0-2 从真库抄出的基线，不再是形状取自 ORM 声明的临时参照。
+    # 只列 *.up.sql：sqlc 会把目录里的每个 .sql 都当 schema 读，而按文件名排序
+    # 000001_baseline.down.sql 排在 .up.sql 前面，于是它先 DROP 再 CREATE——
+    # 生成物看着正常，实际是按"回退后的库"生成的。新增 up 文件必须同时登记到这里，
+    # 由 `dev.py gen` 的覆盖检查机检（漏了直接拒绝生成）。
     schema:
-      - "sql/schema.sql"
+      - "migrations/000001_baseline.up.sql"
     queries:
       - "sql/queries"
     gen:

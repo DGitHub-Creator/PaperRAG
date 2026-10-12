@@ -151,3 +151,101 @@ class TestGen:
         assert calls[0] == [
             "go", "run", f"github.com/sqlc-dev/sqlc/cmd/sqlc@{dev.SQLC_VERSION}", "generate"
         ]
+
+
+# ── gen 的三条前置检查（P0-3 切 schema 源时补的，每条都对应本机真踩过的坑）──
+
+VALID_YAML = """version: "2"
+sql:
+  - engine: "postgresql"
+    schema:
+      - "migrations/000001_baseline.up.sql"
+    queries:
+      - "sql/queries"
+    gen:
+      go:
+        package: "db"
+"""
+
+
+def _fake_server(tmp_path, monkeypatch, *, yaml_text=VALID_YAML, migrations=("000001_baseline.up.sql",),
+                 queries=("users.sql",), generated=("users.sql.go",)):
+    """搭一棵最小的假 server/ 树，并让 dev.py 的模块级 SERVER_DIR 指向它。
+
+    前置检查读的是模块级常量，不 monkeypatch 它就会拿真仓库去判，测试变成"检查现状"而不是检查规则。
+    """
+    server = tmp_path / "server"
+    (server / "migrations").mkdir(parents=True)
+    (server / "sql" / "queries").mkdir(parents=True)
+    (server / "internal" / "db").mkdir(parents=True)
+    (server / "sqlc.yaml").write_text(yaml_text, encoding="utf-8")
+    for name in migrations:
+        (server / "migrations" / name).write_text("CREATE TABLE IF NOT EXISTS t (id SERIAL NOT NULL);\n", encoding="utf-8")
+    for name in queries:
+        (server / "sql" / "queries" / name).write_text("-- name: X :one\nSELECT 1;\n", encoding="utf-8")
+    for name in generated:
+        (server / "internal" / "db" / name).write_text("package db\n", encoding="utf-8")
+    monkeypatch.setattr(dev, "SERVER_DIR", server)
+    return server
+
+
+class TestGenPrechecks:
+    def _invoke(self, argv):
+        args = dev.build_parser().parse_args(argv)
+        return args.func(args)
+
+    def test_shipped_config_passes_both_checks(self):
+        """真仓库那份配置必须自证干净，否则"规则实现了但没跑过"。"""
+        assert dev.check_sqlc_schema_sources() == []
+        assert dev.check_sqlc_orphan_outputs() == []
+
+    def test_schema_list_is_read_from_the_real_config(self):
+        sources = dev._sqlc_schema_sources()
+        assert sources is not None
+        assert sources == ["migrations/000001_baseline.up.sql"], "sqlc 只该看得见逐个列出的 *.up.sql"
+
+    def test_unparseable_schema_list_refuses_instead_of_treating_it_as_empty(self, tmp_path, monkeypatch):
+        """解析不出列表时不能"当作没配"然后照常生成——这个函数的存在意义就是确认覆盖面。"""
+        _fake_server(tmp_path, monkeypatch, yaml_text='version: "2"\nsql:\n  - engine: "postgresql"\n')
+        assert dev._sqlc_schema_sources() is None
+        assert any("解析不到" in e for e in dev.check_sqlc_schema_sources())
+
+    def test_directory_schema_source_with_down_files_is_refused(self, tmp_path, monkeypatch):
+        """sqlc 按文件名顺序把目录里每个 .sql 都当 schema：down 排在 up 前面 → 先 DROP 再 CREATE。
+
+        生成物看着完全正常，实际是按"回退后的库"生成的，这种错最难发现所以必须挡住。
+        """
+        _fake_server(
+            tmp_path,
+            monkeypatch,
+            yaml_text=VALID_YAML.replace("- \"migrations/000001_baseline.up.sql\"", "- \"migrations\""),
+            migrations=("000001_baseline.up.sql", "000001_baseline.down.sql"),
+        )
+        errs = dev.check_sqlc_schema_sources()
+        assert any(".down.sql" in e and "先 DROP 再 CREATE" in e for e in errs), errs
+
+    def test_new_migration_missing_from_schema_list_is_refused(self, tmp_path, monkeypatch):
+        """漏登记的后果是"静默少一张表"：gen 不报错，Go 却永远看不见新表。"""
+        _fake_server(tmp_path, monkeypatch, migrations=("000001_baseline.up.sql", "000002_ai_executions.up.sql"))
+        errs = dev.check_sqlc_schema_sources()
+        assert any("000002_ai_executions.up.sql" in e and "静默少一张表" in e for e in errs), errs
+
+    def test_nonexistent_schema_source_is_refused(self, tmp_path, monkeypatch):
+        _fake_server(tmp_path, monkeypatch, migrations=())
+        assert any("不存在的源" in e for e in dev.check_sqlc_schema_sources())
+
+    def test_orphan_generated_output_is_refused(self, tmp_path, monkeypatch):
+        """sqlc 只写不删 X.sql.go：删掉的查询会留下没人调用、每次 gen 又重现的 Go 类型。"""
+        server = _fake_server(tmp_path, monkeypatch, queries=("users.sql",), generated=("users.sql.go",))
+        assert dev.check_sqlc_orphan_outputs() == []
+        (server / "sql" / "queries" / "users.sql").unlink()
+        errs = dev.check_sqlc_orphan_outputs()
+        assert any("users.sql" in e for e in errs), errs
+
+    def test_gen_stops_before_touching_sqlc_when_prechecks_fail(self, tmp_path, monkeypatch, capsys):
+        """前置检查必须发生在探测 sqlc 版本之前：拒绝生成比"先生成再解释"更诚实。"""
+        calls = TestGen()._stub(monkeypatch, version_out=dev.SQLC_VERSION.lstrip("v"))
+        _fake_server(tmp_path, monkeypatch, migrations=("000001_baseline.up.sql", "000002_new.up.sql"))
+        assert self._invoke(["gen"]) == 1
+        assert calls == [], f"前置检查失败却仍然调用了 sqlc：{calls}"
+        assert "前置检查不通过" in capsys.readouterr().out

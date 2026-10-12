@@ -164,13 +164,13 @@ SHOW timezone;  SHOW log_timezone;  -- 以及 server_version
 
 ### 4.2.1 已核查的列级事实与更正（2026-10-11，依据 `schema-baseline.json`）
 
-本文**没有**出现过「`users.created_at` / `users.role` 在库里没有 DEFAULT」这类断言，所以这里不是改错句，而是把**真库核查的结论**登记下来，防止它被 `server/sql/schema.sql` 的注释带回文档：
+本文**没有**出现过「`users.created_at` / `users.role` 在库里没有 DEFAULT」这类断言，所以这里不是改错句，而是把**真库核查的结论**登记下来，防止它被重新抄回文档（该断言原本写在 `server/sql/schema.sql` 的注释里，那份临时参照已于 2026-10-12 随 sqlc schema 源切换删除，见台账 C3/C4）：
 
 - `users.created_at` 真库有 **`DEFAULT now()`**；`users.role` 真库有 **`DEFAULT 'user'`**。
 - **依据**：这两列**没有**出现在 `schema-baseline.json` 的 `column_diff`（23 条）里。`scripts/audit_schema.py:233` 的判定是 `if a[col].get("column_default") is None` → 纯按**真库** `information_schema.columns.column_default` 是否为空投 diff，与 ORM 是否声明 `server_default` 无关，所以"没出现"等价于"库里有默认值"。
 - **旁证**：出现该差异的 23 列全是应用必填列（`username`/`password_hash`/`filename`/`chunk_id`/`text`/`definition`/外键 …）。所以"有默认值"这件事只能来自库**自己的** DDL，不可能是 ORM 客户端默认值被误认。
-- **⚠️ 已知失真**：`server/sql/schema.sql`（P0-3 的临时参照）在同样两列上是错的——该文件第 22、25 行的注释写「DDL 里没有 DEFAULT / 库里无 DEFAULT」。真实库有。这是 **P0-3 的已知差异**：`sqlc.yaml` 的 schema 从 `schema.sql` 切到 `migrations/` 时必须把这两列当已知差异逐条核对（`column_diff` 覆盖的是列级**默认值/类型/存在性**，校验器并**不检查** varchar 长度与 NOT NULL，所以长度与可空性**目前无机检覆盖**）。
-- **对 Go 的后果**：`role`/`created_at` 可省略让 PG 补默认值（不再必然撞 NOT NULL violation）；切到 `timestamptz` 后 `DEFAULT now()` 是 **aware** 默认值，含义明确，正好落在本节的转换方向上。
+- **✅ 失真已随参照一起消失（2026-10-12）**：`sqlc.yaml` 的 schema 源已从 `schema.sql` 切到 `migrations/000001_baseline.up.sql`（临时参照已删除）。切换那一次 `git diff` 就是本卡承诺的"答案"，而答案和预期不一样：`User` struct 与 `users.sql.go` 里三条查询的生成类型**逐字未变**——`role` 仍是 `string`、`created_at` 仍是 `pgtype.Timestamp`，**sqlc 不把列的 `DEFAULT` 编码进 Go 类型**，所以"在 diff 里专门核对这两列"这条改法物理上做不到：diff 门禁能抓的只有类型、可空性与列/表存在性。真正一次性补回来的是此前完全缺席的 9 张表（`parent_chunks`、`chat_sessions`、`chat_messages`、`workspaces`、`workspace_members`、`paper_nodes`、`citation_edges`、`glossary_entries`、`alembic_version`）共 54 个字段——那才是临时参照的实际代价。DEFAULT 的核查改由 `audit_schema.py --verify-columns` 承担（比 DDL 与真库快照的 `column_default` 有无），varchar 长度与 NOT NULL 同批纳入同一比对。
+- **对 Go 的后果**：`role`/`created_at` **仍由调用方显式给值**，不是因为库里没默认值，而是因为 `DEFAULT now()` 取的是**会话时区**，而 §4 的 UTC 语义审计未完成——把时间交给库默认值等于把一个已知不可信的时区语义写进真相层（`server/sql/queries/users.sql` 记着这条）。切到 `timestamptz` 后 `DEFAULT now()` 才是 **aware** 默认值，含义明确，正好落在本节的转换方向上。
 
 ### 4.2 转换迁移（验证通过后才执行）
 

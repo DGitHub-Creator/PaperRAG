@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -277,12 +278,95 @@ def sqlc_binary() -> str | None:
     return str(candidate) if candidate.exists() else None
 
 
+def _sqlc_schema_sources() -> list[str] | None:
+    """从 `server/sqlc.yaml` 取 sql 段的 schema 源列表。
+
+    dev.py 只用标准库（要在 `uv sync` 之前就能跑），所以这里按行解析而不是引 YAML 库。
+    解析不出来返回 None，由调用方判成配置异常并拒绝生成——**不能"当作没配"**，
+    因为这个函数的唯一用途就是确认每张基线表都进了 sqlc 的视野。
+    """
+    path = SERVER_DIR / "sqlc.yaml"
+    if not path.exists():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*schema:\s*$", line):
+            indent = len(line) - len(line.lstrip())
+            out = []
+            for nxt in lines[i + 1 :]:
+                if not nxt.strip() or len(nxt) - len(nxt.lstrip()) <= indent:
+                    break
+                m = re.match(r"^\s*-\s+[\"']?(?P<v>.*?)[\"']?\s*$", nxt)
+                if m:
+                    out.append(m.group("v"))
+            return out
+    return None
+
+
+def check_sqlc_schema_sources() -> list[str]:
+    """sqlc 必须看得见 migrations/ 里每一个 up 文件，且不能把整个目录当 schema。
+
+    后者是真陷阱：sqlc 按文件名排序读目录，`000001_baseline.down.sql` 排在 `.up.sql` 前面，
+    于是它先 DROP 再 CREATE——生成物看着正常，实际是按"回退后的库"生成的。
+    """
+    errors: list[str] = []
+    sources = _sqlc_schema_sources()
+    if sources is None:
+        return ["server/sqlc.yaml 里解析不到 sql.schema 列表——覆盖检查无法进行，拒绝生成"]
+
+    for src in sources:
+        p = SERVER_DIR / src
+        if p.is_dir() and any(p.glob("*.down.sql")):
+            errors.append(
+                f"sql.schema 指向目录 {src}，里面有 .down.sql。"
+                "sqlc 会按文件名顺序把 down 当 schema 执行（先 DROP 再 CREATE），"
+                "生成物等于按回退后的库产出——请逐个列出 *.up.sql"
+            )
+        if not p.exists():
+            errors.append(f"sql.schema 列了不存在的源：{src}")
+
+    ups = sorted(p.name for p in (SERVER_DIR / "migrations").glob("*.up.sql"))
+    listed = {Path(src).name for src in sources}
+    for missing in [u for u in ups if u not in listed]:
+        errors.append(
+            f"migrations/{missing} 没有出现在 sqlc.yaml 的 schema 列表里："
+            "新迁移建了表但 Go 看不见，重生成不会报错，只会静默少一张表。"
+            "把它加进 schema 列表再 gen。"
+        )
+    return errors
+
+
+def check_sqlc_orphan_outputs() -> list[str]:
+    """删掉的查询会在生成物里留下孤儿：sqlc 只写不删 `X.sql.go`，`git diff` 也看不出问题。
+
+    本机实测过一次——临时探针查询删掉后，`_probe.sql.go` 与它带出来的 struct 都还在树里，
+    那就是一个没人调用、但每次 gen 都会重新出现在视野里的 Go 类型。
+    """
+    errors: list[str] = []
+    out_dir = SERVER_DIR / "internal" / "db"
+    for gen in sorted(out_dir.glob("*.sql.go")):
+        stem = gen.name[: -len(".sql.go")]
+        if not (SERVER_DIR / "sql" / "queries" / f"{stem}.sql").exists():
+            errors.append(
+                f"internal/db/{gen.name} 没有对应的 sql/queries/{stem}.sql："
+                "sqlc 不会自己删输出，手工删掉它再 gen"
+            )
+    return errors
+
+
 def cmd_gen(args: argparse.Namespace) -> int:
     """重新生成 Go 数据访问层（P0-3 / K2）。
 
     生成物进版本库，一致性由 `--check` 保证：改完 .sql 忘记 gen，这条就会红。
     找不到本机 sqlc 时退回 `go run …@固定版本`，慢一次但结果与别人一致。
     """
+    problems = check_sqlc_schema_sources() + check_sqlc_orphan_outputs()
+    if problems:
+        print("[gen] 生成前置检查不通过：")
+        for e in problems:
+            print(f"      - {e}")
+        return 1
+
     binary = sqlc_binary()
     if binary:
         proc = subprocess.run([binary, "version"], capture_output=True, text=True)
