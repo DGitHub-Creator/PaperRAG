@@ -19,7 +19,18 @@ FROM users
 WHERE username = $1;
 
 -- name: GetUserByID :one
--- /me 路径专用：**故意不选 password_hash**。少一处可选字段，就少一处把它写进响应的机会。
+-- 按 id 取身份，**故意不选 password_hash**。少一处可选字段，就少一处把它写进响应的机会。
+-- 注：本查询原先注明"/me 路径专用"，但那个声明落不了地——JWT 的 `sub` 是**用户名**不是 id，
+-- /me 要先按用户名查才能拿到 id，而按用户名查的只有下面那条带 hash 的登录查询。
+-- 所以 /me 走 GetProfileByUsername，本条留给将来按 id 取身份的路径（P1 的会话/文档归属校验）。
 SELECT id, username, role, created_at
 FROM users
 WHERE id = $1;
+
+-- name: GetProfileByUsername :one
+-- /me 路径专用：**故意不选 password_hash**。令牌里只有用户名，而"哈希不进 /me 的响应"
+-- 这件事要靠查询本身保证，不能靠调用方自觉（GetUserByUsername 的整行一旦传下去，
+-- 就只剩"别忘了别序列化那个字段"这一层纪律在挡）。
+SELECT id, username, role, created_at
+FROM users
+WHERE username = $1;
