@@ -24,12 +24,15 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 
 ## 3. 现在的事实（2026-10-12）
 
-- 进度 **12%**（45/372 h）；38 张卡：done 6 / in_progress 4 / pending 28；24 条退出标准 pass **4**（X3 契约机检、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；P0 38%，P1/P2/P3 = 0%。**fail 3**（X2/X4/X5，见本节末条）、**not_run 只有 X1**。⚠️ X6 虽 pass，但它在 `09` 里列的第二条判据 `migrate -path migrations` **今天跑不了**——golang-migrate 从未接线（台账 C18 / 决策 D8）。
+- 进度 **12%**（45/372 h）；38 张卡：done 6 / in_progress **5** / pending **27**；24 条退出标准 pass **5**（X3 契约机检、**X5 Go 能验旧密码哈希**、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；P0 38%，P1/P2/P3 = 0%。**fail 2**（X2 nginx 还指向 Python、X4 只剩 chain 半侧）、**not_run 17**（X1 要 compose，其余属 P1/P2/P3）。⚠️ X6 虽 pass，但它在 `09` 里列的第二条判据 `migrate -path migrations` **今天跑不了**——golang-migrate 从未接线（台账 C18 / 决策 D8）；且它「在**存量库**上幂等」那一问的原对象已随 Docker 数据卷消失、**不可复原**（C20）。
 - **P0-0 已取得 real 级证据**：`doctor` 全绿 → `up` 起 7 容器、backend healthy → `/health` 容器内与宿主机均 200 → `migrate` exit 0（未标 done 仅因 `down`/`logs` 未逐个实跑）。
 - **P0-2 真库基线已交付（evidence 升到 real，X6 转 pass）**：`docs/refactor/schema-baseline.json` 由 `--live` 导出（PG 15.18，**10 张表**，alembic head `add_paper_knowledge_graph`，ORM 与真库漂移 23 处），`server/migrations/000001_baseline.{up,down}.sql`（10 表 / 59 列）已落地；离线 `--check-baseline` exit 0，并已把真库结构复制到临时库**连跑两遍均 exit 0**（幂等）。原挂的收尾（`sqlc.yaml` 指到 `migrations/`，与 `dev.py gen --check` 同一原子改动）**已于 2026-10-12 完成**。**本卡仍未 done 的两件都要 Docker**：现存快照是补 `columns` 之前导的，新命令 `--verify-columns` 如实返回 2；`probe_timestamps.py` 与时间列语义审计未产（X6 验收的第三问「每表时间列判定」）。
 - **P0-3 done（2026-10-12，mock）**：sqlc 的 schema 源已从临时参照改指真基线，`server/sql/schema.sql` 已删除；此前 Go 只看得见 `users` 一张表，现在 10 张表 / 59 字段全部进 model。`dev.py gen` 同批加三条生成前置检查（schema 源是含 `.down.sql` 的目录 → 拒绝；`migrations/*.up.sql` 未登记 → 拒绝；生成物有孤儿 `X.sql.go` → 拒绝），各有负向用例。
-- 测试基线 **515 passed**（unit 458 / integration 57）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
-- **2026-10-12：X2/X4/X5 从 `not_run` 改为 `fail`**——判定命令现在**都可跑**（新建 `scripts/check_nginx_routes.py`＋`scripts/export_pbkdf2_golden.py`→`contracts/pbkdf2_golden.json`），跑出来是红的：X2 红在 `/api/` 还指向 Python（P0-8），X4/X5 红在 `server/internal/auth` 这个 Go 包不存在（P0-6）。已核实 `go test ./internal/auth/...` 与 `go test -run <不存在的测试>` 都 **exit 1 而不是 0**（不会"没测试也算过"）。`sync_progress.py` 新增机检：**in_progress/done 阶段**的退出命令引用的 `scripts/*.py` 必须存在（未来阶段允许预留，否则门禁天天红）。
+- 测试基线 **547 passed**（unit 490 / integration 57；2026-10-12 P0-6 之后复跑 49.28s）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
+- **2026-10-12：P0-6 认证垂直切片推到 mock 级上限，X5 转 pass、X4 只剩 chain 半侧红**。产出 `server/internal/auth/{password,jwt,service,handler}.go` ＋ config 七个认证键与 `ValidateAuth()` fail-fast ＋ `cmd/api` 挂三条路由 ＋ `GetProfileByUsername`（`/me` 不碰 `password_hash`）＋ `scripts/export_jwt_golden.py` → `contracts/jwt_golden.json`（9 条）。`go test ./internal/auth/...` 50 项 PASS、`npm run typecheck` 0 error、全量 547 passed。**Go 侧照抄了 Python 的若干现状而不是"顺手改好"**（各有用例钉住）：register 会 strip 而 login 不 strip、密码长度按**码点**算、`role` 不做枚举校验（`role:"root"` 折叠成 user，见台账 C21）、用户不存在与密码错同一个 401、重名 409 先于邀请码 403、detail 文案**含中英文混用**且全部由生产侧 handler 现跑取数。
+- **X2/X4 仍 fail，红点各不相同**：X2 红在 `/api/` 还指向 Python（P0-8）；X4 的 Go 半侧已全绿，红在 `pytest -m chain -k go_auth` 收 0 项、rc=5（chain 层容器 fixture 属 P0-5）。X5 已 pass，但**它 `real` 那一档仍开着**：`--from-db` 的真库形状统计（含"是否残留 bcrypt 族"）因原真库消失而无法执行（C20），Go 不实现 bcrypt，P1 接管 `users` 前必须先跑一次 `--from-db`。
+- **两侧结论相反的轴要写进文件而不是藏进代码**：`contracts/jwt_golden.json` 有 `divergences` 段（缺 `exp` 的令牌 Python 收 / Go 拒；alg 白名单 Go 写死 HS256），负向量另带 `rejected_by` 区分"令牌层拒"与"回库拒"。这份文件**不能逐字节重建**（token 带 exp），所以它的 `--check` 是语义校验：把已提交的每条 token 重新交给生产裁判，并比对 claims 与结构性字段。
+- **（沿革，2026-10-12 上一轮）X2/X4/X5 从 `not_run` 改为 `fail`**——判定命令当时变得**都可跑**（新建 `scripts/check_nginx_routes.py`＋`scripts/export_pbkdf2_golden.py`→`contracts/pbkdf2_golden.json`），跑出来是红的：X2 红在 `/api/` 还指向 Python（P0-8），X4/X5 红在 `server/internal/auth` 这个 Go 包不存在（P0-6）。已核实 `go test ./internal/auth/...` 与 `go test -run <不存在的测试>` 都 **exit 1 而不是 0**（不会"没测试也算过"）。⚠️ **本轮更正两条**：①**X5 已转 pass**（Go 包落地），X4 的红点移到 chain 半侧；②那句"不会没测试也算过"只对了一半——X5 的命令原文 `cd server && go test -run TestVerifyLegacyHash` 打的是 `server/` 根目录（无 Go 文件），**rc 恒为 1 与测试是否存在无关**，也就是说那条判据**永远不可能变绿**（台账 C22，已补包路径）。`sync_progress.py` 的机检（**in_progress/done 阶段**的退出命令引用的 `scripts/*.py` 必须存在）仍有效，未来阶段允许预留。
 - **golden vectors 的"不含密码明文"落成了可机检的形式**：向量是合成口令的摘要，口令由 `vector_id` 按文件内 `password_rule` 重建（`password = "ResearchPilot golden vector " + vector_id`，UTF-8）；每条期望值都由**生产裁判** `backend/core/auth.py:verify_password` 现算，不一致就拒绝导出。真库 `password_hash` **有意不导出**（提交进仓库就是离线爆破机），`--from-db` 只取形状统计并检查覆盖面（含"库里还有 bcrypt 族 → Go 接管会把这批人锁死"）。
 - Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）。**2026-10-12 二次核查：数据面已被清空**——`docker system df` 四项全 0（镜像 / 容器 / 卷 / 构建缓存），`docker volume ls` 空；VHDX 仍占 1.64 GB 是「删数据不自动缩小」的**残留空间而不是数据**。此前记的「11 个镜像 / 约 4.3 GB」作废。
 - **上一条的后果（台账 C20）**：导出 `docs/refactor/schema-baseline.json` 的那个**原真库随数据卷消失、不可复原**（本机也没有原生 PG 在 5432 上），`.env` 同样不在（`dev.py doctor` 报 1 项阻塞）。所以 P0-2/P0-7 剩的 real 级补证不是「等 Docker 起来重跑」，而是**先重建环境**：补 `.env` → 拉 6 个中间件镜像 → `alembic upgrade head` 建库 → 再重导 `--live`。用户 2026-10-12 已确认原库是开发数据、直接重建。
@@ -79,12 +82,18 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「schema 源整目录交给 sqlc 就行」 | **会静默出错**。sqlc 按文件名顺序把目录里每个 `.sql` 当 schema 执行，`000001_baseline.down.sql` 排在 `.up.sql` **前面** → 先 DROP 再 CREATE，生成物等于按回退后的库产出。必须逐个列 `*.up.sql`（`dev.py gen` 已机检这条，以及"新 up 文件没登记""生成物有孤儿"两条） |
 | 「`--check-baseline` 通过 = 基线与真库一致」 | **仍错**。它只校验**文件形态**（up 非破坏 + 幂等、down 配对），**不比对内容**。内容比对是另一条命令 `--verify-columns`（2026-10-12 落地，需要快照带 `columns`）。同一版的 down 规则不剥注释、up 剥（注释里写 `DROP TABLE IF EXISTS` 会被误判）——**已修**，两边现在一致 |
 | 「`schema-baseline.json` 里有列清单可直接抄」 | **错**。旧版 `--live` 的 payload 只有 tables/alembic/tz/server_version/indexes/constraints/column_diff，**没有 columns**，所以基线的 varchar 长度与 NOT NULL 长期无机检。2026-10-12 已给 payload 补上 `columns` 并加了 `--verify-columns`，但**仓库里现存那份快照仍是旧版导出的、没有列清单**——要等 Docker 起来重跑 `--live` 才真的比得上 |
+| 「X5 的判定命令是 `cd server && go test -run TestVerifyLegacyHash`」 | **那条命令永远不可能绿**。`server/` 根目录没有 Go 文件 → `no Go files` → `FAIL [setup failed]` → **rc 恒为 1，与测试是否存在无关**。已补包路径 `./internal/auth/...`（台账 C22）。教训：C17 曾把"这条命令 rc=1"当成好消息（证明不会假绿）——那没错，但**同一事实还意味着判据不可能被满足**，当时只看到前半。凡是"今天必然红"的判据都要多问一句"它将来有没有可能绿"；**可复用的检查办法**：把判据要测的实现全删掉再跑一次，rc 不变就说明这条命令根本没在测它声称要测的东西 |
+| 「Go 的 500 文案是 `Internal Server Error`」 | **与生产侧不一致**。`backend/core/exceptions.py:unhandled_error_handler` 是 `Internal server error`（小写 s）；大写那句是 Starlette **没注册** handler 时的纯文本兜底，而 `app.py:94` 注册了。已对齐（台账 C23）——同一个 Go 服务里出现两种 500 文案正是 `01 §6.3` 记的坑 |
+| 「契约里 `RegisterRequest.role` 是 enum `[user, admin]`，Go 该按枚举校验」 | **会造出两侧分歧**。实现是 `role: str | None`，实测 `role:"root"` 返回 **200** 并被折叠成 `user`；多余字段也是 200（pydantic 不 forbid extra）。裁判是运行中的系统，Go 照实现走（台账 C21）。`check_contracts.py` **抓不到这类偏差**——它不校验请求 schema 与 pydantic 模型是否一致 |
+| 「`Authorization: Basic …` 的 401 是 `Invalid authentication credentials`」 | **错**。实测 `OAuth2PasswordBearer`：缺头与非 bearer 方案都回 `Not authenticated`（那句 `Invalid authentication credentials` 在 `HTTPBearer` 里，本项目没用）。另：`Authorization: Bearer`（后面不跟令牌）**能过** bearer 这一关，失败发生在后面的令牌校验。所以 Go 侧要复刻的每一句 detail 都应**用生产 handler 现跑取数**（`internal/auth/handler.go` 顶部那张八行实测表就是这么来的），别照源码读一遍凭印象写 |
+| 「Go 依赖拉不动，P0-1 之后每张 Go 卡都开不了工」（`risks[1]`） | **可解，但本机 GOPROXY 一直没设**。2026-10-12 实测 `go env GOPROXY` 仍是默认的 `proxy.golang.org`（curl 12s 超时），按 §5 改成 `goproxy.cn` 后 **1.6s** 就拉到了 `golang-jwt/jwt/v5 v5.3.1`。所以那条风险的缓解措施是有效的，只是**没被执行过**；文档写的是"该这么做"，不是"已经这么做了"，别把它当成既成事实 |
+| 「密码长度校验用 `len(password)` 就行」 | **Go 里会错**。生产侧是 Python 的 `len(str)` = **码点**数，Go 的 `len(string)` = **字节**数；含中文的口令在 Go 侧会被判得更严，同一个口令 Python 放行、Go 拒绝。用 `utf8.RuneCountInString`（已有用例钉住） |
 
 ## 5. 本机环境要点
 
 - **前置**：Docker Desktop 必须在运行；引擎没起来时 `docker info` 只报 pipe-not-found（不是缺组件）。
-- `.env` **三个必填**：`JWT_SECRET_KEY`、`LLM_API_KEY`、`LLM_MODEL`（后两个连只验骨架也要有非空占位值）。
-- 中国大陆：`go env -w GOPROXY=https://goproxy.cn,direct`；`docker.io` 被 DNS 污染 → 用镜像源或本机代理（本机代理 `本机代理端口`）。
+- `.env` **三个必填**：`JWT_SECRET_KEY`、`LLM_API_KEY`、`LLM_MODEL`（后两个连只验骨架也要有非空占位值）。⚠️ **2026-10-12 本机 `.env` 已丢失**（从未入库），`dev.py doctor` 会报这一项阻塞；按 `.env.example` 重建即可，但**原值不可恢复**——`JWT_SECRET_KEY` 换值等于让既有 token 全部失效（本机开发库无妨，生产必须先备份）。
+- 中国大陆：`go env -w GOPROXY=https://goproxy.cn,direct`（**2026-10-12 已在本机执行**；此前 `go env GOPROXY` 一直是默认的 `proxy.golang.org`，curl 12s 超时，改成 goproxy.cn 后 1.6s 就能拉依赖）；`docker.io` 被 DNS 污染 → 用镜像源或本机代理（本机代理 `本机代理端口`）。
 - **BuildKit 取 `# syntax=docker/dockerfile:1` 不走 Docker Desktop 代理**：Docker Hub 不可达时必挂；先用 daemon 把 `docker/dockerfile:1`、`node:20-alpine`、`python:3.12-slim`、`nginx:alpine` 拉到本地即可。
 - `scripts/audit_schema.py --live` **需要显式导出 `DATABASE_URL`**（脚本不读 config 的默认值），否则它会以为本机没有 PG。2026-10-12 起它会连列清单一起导出（`columns`），配套的离线比对是 `--verify-columns`；**现存那份快照还是旧版导出的、没有 `columns`**，此时 `--verify-columns` 如实返回 2 而不是假装比过（见 §4 末两行）。
 - 验证基线迁移是否真的幂等，可用「临时库」法（不碰真库）：`pg_dump --schema-only langchain_app | psql -d <临时库>` 复制结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变。
@@ -124,7 +133,9 @@ uv run python scripts/check_contracts.py
 uv run python scripts/check_frontend.py
 uv run python scripts/audit_schema.py --check-baseline
 uv run python scripts/export_pbkdf2_golden.py --check
-uv run python -m pytest -q            # 现状 515 passed（unit 458 / integration 57）
+uv run python scripts/export_jwt_golden.py --check
+uv run python -m pytest -q            # 现状 547 passed（unit 490 / integration 57）
+uv run python scripts/dev.py gen --check   # sqlc 生成物漂移门禁（改了 server/sql/queries 必跑）
 cd server && gofmt -l . && go vet ./... && go test ./...
 ```
 
