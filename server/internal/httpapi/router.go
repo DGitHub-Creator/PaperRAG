@@ -26,8 +26,14 @@ type Deps struct {
 	Timeout time.Duration
 }
 
-// NewRouter 组装 go-api 的路由。P0 只有存活与就绪两条，业务接口在 P1 逐条迁入。
-func NewRouter(d Deps) http.Handler {
+// NewRouter 组装 go-api 的路由：中间件、404/405 信封、存活与就绪探针。
+//
+// 返回 *chi.Mux 而不是 http.Handler，是为了让**业务路由在调用方挂载**（cmd/api）。
+// 业务 handler 在 internal/auth 里，而 auth 要用本包的 WriteJSON/WriteError 写信封——
+// 若在这里 import auth 就成环了。信封只能有一处实现（两种形状正是 01 §6.3 记的坑），
+// 所以环从这里断开：本包不认识 auth，auth 认识本包。
+// *chi.Mux 本身就实现了 http.Handler，既有调用方不受影响。
+func NewRouter(d Deps) *chi.Mux {
 	if d.Timeout <= 0 {
 		d.Timeout = 3 * time.Second
 	}

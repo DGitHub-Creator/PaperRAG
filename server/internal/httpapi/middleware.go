@@ -72,7 +72,10 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 				if v := recover(); v != nil {
 					observability.WithTrace(logger, r.Context()).Error("panic_recovered",
 						"panic", v, "path", r.URL.Path, "stack", string(debug.Stack()))
-					WriteError(w, http.StatusInternalServerError, "Internal Server Error")
+					// 文案与生产侧 backend/core/exceptions.py:unhandled_error_handler 逐字一致
+					// （注意是小写 s 的 "server error"）；此前这里写的是 "Internal Server Error"，
+					// 那是 Starlette **没注册** handler 时的纯文本兜底，本项目注册了，所以以注册的那句为准。
+					WriteError(w, http.StatusInternalServerError, "Internal server error")
 				}
 			}()
 			next.ServeHTTP(w, r)

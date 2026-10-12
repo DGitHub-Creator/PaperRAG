@@ -172,8 +172,10 @@ func TestRecoverTurnsPanicIntoEnvelope(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("期望 500，得到 %d", rec.Code)
 	}
-	if got := decode(t, rec)["detail"]; got != "Internal Server Error" {
-		t.Fatalf("500 也必须是 {\"detail\": ...} 信封，得到 %v", got)
+	// 文案与生产侧 unhandled_error_handler 逐字一致（小写 s 的 "server error"），
+	// 不只是"要有 detail 信封"——两侧文案不同的话，前端按字符串分支的逻辑就会分叉。
+	if got := decode(t, rec)["detail"]; got != "Internal server error" {
+		t.Fatalf("500 也必须是 {\"detail\": \"Internal server error\"} 信封，得到 %v", got)
 	}
 }
 

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,9 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/auth"
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/config"
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/db"
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/httpapi"
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
@@ -24,14 +28,30 @@ func main() {
 		slog.Error("config_invalid", "error", err)
 		os.Exit(1)
 	}
+	// 认证面 fail-fast：JWT_SECRET_KEY 缺失时**拒绝启动**（所有环境）。
+	// 空密钥 python-jose 是静默接受的，Go 若不拦就成了整条链路上最弱的一环。
+	if err := cfg.ValidateAuth(); err != nil {
+		slog.Error("auth_config_invalid", "error", err)
+		os.Exit(1)
+	}
+
 	logger := observability.New(cfg.Service, !cfg.IsProduction())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	checks := databaseChecks(ctx, cfg, logger)
+	pool, poolErr := newPool(ctx, cfg, logger)
+	checks := databaseChecks(pool, poolErr, cfg)
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:  logger,
+		Version: cfg.Version,
+		Checks:  checks,
+		Timeout: cfg.ReadyTimeout,
+	})
+	mountAuthRoutes(router, cfg, pool, poolErr, logger)
+
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger, Version: cfg.Version, Checks: checks, Timeout: cfg.ReadyTimeout}),
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -56,15 +76,70 @@ func main() {
 	logger.Info("shutdown_complete")
 }
 
-func databaseChecks(ctx context.Context, cfg config.Config, logger *slog.Logger) []httpapi.Check {
+// mountAuthRoutes 挂 P0-6 的三条认证路由。路径逐字取自 contracts/openapi.yaml。
+//
+// 挂在这里而不是 httpapi.NewRouter 里，是因为 auth 要用 httpapi 的信封写入器：
+// 若 httpapi 反过来 import auth 就成了环（详见 httpapi.NewRouter 的注释）。
+func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) {
+	svc := auth.NewService(
+		userStore(pool, poolErr),
+		auth.TokenConfig{
+			Secret:            cfg.JWTSecretKey,
+			ExpireMinutes:     cfg.JWTExpireMinutes,
+			RefreshExpireDays: cfg.JWTRefreshExpireDays,
+		},
+		cfg.PasswordPBKDF2Rounds,
+		cfg.AdminInviteCode,
+		cfg.MinPasswordLength,
+		logger,
+	)
+	router.Post("/api/v1/auth/register", auth.RegisterHandler(svc))
+	router.Post("/api/v1/auth/login", auth.LoginHandler(svc))
+	router.Get("/api/v1/auth/me", auth.MeHandler(svc))
+}
+
+// newPool 建连接池。失败不退出进程：/ready 会如实报 database 不可用（与 Python 侧
+// 探针语义一致），开发环境没有库时 go-api 仍能起来看健康检查。
+func newPool(ctx context.Context, cfg config.Config, logger *slog.Logger) (*pgxpool.Pool, error) {
 	if cfg.DatabaseURL == "" {
-		logger.Warn("database_url_missing", "hint", "/ready 会报 database 不可用")
-		return []httpapi.Check{httpapi.NotConfiguredCheck("database", "DATABASE_URL 未配置")}
+		logger.Warn("database_url_missing", "hint", "/ready 会报 database 不可用，认证接口会回 500")
+		return nil, errors.New("DATABASE_URL 未配置")
 	}
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("postgres_pool_init_failed", "error", err)
-		return []httpapi.Check{httpapi.NotConfiguredCheck("database", "连接池创建失败")}
+		return nil, err
+	}
+	return pool, nil
+}
+
+// userStore 返回认证切片用的 users 访问面。连接池不可用时给一个"一律报错"的实现，
+// 于是认证接口回 500（与生产侧"库连不上 → unhandled_error_handler 回 500"同形状），
+// 而不是 404——404 会让人以为路由没挂，那是完全不同的排查方向。
+func userStore(pool *pgxpool.Pool, poolErr error) auth.UserStore {
+	if pool == nil {
+		return unavailableStore{reason: fmt.Sprintf("数据库不可用: %v", poolErr)}
+	}
+	return db.New(pool)
+}
+
+type unavailableStore struct{ reason string }
+
+func (u unavailableStore) GetUserByUsername(context.Context, string) (db.User, error) {
+	return db.User{}, errors.New(u.reason)
+}
+
+func (u unavailableStore) GetProfileByUsername(context.Context, string) (db.GetProfileByUsernameRow, error) {
+	return db.GetProfileByUsernameRow{}, errors.New(u.reason)
+}
+
+func (u unavailableStore) InsertUser(context.Context, db.InsertUserParams) (db.InsertUserRow, error) {
+	return db.InsertUserRow{}, errors.New(u.reason)
+}
+
+func databaseChecks(pool *pgxpool.Pool, poolErr error, cfg config.Config) []httpapi.Check {
+	if pool == nil {
+		return []httpapi.Check{httpapi.NotConfiguredCheck("database", poolErr.Error())}
 	}
 	return []httpapi.Check{httpapi.PostgresCheck(pool)}
 }
