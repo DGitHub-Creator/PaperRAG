@@ -31,7 +31,10 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - 测试基线 **515 passed**（unit 458 / integration 57）；`chain` 与 `e2e` **各 0 条用例**，`-m chain` 收 0 项时 pytest 返回 **exit=5 而不是 0，不能算绿**。
 - **2026-10-12：X2/X4/X5 从 `not_run` 改为 `fail`**——判定命令现在**都可跑**（新建 `scripts/check_nginx_routes.py`＋`scripts/export_pbkdf2_golden.py`→`contracts/pbkdf2_golden.json`），跑出来是红的：X2 红在 `/api/` 还指向 Python（P0-8），X4/X5 红在 `server/internal/auth` 这个 Go 包不存在（P0-6）。已核实 `go test ./internal/auth/...` 与 `go test -run <不存在的测试>` 都 **exit 1 而不是 0**（不会"没测试也算过"）。`sync_progress.py` 新增机检：**in_progress/done 阶段**的退出命令引用的 `scripts/*.py` 必须存在（未来阶段允许预留，否则门禁天天红）。
 - **golden vectors 的"不含密码明文"落成了可机检的形式**：向量是合成口令的摘要，口令由 `vector_id` 按文件内 `password_rule` 重建（`password = "ResearchPilot golden vector " + vector_id`，UTF-8）；每条期望值都由**生产裁判** `backend/core/auth.py:verify_password` 现算，不一致就拒绝导出。真库 `password_hash` **有意不导出**（提交进仓库就是离线爆破机），`--from-db` 只取形状统计并检查覆盖面（含"库里还有 bcrypt 族 → Go 接管会把这批人锁死"）。
-- Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）；当前 11 个镜像 / 约 4.3 GB，**没有 backend 镜像**（按需构建）。
+- Docker 可用；数据盘位置可在 Docker Desktop 设置里改（不占系统盘）。**2026-10-12 二次核查：数据面已被清空**——`docker system df` 四项全 0（镜像 / 容器 / 卷 / 构建缓存），`docker volume ls` 空；VHDX 仍占 1.64 GB 是「删数据不自动缩小」的**残留空间而不是数据**。此前记的「11 个镜像 / 约 4.3 GB」作废。
+- **上一条的后果（台账 C20）**：导出 `docs/refactor/schema-baseline.json` 的那个**原真库随数据卷消失、不可复原**（本机也没有原生 PG 在 5432 上），`.env` 同样不在（`dev.py doctor` 报 1 项阻塞）。所以 P0-2/P0-7 剩的 real 级补证不是「等 Docker 起来重跑」，而是**先重建环境**：补 `.env` → 拉 6 个中间件镜像 → `alembic upgrade head` 建库 → 再重导 `--live`。用户 2026-10-12 已确认原库是开发数据、直接重建。
+- **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据，不追认新库的结果。
+- **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已落地但从未在真 PG 执行过**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`，`--check-baseline` exit 0。所以 P0-7 仍停 mock，不缺迁移文件而缺真库幂等验证 + compose 端口（P0-8）。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
@@ -56,6 +59,8 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 旧结论（曾在 README / p0-environment.md / progress.json 里） | 现场核查后的事实 |
 | --- | --- |
 | 「本机缺一次重启才能用 Docker」「WSL2 可选组件装完待重启」 | **错**。真因是 Docker Desktop 没在运行；启动后 **5 秒**引擎即就绪 |
+| 「本轮 Docker daemon 不可达，real 级补证排队」（`progress.json` 的 `current`、`09` P0-2/P0-7 的当前状态） | **已过期**。2026-10-12 二次核查 daemon 可达。但补证的前置**变重了而不是变轻了**：数据面被清空（0 镜像 / 0 卷），所以是「重建 `.env` + 拉镜像 + `alembic upgrade head` 建库」，不是「启动 Docker」（见 §3 与台账 C20） |
+| 「P0-2 剩下两件事只要 Docker 起来就能跑」「原真库一直在容器卷里等着」 | **错，而且不可逆**。原真库随数据卷消失、本机也无原生 PG，**无法复原**。X6 的「在存量库上幂等」这一问永久失去原对象：只保留 2026-10-11「临时库法」的实跑记录作历史证据，**不拿重建出的全新库自证充数** |
 | 「Docker Desktop 是 per-user 安装 / CLI 29.8.2 / Desktop 4.94」 | **错**。系统级安装（不是 per-user）；具体版本号已从文档移除（避免暴露设备信息） |
 | 「只验骨架可跳过 LLM key」 | **错**。`app.py` 的 startup 无条件调 `validate_config()`，缺 `LLM_API_KEY`/`LLM_MODEL` 即 `RuntimeError` 拒绝启动 |
 | 「测试基线 448 / 333 / 307 项」 | 现状 **515 passed**（2026-10-12 复跑，39.8s；unit 458 / integration 57）；那些数字是 2026-10-09 的历史记录 |
