@@ -9,7 +9,11 @@ wheels/
 
 # Virtual environments
 .venv
-.env    
+.env
+# prod compose 的密钥文件（docker compose --env-file .env.production ...）。
+# 只写 .env 不写它会让人以为它是安全的：`.env.production.example` 里那句
+# "compose 服务: minio" 对应的真密钥同样不该入库（AGENTS.md §7「密钥只经环境变量」）。
+.env.production
 
 #Docker files
 volumes/
