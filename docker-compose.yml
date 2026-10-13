@@ -55,20 +55,30 @@ services:
       timeout: 20s
       retries: 3
 
+  # 这个服务仍然是 Milvus 的 S3 后端，服务名也仍叫 minio（`MINIO_ADDRESS: minio:9000` 不用改）。
+  # 但镜像换掉了：`minio/minio` 的开源 Server 已被上游归档——Docker Hub 的公开镜像和
+  # dl.min.io 的下载（含当前版）全部返回 410 Gone，任何镜像源都给不出那个 pinned tag。
+  # 换成 versitygw：Apache-2.0、仍在维护、同样讲 S3 协议，posix 后端直接把对象落到挂载目录。
+  # 凭据走 ROOT_ACCESS_KEY/ROOT_SECRET_KEY 环境变量而不是 command 的 --access/--secret：
+  # versitygw 不读 MINIO_*（留着那两行只会让人以为改密码有效），而 `--access/--secret` 确实有
+  # 环境变量兜底（`versitygw gateway --help` 实测：`$ROOT_ACCESS_KEY_ID` / `$ROOT_ACCESS_KEY`，
+  # `$ROOT_SECRET_ACCESS_KEY` / `$ROOT_SECRET_KEY`）。用环境变量是为了和 prod 同形，
+  # 也让 prod 那对真密钥不会出现在 `docker inspect` 的命令行里。
+  # ⚠️ 健康检查从"打 MinIO 的 /minio/health/live"降级成 TCP 探活：versitygw 没有那个端点，
+  #    镜像里也没有 curl。这只判"端口在听"，不判"能读写对象"——真正的判据是 standalone 自己 healthy。
   minio:
     container_name: milvus-minio
-    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    image: versity/versitygw:v1.8.0
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      ROOT_ACCESS_KEY: minioadmin
+      ROOT_SECRET_KEY: minioadmin
     ports:
-      - "9001:9001"
       - "9000:9000"
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+    command: ["--port", ":9000", "posix", "/minio_data"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
       interval: 30s
       timeout: 20s
       retries: 3

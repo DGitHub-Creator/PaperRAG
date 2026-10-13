@@ -2,6 +2,11 @@
 # （researchpilot-postgres 等），本来就互斥、不能同时起，所以项目名也应该一致，
 # 而不是再开一个 researchpilot-prod 让容器标签出现第三种来源。
 # 不写 name: 时 Compose 会退回目录名（本机目录仍叫 PaperRAG），标签就成了 paperrag。
+#
+# ⚠️ 启动命令必须带 --env-file：`docker compose --env-file .env.production -f docker-compose.prod.yml up -d`。
+#    下面每个 service 里的 env_file 只注入**容器**环境，不参与 compose **顶层的 ${VAR:?} 插值**，
+#    所以少了 --env-file 时 POSTGRES_PASSWORD / MINIO_ACCESS_KEY / MINIO_SECRET_KEY 三个必填项
+#    全部报 "required variable is missing a value"（实测 rc=1；补上后 `config` rc=0）。
 name: researchpilot
 services:
   postgres:
@@ -51,17 +56,22 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # 与开发编排同一处改动，理由相同：`minio/minio` 的开源 Server 已被上游归档（Docker Hub 公开镜像与
+  # dl.min.io 均返回 410 Gone），那个 pinned tag 在任何源上都取不到 → 这份 prod 文件今天**起不来**。
+  # prod 用环境变量传凭据而不是 command 的 --access/--secret：后者会出现在 `docker inspect` 里。
+  # 对外变量名不变（`.env.production.example` 仍写 MINIO_ACCESS_KEY/MINIO_SECRET_KEY），只在容器内改名。
+  # ⚠️ 健康检查同 dev 一样从 MinIO 的 /minio/health/live 降级成 TCP 探活（镜像无 curl，也无该端点）。
   minio:
     container_name: milvus-minio
-    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    image: versity/versitygw:v1.8.0
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      ROOT_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      ROOT_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
     volumes:
       - minio_data:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+    command: ["--port", ":9000", "posix", "/minio_data"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
       interval: 30s
       timeout: 20s
       retries: 3
