@@ -10,14 +10,14 @@
 
 > **现状读数**（同步于 2026-10-12 本轮 P0-6 之后）：8 条里 **pass 5**（X3/**X5**/X6/X7/X8）、
 > **fail 2**（X2 红在 `/api/` 还指向 Python；X4 的 Go 半侧已全绿，红在 `pytest -m chain -k go_auth` 收 0 项、rc=5）、
-> **not_run 1**（X1，要 `docker compose up`）。此前本节写「当前状态一律 `not_run`」已失效，
+> **not_run 1**（X1，判据已于 2026-10-13 从「`docker compose up`」改写为「中间件容器 + 应用源码起进程」，见 §0 表与台账 C29）。此前本节写「当前状态一律 `not_run`」已失效，
 > 上一版写的「pass 4 / fail 3」也已过期——**读数请用 `sync_progress.py --check` 的输出，别手抄本行**。
 > `fail` 与 `not_run` 要分开读：前者是**已判定且不合格**，后者是**还没判**。
 
 | # | 标准 | 判定命令（仓库根执行，除非注明） | 期望输出 | 等级 |
 | --- | --- | --- | --- | --- |
-| X1 | 骨架能起来 | `docker compose up -d` 后 `curl http://localhost/api/v1/health` 与 `/api/v1/ready` | 两条均 200；`compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running | real |
-| X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py`（默认同时读 `nginx/nginx.conf` 与 `docker-compose.yml`） | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location；compose 里 `ai-core` 不发布宿主端口。**2026-10-12 判定脚本已落**（`tests/unit/test_check_nginx_routes.py` 21 项，每条规则一正一篡改）；真配置今天**如实 exit 1**（R1：`/api/` 还指向 `backend`），这是 P0-8 的活，不是脚本缺陷。level 仍是 e2e：静态判定只证明"配置写对了"，运行中的 nginx 与配置一致要等 `docker compose up` | e2e |
+| X1 | 骨架能起来 | `uv run python scripts/dev.py infra` 起中间件，宿主**源码**起 `ai-core`（`dev.py serve`）与 `go-api`（`cd server && go run ./cmd/api`），再 `curl http://localhost:8080/api/v1/health` 与 `/api/v1/ready` | 两条均 200，且 `/ready` 的 PG/Redis 依赖探活通过。<br>**2026-10-13 定案改写了这条判据**：原文是「`docker compose up -d` 后 `compose ps` 里 `go-api`/`go-worker`/`ai-core` 为 healthy/running」，那前提是**把应用服务容器化**，而实际工作流是「容器只跑中间件，前后端源码跑」。⚠️ 改写后 X1 **不再证明编排层**，它证明的是「三个进程在真机源码形态下能起来并互相打通」；编排证据只剩 `docker-compose.prod.yml` 那一份，属部署阶段 | real |
+| X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py`（默认同时读 `nginx/nginx.conf` 与 `docker-compose.yml`） | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location；`ai-core` 不对外可达。<br>**2026-10-12 判定脚本已落**（`tests/unit/test_check_nginx_routes.py` 21 项，每条规则一正一篡改）；真配置今天**如实 exit 1**（R1：`/api/` 还指向 `backend`），这是 P0-8 的活，不是脚本缺陷。<br>⚠️ **2026-10-13 定案带来的两处口径要改**：①R4 原先判「compose 里 `ai-core` 不发布宿主端口」，而源码形态下 `ai-core` 根本不在 dev compose 里，等价判据变成「**只绑 `127.0.0.1`、不对外监听**」（prod compose 那份仍按端口判，两者要分开读）；②末尾那句"运行中的 nginx 与配置一致要等 `docker compose up`"在 dev 路径上**没有了承载物**——本机不跑 nginx 容器，运行时一致性只能等部署阶段验，所以 level 留在 e2e 是诚实的，别把它当成"P0-8 一跑就升 real" | e2e |
 | X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + `health/ready`（共 18 个操作）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。**2026-10-09 本机 pass**（`tests/unit/test_check_contracts.py` 16 项，含 11 项负向篡改用例；CI backend job 已挂本门禁）。K1/K4 已定案落地，契约只剩 `{"detail": ...}` 一种信封；K2/K3 已定案，落点分别在 P0-3/P0-8，见 §3 | mock |
 | X4 | 认证垂直切片可用 | **判定命令以 `docs/progress.json` 的 X4 为准**：`uv run python scripts/export_jwt_golden.py --check && cd server && go test ./internal/auth/... && uv run pytest -m chain -k go_auth`（本行原先把两段写成 `A + B`，与 progress.json 的 `&&` 不一致，已按后者更正；前面那段 `--check` 是 2026-10-12 新加的——Go 的测试读的就是这份 golden 文件，文件漂了而测试还绿等于什么都没证明。expect 一字未改，属加固不属放水） | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验，Go 签发的能被 Python 校验（golden vectors 双向）。**2026-10-12 本轮：Go 半侧已全绿，整条仍 rc=5**——`server/internal/auth` 四件已落地，`go test ./internal/auth/...` 50 项 PASS；新增 `contracts/jwt_golden.json` 9 条（正 3 / 负 6），每条 `expect_accept` 由生产函数 `get_user_from_bearer_token` 现算（用只认一个用户的桩 db 跑**真函数**），`TestParseGoldenTokens` 逐条对上，`07` §兼容面表点名的三件事（type 语义 / 过期 / 错误 secret）各有向量。红点因此从"包不存在"移到 `pytest -m chain -k go_auth`：收 0 项、**rc=5**（不是 0，不能算绿），chain 层的容器 fixture 是 P0-5 的产出，且本机要先重建 Docker 环境（台账 C20）。两侧**结论不同**的两条轴写在 golden 文件的 `divergences` 段而不是塞进 vectors：缺 exp 的令牌 Python 收、Go 拒；alg 白名单 Go 写死 HS256 | real |
 | X5 | 旧密码不被锁死 | **判定命令以 `docs/progress.json` 的 X5 为准**：`uv run python scripts/export_pbkdf2_golden.py && cd server && go test ./internal/auth/... -run TestVerifyLegacyHash`。⚠️ 本行原先写的是 `cd server && go test -run TestVerifyLegacyHash`——`server/` 根目录没有 Go 文件，那条命令 `no Go files` → `FAIL [setup failed]` → **rc 恒为 1，与测试是否存在无关**，即"这条判据永远不可能变绿"（台账 C22，已修） | golden 向量全部通过后才允许 Go 接管 `users`。**2026-10-12 本轮转 pass（实跑 rc=0）**：`contracts/pbkdf2_golden.json` 10 条向量（6 正 4 负），形状轴覆盖 `04` §风险表点名的三件事（标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000）再加 UTF-8 口令；每条期望值由生产裁判 `backend/core/auth.py:verify_password` 现算，裁判不一致就拒绝导出。**文件里没有明文口令**：口令由 `vector_id` 按 `password_rule` 重建，真库 `password_hash` 有意不导出（`--from-db` 只取形状统计）。Go 侧 `internal/auth/password.go` 用标准库 `crypto/pbkdf2`（Go 1.24+，零新依赖），`hmac.Equal` 对上 `compare_digest`；重跑导出件逐字未变。反向那一半（Go 写、Python 验）也实跑取过证。<br>⚠️ **本条 pass 只覆盖 expect 那句话，`real` 那一档仍开着**：`--from-db` 的真库形状统计（迭代数/盐长分布、**是否还残留 bcrypt 族**）因原真库随 Docker 数据卷消失而无法执行（台账 C20），所以"库里还有没有 Go 验不了的行"没有答案。Go 侧不实现 bcrypt（无对象可验，引依赖就是死代码），处置是显式拒绝 + `family=bcrypt` 的 WARN 日志；**P1 接管 `users` 前必须先跑一次 `--from-db`** | mock→real |
@@ -47,7 +47,7 @@
 | 输出 | `server/go.mod`、`server/cmd/api/main.go`、`server/cmd/worker/main.go`（先只起健康检查与空循环）、`server/internal/httpapi/{router.go,middleware.go,envelope.go,checks.go}`、`server/internal/observability/{logging.go,trace.go}`、`server/internal/config/config.go`、`server/Dockerfile`。行为：Chi 路由 + `log/slog` JSON + `trace_id` 注入 + `{"detail": ...}` 错误信封 + `/api/v1/health`、`/api/v1/ready`（PG ping） |
 | 依赖 | P0-0 |
 | 验收 | X1；`cd server && go vet ./... && go test ./...` 绿 |
-| 等级 | mock（单测）+ real（compose 起服务后 `/ready` 200） |
+| 等级 | mock（单测）+ real（**宿主源码起 `go-api`** 后 `/ready` 200）——2026-10-13 定案：容器只跑中间件，所以 real 那一档不再以 compose 承载物，见 C29 |
 | 规模/风险 | M / `/ready` 若沿用 Python 侧三依赖探活语义（PG/Redis/Milvus）需与 `01` #2 一致，别让前端或监控脚本发现语义漂移 |
 | 当前状态 | 2026-10-09：骨架已落，`gofmt`/`go vet`/`go test` 本地全绿（16 项 Go 用例：信封形状、503 失败带 `detail`、单项超时、trace 透传、panic 兜底、配置 fail-fast）。语义对齐已写进测试：`database` 键名、`timeout after Ns`、404/405 用 FastAPI 同款文案。real 级（compose 起服务 + `/ready` 200）待 Docker → `in_progress`、`evidence=mock` |
 
@@ -122,17 +122,17 @@
 | 规模/风险 | L / `PARSE_PAPER` 若走真实 LLM/embedding 需密钥；无密钥时以固定小 PDF + 本地 embedding 的降级路径验结构，并在 `progress.json` 标 `needs_secret: true` 与未验段落 |
 | 当前状态 | 2026-10-09 推到 mock 级上限：`backend/internal_api/{router,schemas,registry,executions,codes,auth,__init__}.py` 七件挂上 7 条 `/internal/v1/ai` 路径；`AICORE_INTERNAL_TOKEN` **未配置即拒绝**（比较走 `hmac.compare_digest`），healthz/readyz 复用 `backend/api/health.py` 不另造探活。§3.4 三条语义都有断言兜着：幂等——假 loader 记调用次数，重复 `task_id` 与重复 `(run_id, idempotency_key)` 两条索引各自命中且次数恒为 1；取消——`succeed()` 见 `cancelled` 返回 None，`/result` 于是 409 带 `errors[].code=CANCELLED`，与"尚未结束"那个 detail-only 的 409 靠 code 分开；超时——deadline 已过不起跑、置 failed 并仍写 `usage{0,0,0}`（504 `MODEL_TIMEOUT`）。错误体 `{"detail","errors[]"}`：`detail` 让全仓仍只有一种信封，`errors[].code` 让 Go 不解析文本；九码由用例与 `contracts/error-codes.md` §1 及 schema 的 `ErrorCode` 三方逐码比对；实现也被钉在契约上——`x-endpoints` 的 7 条与真实注册路径一一对应、注册类型集合等于 `x-p0-registered-task-types`、`/internal/` 不出现在 `openapi.yaml`（内部面不被 `check_contracts.py` 看见，这三条是它唯一的门禁）。**2026-10-12：`server/migrations/000002_ai_executions.{up,down}.sql` 已落地**——17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何一处文档逐字写过**，所以出处只能是实现＋契约），三个时间列按新表口径走 `TIMESTAMPTZ`，`run_id NOT NULL DEFAULT ''` 以保证 `UNIQUE(run_id, idempotency_key)` 真的成立（可空列上 NULL 互不相等，唯一约束会静默失效），只建 `lease_token` 不建 `lease_owner`/`lease_expires_at`（实现里没有的列不预先建），`status` CHECK 与 `result`/`result_ref` 互斥 CHECK，不写 `GRANT`（角色尚未定义）。已注册进 `server/sqlc.yaml` 的 `schema`，`dev.py gen` 生成 `AiExecution`（17 字段，三个时间列为 `pgtype.Timestamptz`），`audit_schema.py --check-baseline` 对两个 up 文件均 exit 0。**但这份 DDL 从未在真 PG 上执行过**（本轮 Docker daemon 不可达），所以它只是"能过离线形态检查的文件"。**⚠️ 2026-10-12 第三轮已执行并验证**：见下面"剩余两件"里更新的状态——这条断言已失效，保留是为了记"当时只有离线证据"这件事。**剩余两件要真环境的事**：~~迁移在真库上 apply 两次验幂等~~ **已完成（2026-10-12 第三轮）**——在临时库里 `000002_ai_executions.up.sql` 连跑两遍，`10→11→11`、两次 exit 0、`ai_executions` 恰 **17 列**；`000001` 同样在已存在 10 表的库上两遍各 30 条 `already exists, skipping`、表数恒 10；`down` 一遍有效、第二遍退出 3（「禁止 `DROP TABLE IF EXISTS`」的刻意后果，见 `server/migrations/README.md`）。剩下的只有一件：**compose 里"ai-core 不发布宿主端口"是 P0-8 的文件改动**；另外 `uv run pytest -m chain -k ai_executions` 本机仍收集 0 项（chain fixture 属 P0-5），如实 `not_run`。`BUDGET_EXCEEDED` 暂只存在于码表与契约，拦截随 P1 的 LLM 任务类型落地 |
 
-### P0-8 compose 与跨环境实跑
+### P0-8 Go 服务接线与跨环境实跑（源码形态，不新增应用容器）
 
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | P0-1、P0-6、P0-7 |
-| 输出 | `docker-compose.yml`（新增 `go-api`/`go-worker`/`ai-core` 服务；`backend` 服务改为 `ai-core` 角色并去掉宿主端口）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `335aeb7e` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为含 Go 的完整序列 |
+| 输出 | `scripts/dev.py`（**Go 侧的源码启动路径**：把 `go-api`/`go-worker` 与 `ai-core` 拉起来，`infra` 仍只管中间件）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `335aeb7e` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为「中间件容器 + 应用源码」的完整序列。<br>⚠️ **2026-10-13 定案**：原卡列的「`docker-compose.yml` 新增 `go-api`/`go-worker`/`ai-core` 三个服务、`backend` 改角色并去掉宿主端口」**取消**——容器只跑中间件。随之 `docker-compose.yml` 里现存的 `backend`（`build: target: backend`，16.5 GB）与 `nginx` 两个服务、以及 `dev.py up` 这条命令，都变成与定案冲突的遗留物，**按台账 C29 处置**（要么删、要么明确标注为「仅 prod/部署用，不参与任何验收」）。`server/Dockerfile` 同理：目前没有任何验收路径引用它 |
 | 依赖 | P0-1、P0-6、P0-7 |
-| 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据） |
+| 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据）。⚠️ X1/X2 的判据已随定案改写（见上表），本卡按改写后的判据收 |
 | 等级 | real |
 | 规模/风险 | M / 切换 upstream 是 P0 里唯一会影响现网可用性的动作：保留"一条配置回退到 Python"的回滚路径（`04` §5），且必须在切换前后各跑一次 X2 与前端手测 |
-| 当前状态 | 2026-10-12 只落了它的**判据**：`scripts/check_nginx_routes.py`（X2 与 Y4 共用）把"Go 是唯一公开入口"拆成 R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 compose 里 `ai-core` 不发布宿主端口；今天跑真仓库配置如实 **exit 1**（R1 中，`/api/` 还指向 `backend:8000`），R2/R3 已过，R4 因为 `ai-core` 还没进 compose 只记提示。本卡本体（三个新服务、upstream 切换）一行未动。<br>**开工前必须先拍 D8**（台账 C18）：`server/migrations/` 现在有文件、**没有执行器**——PATH 上无 `migrate`、`server/go.mod` 无 golang-migrate 依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`（`dev.py:257-259`）。所以本卡除了三个服务定义，还要一并决定"Go 迁移由谁执行、什么时候执行、失败怎么办"，`09` X6 那句"`schema_migrations` 版本与设计一致"才有判据可依 |
+| 当前状态 | 2026-10-12 只落了它的**判据**：`scripts/check_nginx_routes.py`（X2 与 Y4 共用）把"Go 是唯一公开入口"拆成 R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 compose 里 `ai-core` 不发布宿主端口；今天跑真仓库配置如实 **exit 1**（R1 中，`/api/` 还指向 `backend:8000`），R2/R3 已过，R4 因为 `ai-core` 还没进 compose 只记提示。本卡本体（三个新服务、upstream 切换）一行未动。<br>**开工前必须先拍 D8**（台账 C18）：`server/migrations/` 现在有文件、**没有执行器**——PATH 上无 `migrate`、`server/go.mod` 无 golang-migrate 依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`（`dev.py:257-259`）。所以本卡除了 Go 侧的启动接线（⚠️ 2026-10-13 定案后**不再是"三个 compose 服务定义"**，见台账 C29），还要一并决定"Go 迁移由谁执行、什么时候执行、失败怎么办"，`09` X6 那句"`schema_migrations` 版本与设计一致"才有判据可依。<br>**2026-10-13 定案（用户）**：**容器只用于中间件，应用服务（Go 与 Python）一律源码运行，本卡不再把任何应用服务塞进 compose。**连带后果：①X1 判据改写（不再看 `compose ps`）；②X2 的 R4 换成「只绑 `127.0.0.1`」口径；③`docker-compose.yml` 的 `backend`/`nginx` 两个服务、`dev.py up`、`server/Dockerfile` 成为与定案冲突的遗留物，**登记为 C29 待处置**（本轮只改文档口径，没动这些文件）；④"16.5 GB 的 Python 镜像要构建"从 P0 的阻塞清单里**移出** |
 
 ### P0-9 P0 端到端演示与退出复核
 
@@ -167,11 +167,11 @@ P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
 
 | 里程碑 | 覆盖卡 | 到达时的可演示状态 |
 | --- | --- | --- |
-| M0.0 骨架可运行 | P0-0、P0-1 | `compose up` 后 Go 的 `/api/v1/health` 与 `/ready` 返回 200 |
+| M0.0 骨架可运行 | P0-0、P0-1 | `dev.py infra` 起中间件后，**源码跑的** Go 进程 `/api/v1/health` 与 `/ready` 返回 200（2026-10-13 定案：不再是 `compose up`） |
 | M0.1 契约锁定 | P0-4、P0-5 | `check_contracts.py` 绿；跨语言契约测试跑在真实容器上 |
 | M0.2 数据基线 | P0-2、P0-3 | 基线迁移在空库与存量库上都幂等；`sqlc generate` 无 diff |
 | M0.3 第一条垂直切片 | P0-6 | 浏览器经 Go 完成注册/登录/me；旧密码哈希可被 Go 验证 |
-| M0.4 P0 收口 | P0-7、P0-8、P0-9 | X1–X8 全绿；`ai-core` 只内网可达；Playwright 演示通过 |
+| M0.4 P0 收口 | P0-7、P0-8、P0-9 | X1–X8 全绿；`ai-core` 只绑 `127.0.0.1`、不对外提供入口（源码形态下的等价要求，2026-10-13 定案）；Playwright 演示通过 |
 
 可独立提交的顺序：**P0-0 → P0-1 → P0-4 → P0-2 → P0-3 → P0-5 → P0-6 → P0-7 → P0-8 → P0-9**。
 （P0-4 提前到 P0-2 之前：契约先于数据层，避免 P1 期间改契约。）

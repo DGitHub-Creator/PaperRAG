@@ -27,6 +27,14 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - 进度 **16%**（58/372 h）；38 张卡：done **8** / in_progress **3** / pending **27**；24 条退出标准 pass **5**（X3 契约机检、X5 Go 验旧密码哈希、**X6 基线迁移非破坏+幂等**、X7 测试分层、X8 进度同步）；**fail 2**（X2 nginx 还指向 Python、X4 只剩 chain 半侧）、**not_run 17**（X1 要 compose 全栈，其余属 P1/P2/P3）。
 - **2026-10-12 第三轮把 C20 的环境重建做完了**，因此 **P0-0 与 P0-2 双双转 done（real）**：`.env` 重建、Docker 数据盘迁到 `D:\DockerData`、5/6 镜像就位、PG+Redis healthy、宿主 `alembic upgrade head` 建出 **10 表 / 59 列**（`column_diff` 仍是 23 条，与原审计一致）、`--live` 重导带 `columns` → **`--verify-columns` 从 exit 2 变成真正的逐列比对 exit 0**、两份迁移在真 PG **15.19** 上验过幂等（空库 0→10→10；存量形态两遍各 30 条 skipping、表数恒 10；`000002` 10→11→11、`ai_executions` 恰 17 列）。`probe_timestamps.py` + `timestamp-audit.md` 也落了（X6 第三问），`server/migrations/README.md` 补上（卡片列了它但文件一直不存在）。
 - ⚠️ ~~仍卡着的一件事：minio 镜像在所有可用源上都取不到~~ **2026-10-13 已解开（D9 定案：换 versitygw，dev 与 prod 两份编排都换）**。定性很关键：**这不是网络问题**——MinIO 把开源 Server 归档了，`dl.min.io` 对**当前版与所有归档版**都返回 410 Gone（正文写明项目 archived / no longer maintained），Docker Hub 的公开镜像也没了，所以任何镜像源都给不出那个 pinned tag。三条路的实测结论：①代理拉原 tag = 死路；③自建同版本镜像技术上可行（GitHub Release 资产还在：二进制 103,395,480 字节 + 官方 `.shasum`，且 `api.github.com` 的 asset 端点能绕开被污染的 `github.com`），**但本机到该 CDN 持续只有约 30 KB/s，103 MB 要 30–90 分钟**，换来的是停止维护、没有安全更新的组件，已放弃；②**选它**：`versity/versitygw:v1.8.0`（Apache-2.0、2026-09 构建、仍在维护、posix 后端直接落挂载目录）。实测：`dev.py infra` 六容器全起、`milvus-standalone` **healthy**、宿主 `:9091/healthz` **200 OK**、**Milvus 自己通过 S3 API 建出了 `a-bucket`**。⚠️ 对象级往返**也已单独验证**（stdlib 现签 SigV4 打 `localhost:9000`：建桶 200 / PUT 200 / GET 200 且字节一致 / HEAD 200 / LIST 200 两个键都在 / DELETE 204；**把 secret 改错后同一个对象 403**，所以凭据真在生效，不是一句默认值）。但还有一条别说过头的边界：验的是**存储网关的 S3 语义**，不是 Milvus 的索引读写——`a-bucket` 至今是空的（Milvus 空闲时不写对象），**「上传→切片→向量入索引」那条真链路要等 P1**。
+- **2026-10-13 定案（用户）：容器只跑中间件，应用层不容器化。**Docker 用来跑数据库 / 队列 / 向量库 / 对象存储，
+  Go 与 Python、前端一律源码运行。连带后果：①**X1 的判据从「`docker compose up` 后 `compose ps` 里
+  `go-api`/`go-worker`/`ai-core` healthy」改写为「中间件容器 + 宿主源码起进程，`/api/v1/health` 与 `/ready` 各 200」**——
+  它不再证明编排层，只证明三个进程能起来互相打通；②X2 的 R4（compose 里 `ai-core` 不发布宿主端口）在 dev 形态下
+  **无物可判**，等价口径换成「`ai-core` 只绑 `127.0.0.1`」；③M0.0/M0.4 的收口写法同步；④台账 **C6 作废并移进 §C**
+  （「compose 里没有 Go 服务」从缺陷变成期望状态，那句 16.5 GB 镜像也**移出 P0 阻塞清单**，只有部署才构建它）；
+  ⑤新记 **C29**：dev compose 的 `backend`/`nginx` 服务、`dev.py up`、`server/Dockerfile`、R4 这四样是与定案冲突的遗留物，
+  **本轮一个没动**，处置属 P0-8。⚠️ 一条边界：`docker-compose.prod.yml` 仍是全栈容器（部署形态），本次定案没否它。
 - ⚠️ **本轮新发现的脆弱点（台账 C28，别记成 S3 的锅）**：`milvus-standalone` 在起来约 25 分钟后**自己 FATAL 退出**了，因果链是 `dev.py infra` 把六个中间件的数据目录**全 bind mount 到仓库所在盘**（NTFS/9p）→ etcd WAL 出现 **6.25 s 的 `slow fdatasync`**（同批量化：bind mount 单次 512B fsync 10.7–87.2 ms，named volume 4.0–16.4 ms；1 MB 顺序写 bind 侧只有 5.3–7.9 MB/s）→ Milvus 的 etcd lease 心跳超时 → querycoord `handleNodeDown` → exit 1，`compose ps` 里直接消失。**全程没有任何 S3 报错**，而且**prod compose 用的是 named volume，dev 反而是 bind——两者本来就不对称**。后果是「任何长时间跑 Milvus 的 real/e2e 证据都可能半路被这条抹掉」，所以**「6 容器 healthy」要说成「起来时 healthy，不代表十分钟后还活着」**。缓解有第三条路可走（etcd 换 named volume / `DOCKER_VOLUME_DIRECTORY` 指到 ext4 / 调大 lease 超时），**本轮一条都没动**（属存储拓扑决策，且 P0-0 的 real 证据是在 bind mount 形态下拿的）。
 - ⚠️ X6 虽 pass，但它在 `09` 里列的第二条判据 `migrate -path migrations` **今天跑不了**——golang-migrate 从未接线（台账 C18 / 决策 D8）；且它「在**存量库**上幂等」那一问的**原对象已永久失去**（C20）：今天用的是「alembic 建出来的 10 表库」这一存量形态，**不是**当年那个 `create_all`+alembic 混合库，别把两者当成一回事。
 - **P0-0 done（2026-10-12 第三轮，real）**：`doctor` 全绿 → `up` 起容器 healthy → `ps` → `logs` exit 0 → **`down` exit 0** → 再 `up` 回来数据完好（表数 10、alembic head 不变）。此前"未标 done"只差 `down`/`logs` 没逐个实跑，现已补齐。历史证据链：2026-10-10 那次 `up` 起 7 容器、backend healthy、`/health` 容器内与宿主机均 200、`migrate` exit 0——**`migrate` 子命令的实跑证据仍是那一次**，本轮建库走的是宿主 `alembic upgrade head`（`dev.py migrate` 是容器内 alembic，要构建 16.5 GB 的 backend 镜像，只为建库不值得）。
@@ -104,6 +112,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「`Authorization: Basic …` 的 401 是 `Invalid authentication credentials`」 | **错**。实测 `OAuth2PasswordBearer`：缺头与非 bearer 方案都回 `Not authenticated`（那句 `Invalid authentication credentials` 在 `HTTPBearer` 里，本项目没用）。另：`Authorization: Bearer`（后面不跟令牌）**能过** bearer 这一关，失败发生在后面的令牌校验。所以 Go 侧要复刻的每一句 detail 都应**用生产 handler 现跑取数**（`internal/auth/handler.go` 顶部那张八行实测表就是这么来的），别照源码读一遍凭印象写 |
 | 「Go 依赖拉不动，P0-1 之后每张 Go 卡都开不了工」（`risks[1]`） | **可解，但本机 GOPROXY 一直没设**。2026-10-12 实测 `go env GOPROXY` 仍是默认的 `proxy.golang.org`（curl 12s 超时），按 §5 改成 `goproxy.cn` 后 **1.6s** 就拉到了 `golang-jwt/jwt/v5 v5.3.1`。所以那条风险的缓解措施是有效的，只是**没被执行过**；文档写的是"该这么做"，不是"已经这么做了"，别把它当成既成事实 |
 | 「密码长度校验用 `len(password)` 就行」 | **Go 里会错**。生产侧是 Python 的 `len(str)` = **码点**数，Go 的 `len(string)` = **字节**数；含中文的口令在 Go 侧会被判得更严，同一个口令 Python 放行、Go 拒绝。用 `utf8.RuneCountInString`（已有用例钉住） |
+| 「P0-8 要在 compose 里新增 `go-api`/`go-worker`/`ai-core` 三个服务，X1 才算起来」 | **前提被 2026-10-13 的定案推翻**：容器只跑中间件，应用层源码跑。X1 的判据、X2 的 R4、M0.0/M0.4 的写法、卡片 P0-8 的输出清单都已按此改写，台账 C6 作废、遗留冲突记 C29。**别照着旧卡片去加 compose 服务**——那等于把定案推翻一次 |
 | 「minio 镜像拉不到是网络问题，换镜像源或配代理就能解」 | **不是网络故障，是上游归档**。MinIO 把开源 Server 归档了：`dl.min.io` 对当前版与**所有归档版**返回 410 Gone，Docker Hub 的公开镜像也没了，所以 `minio/minio:RELEASE.2024-05-28T17-19-04Z` 在任何源上都给不出（daocloud `denied`、两个备用源 `not found`、quay 无该命名空间）。解法是**换 S3 实现**而不是换源：dev 与 prod 两份 compose 已换成 `versity/versitygw:v1.8.0`（Apache-2.0，服务名仍叫 `minio`，所以 Milvus 的 `MINIO_ADDRESS` 一字未改）。按"起不来就是 `dev.py` 有问题"去查会完全查错方向（台账 C24 / 决策 D9） |
 | 「prod compose 里写了 `env_file: .env.production`，`${VAR:?}` 就能取到密钥」 | **不能**。service 级 `env_file:` 只注入**容器**环境，不参与 compose **顶层变量插值**，所以 `${POSTGRES_PASSWORD:?}` 与 `${MINIO_ACCESS_KEY:?}` 仍看宿主环境。实测（临时目录放一份 `.env.production` 再 `config`）：不带 `--env-file` → 三条 required 全报缺失、rc=1；`docker compose --env-file .env.production -f docker-compose.prod.yml config` → rc=0。所以 prod 的启动命令**必须**带 `--env-file`（已写进该文件头注释）。⚠️ 顺带查实 `.env.production` **不在 `.gitignore` 里**（只有 `.env` 在）——是个真实的泄密入口，已补 |
 
@@ -125,23 +134,30 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - 受限沙箱下：docker 的命名管道、uv 的缓存、git 写 `.git/index.lock` 都可能被拒。**跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**（本机实测），否则 41–42 个 `tmp_path` 用例会以 `PermissionError: [WinError 5]` **假失败**（表现为 `407 passed, 42 errors`——**不是仓库缺陷**）；也**不要**用 `--basetemp` 指到工作区内的既有目录。这些临时目录会带上创建时的完整性标签，策略在 `workspace-write` 与 `danger-full-access` 之间切换后就可能变成**谁都删不掉的毒目录**（本机出现过 `.tmp-pytest`/`.pytest-bt`/`pytest-of-<用户名>`/`tmp*/`），只能靠更高权限运行或用户自有终端清理。
 - 更细的坑见 `docs/refactor/p0-environment.md` §4。
 
-## 6. 两条运行路径
+## 6. 运行路径：容器只跑中间件，应用层源码跑
+
+**2026-10-13 定案**：Docker 只用于中间件（数据库 / 队列 / 向量库 / 对象存储）；Go、Python、前端**一律源码运行**，
+不把应用服务塞进 compose。日常路径就一条：
 
 ```bash
-# 日常开发（推荐）：只有中间件用 Docker，后端/前端跑源码 —— 不构建 16.5 GB 的 backend 镜像
-uv run python scripts/dev.py infra     # postgres/redis/etcd/minio/milvus/attu
-uv run python scripts/dev.py serve     # 宿主 uvicorn --reload
+uv run python scripts/dev.py infra     # 只起中间件：postgres/redis/etcd/minio(versitygw)/milvus/attu
+uv run python scripts/dev.py serve     # 宿主 uvicorn --reload（就是 ai-core）
+cd server && go run ./cmd/api          # go-api（P0-8 会把 Go 侧启动并进 dev.py）
 cd frontend && npm run dev             # vite（只监听 ::1，用 localhost 访问）
-
-# 容器级验收（P0-8 / P0-9 才需要）：全栈容器
-uv run python scripts/dev.py up
 ```
+
+⚠️ `dev.py up`（全栈容器，会为此构建那个 **16.5 GB** 的 backend 镜像）**不再是验收路径**，X1 的判据已随之改写
+（改成「中间件容器 + 应用源码起进程」）。它与 dev compose 里的 `backend`/`nginx` 两个服务、`server/Dockerfile`、
+`check_nginx_routes.py` 的 R4 一起登记为台账 **C29**，具体处置属 P0-8——**本轮只改了文档口径，那些实现一个没动**。
+`docker-compose.prod.yml` 是部署形态，不受本次定案影响。
 
 **全新电脑的完整安装步骤**（依赖版本要求、五步命令、跑起来后的验收方法、起不来的三处排查）见 [README §3](README.md)。
 
 ## 7. 绝对不能做
 
 - 不删 `parent_chunks` / `multimodal.py` / `layout_analyzer.py`（只降级能力口径，不删代码）。
+- **不把应用服务容器化**（2026-10-13 定案）：容器只跑中间件，Go / Python / 前端源码跑。想往 compose 里加
+  `go-api`/`go-worker`/`ai-core` 之前，先读台账 **C6**（原建议已作废）与 **C29**（遗留冲突项）。
 - 不 `git mv backend → ai-core`；不引入 Kafka / RabbitMQ / Neo4j / 服务注册中心；不建两个全局调度器。
 - **不把 mock 绿灯说成完成**：`status=done` 必须 `evidence ≥ requires`，由 `sync_progress.py --check` 强制。
 - 不删 `docs/archive/` 里的归档件；不改 `00-audit.md`/`01-current-architecture.md` 里 dated 的事实（它们是历史证据）。

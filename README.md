@@ -172,16 +172,20 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 **后两个连"只验骨架"也必须非空**（`app.py` 的 startup 无条件调 `validate_config()`），占位值即可。
 `LLM_BASE_URL` 可选（走兼容 OpenAI 协议的自建网关时填）。
 
-### 3.5 全栈容器：只在做容器级验收时用
+### 3.5 全栈容器：**已不再是验收路径**（2026-10-13 定案：容器只跑中间件）
 
-P0-8（compose 起 go-api / go-worker / ai-core）与 P0-9（浏览器 E2E）验的是**容器拓扑本身**，
-这时才需要构建 backend 镜像（首次构建较慢）：
+定案是「容器只用于中间件，Go / Python / 前端一律源码跑」，所以**不需要**为验收构建那个把全部依赖
+（含 torch）装进去的 16.5 GB `backend` 镜像，P0-8/P0-9 也不再验容器拓扑——X1 的判据已改写成
+「`dev.py infra` 起中间件 + 宿主源码起进程」。
 
 ```bash
-uv run python scripts/dev.py up        # compose up -d（缺 backend 镜像就构建）并等 healthy
-uv run python scripts/dev.py migrate   # 容器内 alembic upgrade head
+uv run python scripts/dev.py up        # ⚠️ 遗留命令：会 compose up -d 全栈（含 backend 镜像构建）
 uv run python scripts/dev.py down      # 收工（不加 --volumes 不会删数据）
 ```
+
+`up` 这条命令、dev compose 里的 `backend`/`nginx` 两个服务、`server/Dockerfile` 目前都还在仓库里，
+它们是**与定案冲突的遗留物**，已登记为台账 **C29**，处置归 P0-8 —— 在它们被清理之前，**不要把 `dev.py up`
+当成该跑的步骤**。真正的部署形态看 `docker-compose.prod.yml`（那份仍是全栈容器，且必须带 `--env-file`）。
 
 ### 3.6 起不来时先看这三处
 
