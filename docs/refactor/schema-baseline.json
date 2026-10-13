@@ -15,7 +15,481 @@
   "alembic": "head:add_paper_knowledge_graph",
   "session_timezone": "Etc/UTC",
   "log_timezone": "Etc/UTC",
-  "server_version": "15.18 (Debian 15.18-1.pgdg13+1)",
+  "server_version": "15.19 (Debian 15.19-1.pgdg13+2)",
+  "columns": [
+    {
+      "table_name": "alembic_version",
+      "column_name": "version_num",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 32
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('chat_messages_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "session_ref_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "message_type",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "content",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "timestamp",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "rag_trace",
+      "data_type": "json",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('chat_sessions_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "user_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "session_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 120
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "metadata_json",
+      "data_type": "json",
+      "is_nullable": "NO",
+      "column_default": "'{}'::json",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "workspace_id",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('citation_edges_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "source_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "target_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "context",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": "''::text",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('glossary_entries_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "paper_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "term",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 200
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "definition",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 1000
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('paper_nodes_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "filename",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "title",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 500
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "year",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "authors",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 1000
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "abstract",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": "''::text",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "citation_count",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "text",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "filename",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "file_type",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 50
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "file_path",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 1024
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "page_number",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "parent_chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "root_chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_level",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_idx",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "users",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('users_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "users",
+      "column_name": "username",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 100
+    },
+    {
+      "table_name": "users",
+      "column_name": "password_hash",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "users",
+      "column_name": "role",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'user'::character varying",
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "users",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('workspace_members_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "workspace_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "user_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "role",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'member'::character varying",
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('workspaces_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "name",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 100
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "owner_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    }
+  ],
   "indexes": [
     {
       "tablename": "alembic_version",
