@@ -1,3 +1,8 @@
+# 与 docker-compose.yml 同一个项目名：两份文件用的是同一批 container_name
+# （researchpilot-postgres 等），本来就互斥、不能同时起，所以项目名也应该一致，
+# 而不是再开一个 researchpilot-prod 让容器标签出现第三种来源。
+# 不写 name: 时 Compose 会退回目录名（本机目录仍叫 PaperRAG），标签就成了 paperrag。
+name: researchpilot
 services:
   postgres:
     container_name: researchpilot-postgres

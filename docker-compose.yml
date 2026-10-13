@@ -1,4 +1,11 @@
 # Compose v2 起 `version:` 字段已废弃且会被忽略（留着每次 config 都吐一条告警）
+#
+# 项目名必须显式钉住：不写 `name:` 时 Compose 会拿**目录名**当项目名，
+# 而本机 clone 目录仍叫 PaperRAG（远端已改名 ResearchPilot，目录名是刻意保留的旧字面量之一），
+# 于是容器标签变成 com.docker.compose.project=paperrag，自动创建的网络/具名卷也会带
+# paperrag_ 前缀。更要紧的是它**依赖 clone 到哪个目录**——换台机器、换个目录名，
+# 项目名就变，可复现性无从谈起。
+name: researchpilot
 services:
   postgres:
     container_name: researchpilot-postgres
