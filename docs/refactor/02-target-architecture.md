@@ -64,7 +64,7 @@ ResearchPilot/
 | `go-api` | Chi + `net/http` | nginx → `/api/v1`、SSE、WS | 唯一面向浏览器 |
 | `go-worker` | goroutine pool | 仅出站到 Python | 与 api 共享 PG，独立扩缩 |
 | `ai-core` | FastAPI + uvicorn | **仅内网**，不发布到 nginx | 原 `backend` 容器改角色 |
-| postgres / redis / milvus / minio / etcd | 不变 | — | Milvus 语义降级为"可重建索引" |
+| postgres / redis / milvus / minio / etcd | 不变 | — | Milvus 语义降级为"可重建索引"。**`minio` 这个槽位仍是 S3 兼容存储、服务名与 `MINIO_ADDRESS` 都不变，但镜像已换成 `versity/versitygw`**（MinIO 开源 Server 上游归档，原 pinned tag 全网取不到；台账 C24 / 决策 D9） |
 
 `frontend/dist/` 由 nginx 直接服务；`app.py:141-150` 的静态挂载在 P1 完成时移除。
 

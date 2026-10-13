@@ -209,7 +209,7 @@ cd frontend && npm install && npm run dev
 | PostgreSQL | 5432 | 用户、会话、父级分块 |
 | Redis | 6379 | 缓存、任务状态 |
 | Milvus | 19530 | 向量检索 |
-| MinIO | 9000/9001 | Milvus 对象存储 |
+| S3 存储（compose 服务名仍叫 `minio`，镜像已是 `versity/versitygw`） | 9000 | Milvus 对象存储。**没有 9001 控制台**：MinIO 开源 Server 已被上游归档、镜像全网取不到，换成的 versitygw 不带 Web 控制台（`docs/refactor/12` 台账 C24） |
 | Attu | 8080 | Milvus Web 管理 |
 | 后端 | 8000 | `/`（前端）、`/docs`、`/health`、`/ready` |
 
