@@ -86,6 +86,21 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   `up.sql`（第二遍 `skipping`、rc=0、表数 10→11→11），`login → PUT → GET → 落库` 往返一致、时间列落 `+00`（UTC），
   改密码在一次性用户上验完（新口令可登、旧口令不可登）后清理测试行。⚠️ 两条边界：**`ai_executions`（`000002`）至今没在任何长期库上建过**
   （dev 库距 12 张表齐还差这一步，属 P0-7），本轮**没顺手补**；前端设置页 UI 属下一批（任务 #22），本轮只到 API 层。
+- **2026-10-14（第十二轮）：设置页重做（前端消费上一条的 Go 面）+ 站内提示/确认 + 暗色主题 + 页宽统一**。
+  ①**设置页从「文档管理」单页重做成用户设置四板块**——账号信息（含退出登录）/ 外观·主题（light/dark/system）/
+  偏好设置（`start_view` 下拉，选项从 `NAV_GROUPS` 生成，不新起一份路由清单）/ 修改密码（只做非空 + 两次一致，
+  强度规则**留给后端**）。**管理员在页尾多一块「知识库管理」**：原上传与文档列表 HTML **逐字保留**，因为
+  `backend/api/documents.py` 每个端点都是 `Depends(require_admin)`，**别把这页挪成全用户可见**。
+  ②**站点级 `alert`/`confirm` 全站退役**：换成 `useToast`/`useConfirm`（状态层）+ `ToastHost`/`ConfirmHost`（DOM），
+  `utils/dialog.ts` 仍是唯一接缝（它 import 两个 composable，是 §2 里**只开给接缝文件**的两处叶子层例外之一）。
+  ③**暗色主题**靠 `variables.css` 新增的 `[data-theme="dark"]` 令牌块（含 `.hljs` 代码高亮调色），
+  `document.documentElement.dataset.theme` 只在 `utils/theme.ts` 里写（R3 禁 composable 碰 DOM）。
+  `system` 主题用 `matchMedia` **解析一次、不监听变化**；`start_view` **只在登录后跳、刷新不跳**。
+  ④**页宽统一 1280px**：删掉 `.page-inner.wide`，10 个视图的 `wide` 类一并去掉。
+  ⚠️ **证据等级要如实说**：这是 **mock/real 混合**——改密码、偏好读写、主题切换、提示/确认框**真跑过**（真库 + 真浏览器），
+  但「知识库管理」块**只验到错误路径**（Go 把 `/api/*` 反代到未启动的 Python → 红 toast「上游服务不可用」），
+  **上传/删除的成功路径本轮没有重跑**，那属 P0-9 的 X7（浏览器级 e2e）。四条门禁全绿：`check_frontend.py`（55 源文件）/
+  `check_contracts.py`（21 操作）/ `sync_progress.py --check` / 全量 pytest **572 passed**。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `user_preferences`（2026-10-14 落，设置页偏好）/ `000004` `fix_drift` / `000005` `paper_chunks`（后两者随本轮顺延一位）；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。

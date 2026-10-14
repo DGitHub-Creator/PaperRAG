@@ -43,18 +43,24 @@ frontend/src/
 ├── router/                   # 路由表（2026-10-14 引入 vue-router）：name 一律取自 composables/useNav 的 NavKey
 │   └── index.ts              # createRouter + 路由守卫（未登录跳 /login）
 ├── composables/              # 唯一状态层，**只允许一种模式**：模块级单例 + 零 DOM/零对话框
-│   ├── useAuth.ts            # 登录态反应式视图（持久化委托给 api/token）
+│   ├── useAuth.ts            # 登录态反应式视图（持久化委托给 api/token）+ 改密码
 │   ├── useNav.ts             # NavKey（路由名联合类型）+ 导航分组模型；视图状态已交给路由
 │   ├── useChat.ts            # 消息、流式、sessionId
 │   ├── useSessions.ts        # 会话列表
 │   ├── useDocuments.ts       # 文档列表 + 上传/删除 job（轮询定时器由本层持有，不外泄）
+│   ├── usePreferences.ts     # theme / start_view（2026-10-14）：登录后拉取并应用，登出回默认
+│   ├── useToast.ts           # 站内提示队列（2026-10-14）：状态在这里，渲染在 ToastHost
+│   ├── useConfirm.ts         # 确认框（2026-10-14）：`ask()` 返回 Promise，渲染在 ConfirmHost
 │   └── useWebSocket.ts       # WS 通道（URL 由 api/ws.ts 给）
 ├── views/                    # 被路由挂载的页面（每页一个文件）；不认识 api/http，只经 composables
 ├── components/               # 只有渲染 + 用户意图 → action；对话框/滚动在这一层
+│   ├── ToastHost.vue         # 提示的唯一渲染点（挂在 App.vue 根部，所以登录页也看得到）
+│   └── ConfirmHost.vue       # 确认框的唯一渲染点
 ├── utils/
 │   ├── markdown.ts           # 保持
 │   ├── errors.ts             # reason 码 + ApiError → i18n 文案（api 层不产人类文案）
-│   ├── dialog.ts             # alert/confirm 的唯一封装（只允许组件层 import）
+│   ├── dialog.ts             # alert/confirm 的唯一封装（只允许组件与视图 import）
+│   ├── theme.ts              # theme → `<html data-theme>` 的唯一出口（2026-10-14）
 │   └── fileIcon.ts           # 从 services/api.ts 迁出（它不是 API 关注点）
 └── i18n/                     # 保持；步骤标签改走 i18n 键
 ```
@@ -64,7 +70,10 @@ frontend/src/
 
 **依赖方向是单向的**：`components → composables → api → (browser)`，`utils/` 是叶子层（只被 import，不 import 状态层）。
 `composables` 不得 import `utils/dialog`，`api` 不得 import `vue`，视图层不得直接 import `api/http` 或 `api/client`（读数据一律经 composable 的 action）。
-唯一的例外形状是 `utils/errors.ts`：它 import `api/http` 只为拿 `ApiError` 与 reason 码做文案翻译，不发请求。
+叶子层的例外**只开给两个接缝文件**，且都是"不这么做就得在两处各写一遍"的情形：
+`utils/errors.ts` import `api/http` 只为拿 `ApiError` 与 reason 码做文案翻译（不发请求）；
+`utils/dialog.ts` 自 2026-10-14 起 import `composables/useToast|useConfirm`——提示与确认的**状态**必须落在状态层、
+**DOM** 必须落在组件，而调用方只该认识"问一句 / 提示一句"这个动作。除此之外 `utils/*` 一律不得 import 状态层。
 
 ## 3. 规定（每条都对应 §4 的一个机检）
 
@@ -72,7 +81,7 @@ frontend/src/
 | --- | --- | --- |
 | R1 | 全仓只有 `src/api/http.ts` 允许出现 `fetch(` / `XMLHttpRequest` | F1：基址与鉴权头只有一个实现点 |
 | R2 | 只有 `src/api/token.ts` 允许出现 `localStorage`（`i18n/index.ts` 的 `locale` 例外并登记在 allowlist） | F2 |
-| R3 | `src/composables/*` 禁止 `alert(` / `confirm(` / `document.` / `window.` | F4：状态层必须能在无 DOM 环境下推理与测试 |
+| R3 | `src/composables/*` 禁止 `alert(` / `confirm(` / `document.` / `window.` | F4：状态层必须能在无 DOM 环境下推理与测试。**2026-10-14 起全站不再用原生 alert/confirm**：提示与确认都走 `utils/dialog.ts` → `useToast`/`useConfirm`（状态）→ `ToastHost`/`ConfirmHost`（DOM），`document` 只出现在 `utils/theme.ts` |
 | R4 | `src/composables/*` 的反应式状态**必须声明在模块作用域**（`export function useX` 之前） | F3：只允许一种状态模式 |
 | R5 | 只有 `src/api/http.ts` 允许 `.json()`；其余文件拿到的是泛型 DTO | F6 |
 | R6 | DTO 只在 `src/api/types.ts` 定义，且名称与 `contracts/openapi.yaml` 的 schema 一致 | 契约与前端能逐字对照，Go 接管后可复用同一份类型 |
@@ -92,7 +101,7 @@ frontend/src/
 | FE-a | 类型边界成立 | `cd frontend && npm run typecheck` | 退出 0 | mock |
 | FE-b | 产物能构建 | `cd frontend && npm run build` | 退出 0 | mock |
 | FE-c | §3 十一条规定被机器执行 | `uv run python scripts/check_frontend.py` | 退出 0；`tests/unit/test_check_frontend.py` 为每条规则配一负一正两个用例，证明它会报错而不是恒过、且不误伤注释与合法例外 | mock |
-| FE-d | 契约与前端调用集仍双向吻合 | `uv run python scripts/check_contracts.py` | 退出 0（18 个操作不变） | mock |
+| FE-d | 契约与前端调用集仍双向吻合 | `uv run python scripts/check_contracts.py` | 退出 0（21 个操作不变） | mock |
 | FE-e | 进度已同步 | `uv run python scripts/sync_progress.py --check` | 退出 0 | mock |
 | FE-f | 浏览器里真的能用（注册→登录→问答→上传） | P0-9 的 Playwright（`X7`/`demo`） | 不在本机范围：无 Docker/PG/LLM key，本轮如实 `not_run` | e2e |
 
@@ -111,6 +120,7 @@ FE-a…FE-e 是本轮的**完成判据**；FE-f 属于 P0-9，所以 FE-1 卡的
 
 - ~~不加 Router~~ → **2026-10-14 已引入 vue-router**（§7 的选项 B 落地）。仍不加 Pinia、不引 SSR；新页面按路由**懒加载**（`build` 的体积告警留到 P2-7 收口）。
 - 不重排视觉样式，不改 `assets/*.css` 的类名（结构重构只碰 `.vue` 的 `<script setup>` 与必要的模板绑定）。
+  ⚠️ **2026-10-14 部分作废**：页宽统一成 1280px（删掉 `.page-inner.wide`）、`variables.css` 新增 `[data-theme="dark"]` 令牌块与提示/确认框样式——**类名与既有组件结构仍未重排**，只增令牌与覆盖块（见 §7.2）。
 - 不动 `vite.config.js` 的代理与 `index.html` 的标题（改名属于全仓一次性动作，随 P1-5 基址切换做）。
 - 不新增前端测试框架（本轮无可运行的浏览器，Playwright 属 P0-9）。
 
@@ -149,9 +159,35 @@ FE-a…FE-e 是本轮的**完成判据**；FE-f 属于 P0-9，所以 FE-1 卡的
 | 产出 | `radar` | 文献雷达与 Knowledge Diff | M14（提案 F-4） | **mock** |
 | 产出 | `history` | 历史会话 | M8（P1-1） | **真实**（`useSessions`） |
 | 管理 | `workspace` | 工作区（项目 / 任务 / 笔记 / 预算） | M8（提案 F-7） | **mock** |
-| 管理 | `settings` | 设置（文档管理） | M1（P1-3） | **真实**（`useDocuments`） |
+| 管理 | `settings` | 设置：账号 / 偏好 / 外观·安全（管理员多一块「知识库管理」） | M1（P1-3）+ M17 | **真实**（`/auth/me`、`/me/preferences`、`/auth/password`；文档块走 `useDocuments`） |
 
 ⚠️ **mock 页面不得伪装成已实现**：每页顶部必须有「示例数据 / Sample data」徽标，并在页脚给出该模块的**归属卡片号**（`14` 的 M 号 + `progress.json` 的卡片）。mock 数据放 `frontend/src/mock/`，**只用英文内容**（学术数据本就是英文）以通过 R9；**不得往 `api/client.ts` 加契约里没有的端点**（那会让 `check_contracts.py` 变红）——mock 一律走本地数据。
 
 **仍未覆盖**：`11 §4.10` 的报告版本回退、`11 §5①` 研究问题反向导航的**交互语义**（页面壳有了，行为待后端）。
 每个 mock 页的"升级为真实"判据 = 该模块卡片转 done 时把 mock 数据换成 composable + `api/client` 调用。
+
+### 7.2 已定案：设置页转用户设置 + 站内提示/确认框 + 主题（2026-10-14）
+
+**为什么改**：`settings` 原本是"管理员专用的文档管理"，但 `settings` 这个 NavKey 的用户语义应该是**人人都有的设置**。
+用户拍板设置页要四个板块（账号信息 / 偏好设置 / 改密码 / 外观·主题），页宽统一 1280px；文档管理因此**降为其中一块**，
+并沿用 `backend/api/documents.py` 的既有事实（该模块**所有**端点都是 `require_admin`）按角色收起。
+
+1. **设置页四板块**（`views/SettingsView.vue`）：账号信息（`useAuth`，含退出登录）、外观·主题（`usePreferences`）、
+   偏好设置（`start_view`，同为 `usePreferences`）、改密码（`useAuth.changePassword` → `POST /auth/password`）。
+   管理员额外看到「知识库管理」= 原来的上传 + 文档列表，**逻辑与类名一字未改**，只换了外层标题。
+2. **导航可见性翻转**：`components/AppRail.vue` 不再过滤 `settings`（原先只对 admin 显示），`nav.items.settings` 与
+   `views.settings.title` 由「文档管理」改为「设置」。
+3. **原生弹窗退场**：`utils/dialog.ts` 仍是对外唯一出口，但底座换成 `useToast` + `useConfirm`；
+   `confirmDialog` 的返回值从 `boolean` 变 `Promise<boolean>`，三处调用点（清空对话 / 删除会话 / 删除文档）补了 `await`。
+   提示有两种：`alertDialog`（错误，默认常驻等用户关）与 `notifyDialog`（成功回执，自动消失）。
+4. **主题**：`theme ∈ {light, dark, system}` 存账号（`/me/preferences`），`utils/theme.ts` 把结果写在 `<html data-theme>`，
+   `assets/variables.css` 的 `[data-theme="dark"]` 只覆盖令牌 + 少数硬编码色（滚动条、`.badge-demo`、`.notice`、`.hljs`）。
+   `system` 用 `matchMedia("(prefers-color-scheme: dark)")` 现场解析，**不监听它的变化**（浏览器里切换系统主题需刷新）。
+5. **`start_view` 的语义**：只在**登录成功后**决定落地页（`views/LoginView.vue` 优先 `?redirect=`，其次 `start_view`，
+   认不出该路由名就回 `chat`）；**刷新页面不重定向**，否则在别的页面按 F5 会被弹回落地页。
+   ⚠️ Go 只校验它的**形状**（`^[a-z][a-z0-9_-]{0,31}$`），不认识路由表——认不认识由前端 `router.hasRoute` 说。
+6. **页宽统一**：`.page-inner` 一律 1280px，`.page-inner.wide` 与其在 10 个视图上的 `wide` 类一并删除。
+7. **证据等级仍是 mock**：本机经真实 Go 接口跑通了登录 → 四板块渲染 → 切深色（后端 `theme=dark`）→ 改 `start_view=library`
+   重登落在 `/library` → 错口令改密码回 400 文案 → 新确认框可开可取消；但**浏览器级 e2e 判据仍属 P0-9 的 X7**。
+   ⚠️ 这次验证里「知识库管理」块**只验到错误路径**（Python 上游没起，Go 反代如实回"上游服务不可用"并弹错误提示），
+   **上传/删除的成功路径本轮没有重跑**。

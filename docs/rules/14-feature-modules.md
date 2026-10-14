@@ -223,6 +223,17 @@
   它们**没有 Python 对照**，是新开的 Go 面——所以判据是"Go 自己的不变量"（旧口令错回 400 不 401、
   新口令与 register 同规则、`user_preferences` 的 created_at/updated_at 由写方给 UTC），
   不属于 X4 的跨语言兼容范围。数据面随之多一张实建表 `user_preferences`（迁移 `000003`）。
+- **2026-10-14 前端侧补齐（同一条自助面被消费）**：设置页从「文档管理」单页**重做成用户设置四板块**
+  （账号信息 / 外观·主题 / 偏好设置 / 修改密码），管理员在页尾**多一块「知识库管理」**（原文档上传与列表
+  **逐字保留**，因为 `backend/api/documents.py` 每个端点都是 `Depends(require_admin)`，**不能**挪给普通用户）。
+  偏好设置只落两个字段：`theme`（light/dark/system，system 用 `matchMedia` 解析一次，**不监听变化**）与
+  `start_view`（**登录后**跳转目标；**刷新不跳**，避免 F5 把人从当前页拽走）；`start_view` 由 Go 只校验**形状**，
+  「认不认识」交给前端 `router.hasRoute`——别让 Go 硬编码前端路由表。站点级 `alert`/`confirm` **全站退役**，
+  换成 `useToast`/`useConfirm`（状态）+ `ToastHost`/`ConfirmHost`（DOM），`utils/dialog.ts` 仍是唯一接缝；
+  另引入 `[data-theme="dark"]` 令牌块与**页宽统一 1280px**（删掉 `.page-inner.wide`）。
+  ⚠️ **这条面上线的证据只到 mock/real 混合**：「知识库管理」块本轮**只验到错误路径**（Go 把 `/api/*` 反代到
+  未启动的 Python → 红 toast「上游服务不可用」），**上传/删除的成功路径本轮没有重跑**——那是 P0-9 的 X7
+  （浏览器级 e2e）该管的。
 - **目标行为**：Go 是唯一公开入口与唯一调度方；任务态与记账落 PG；12 条未调用接口逐条有审计与 Deprecation 头。
 - **判据**：X1/X2/X4/X6/X7/X8 + Y1/Y4/Y5 + Z4。
 - **归属**：P0-1 / P0-5 / P0-6 / P0-7 / P0-8 + P1-0…P1-8 + P2-6。
