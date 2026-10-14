@@ -72,7 +72,7 @@ test = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--strict-markers"
-# 分层含义见 docs/refactor/08-principles-and-conventions.md §4（证据等级 none<mock<real<e2e）
+# 分层含义见 docs/rules/08-principles-and-conventions.md §4（证据等级 none<mock<real<e2e）
 # 未显式声明 marker 的用例由 tests/conftest.py 按所在目录补齐
 markers = [
     "unit: 纯内存单测，不打真实服务（mock 级）",

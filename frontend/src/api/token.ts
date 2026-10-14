@@ -1,4 +1,4 @@
-// 登录态持久化的唯一所有者（`docs/refactor/10` R2）：
+// 登录态持久化的唯一所有者（`docs/rules/10-frontend-structure.md` R2）：
 // 浏览器存储的键名与读写只出现在这个文件，其余层要么拿 `tokenStore.*`，要么完全不知道有存储。
 import type { CurrentUserResponse } from "./types"
 

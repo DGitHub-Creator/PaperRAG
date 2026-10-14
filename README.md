@@ -11,24 +11,24 @@
 
 | 要知道什么 | 去哪看 |
 | --- | --- |
-| **最高约束**：四条第一性原则、阶段顺序律、任务卡规范、开发规范 | [docs/refactor/08-principles-and-conventions.md](docs/refactor/08-principles-and-conventions.md) |
-| **产品愿景**：五个入口、十项能力、V1–V4 路线、差异化与缺口清单 | [docs/refactor/11-product-vision.md](docs/refactor/11-product-vision.md) |
-| **代码问题台账**：已发现的代码层问题（证据/影响/建议/归属），按愿景检查产出 | [docs/refactor/12-known-code-issues.md](docs/refactor/12-known-code-issues.md) |
-| **前后端架构（As-Is 实测）**：运行形态、逐条端点、数据面差集、死代码清单，每条带 `file:line` | [docs/refactor/13-frontend-backend-architecture.md](docs/refactor/13-frontend-backend-architecture.md) |
-| **功能模块规划**：M1…M17 逐模块的现状 / 目标行为 / 判据 / 卡片或提案 / 顺序约束 | [docs/refactor/14-feature-modules.md](docs/refactor/14-feature-modules.md) |
-| **现在该做什么**：P0 任务卡（输入/输出/依赖/验收/证据等级）+ X1–X8 退出标准 | [docs/refactor/09-milestone-p0.md](docs/refactor/09-milestone-p0.md) |
+| **最高约束**：四条第一性原则、阶段顺序律、任务卡规范、开发规范 | [docs/rules/08-principles-and-conventions.md](docs/rules/08-principles-and-conventions.md) |
+| **产品愿景**：五个入口、十项能力、V1–V4 路线、差异化与缺口清单 | [docs/rules/11-product-vision.md](docs/rules/11-product-vision.md) |
+| **代码问题台账**：已发现的代码层问题（证据/影响/建议/归属），按愿景检查产出 | [docs/rules/12-known-code-issues.md](docs/rules/12-known-code-issues.md) |
+| **前后端架构（As-Is 实测）**：运行形态、逐条端点、数据面差集、死代码清单，每条带 `file:line` | [docs/rules/13-frontend-backend-architecture.md](docs/rules/13-frontend-backend-architecture.md) |
+| **功能模块规划**：M1…M17 逐模块的现状 / 目标行为 / 判据 / 卡片或提案 / 顺序约束 | [docs/rules/14-feature-modules.md](docs/rules/14-feature-modules.md) |
+| **现在该做什么**：P0 任务卡（输入/输出/依赖/验收/证据等级）+ X1–X8 退出标准 | [docs/plans/09-milestone-p0.md](docs/plans/09-milestone-p0.md) |
 | **进度多少 / 还差多少**：唯一真相源（`PROGRESS.md`、`progress.html` 是它的生成物） | [docs/progress.json](docs/progress.json) · [可视化看板](docs/progress.html) |
 | 契约（浏览器面 / Go↔Python 内部面 / 错误码 / 表写入矩阵） | [contracts/](contracts/) |
-| 目标架构（To-Be，大部分**未实现**） | [docs/refactor/02-target-architecture.md](docs/refactor/02-target-architecture.md) |
-| 当前架构（**2026-10-09 dated 审计快照**，逐字保留、不作实施依据；要看今天的形状用上面的 `13`） | [docs/refactor/01-current-architecture.md](docs/refactor/01-current-architecture.md) |
-| 从零起环境的命令序列 + 实跑记录 + 已知坑 | [docs/refactor/p0-environment.md](docs/refactor/p0-environment.md) |
-| 文档索引与阅读顺序 | [docs/refactor/README.md](docs/refactor/README.md) |
+| 目标架构（To-Be，大部分**未实现**） | [docs/rules/02-target-architecture.md](docs/rules/02-target-architecture.md) |
+| 当前架构（**2026-10-09 dated 审计快照**，逐字保留、不作实施依据；要看今天的形状用上面的 `13`） | [docs/reference/01-current-architecture.md](docs/reference/01-current-architecture.md) |
+| 从零起环境的命令序列 + 实跑记录 + 已知坑 | [docs/plans/p0-environment.md](docs/plans/p0-environment.md) |
+| 文档索引与阅读顺序 | [docs/README.md](docs/README.md) |
 
 被取代的旧计划全部移进 [docs/archive/](docs/archive/README.md)，**不作为实施依据**。
 里程碑口径只用 **P0 架构与契约 → P1 后端迁移/最小原型 → P2 功能拓展 → P3 多 Agent**；
-`Milestone A0/A/B/C` 属旧口径，对应关系见 [04-migration.md](docs/refactor/04-migration.md) §0。
+`Milestone A0/A/B/C` 属旧口径，对应关系见 [04-migration.md](docs/plans/04-migration.md) §0。
 **这是工程架构轴**；产品价值轴（V1.0 可信学术 RAG → V4.0 Research OS）与两者的映射见
-[11-product-vision.md](docs/refactor/11-product-vision.md) §7——两条轴的编号不要混用。
+[11-product-vision.md](docs/rules/11-product-vision.md) §7——两条轴的编号不要混用。
 
 ## 1. 能力状态（三档口径，不含糊）
 
@@ -66,10 +66,10 @@
 | Go 接管 13 条浏览器接口 | **未实现** | → P1 |
 | 多 Agent 自主探索（ResearchRun / Frontier / 报告生成） | **未实现** | → P3 |
 
-断链的逐条证据见 [00-audit.md](docs/refactor/00-audit.md) §3；差距处置见 [03-gap-analysis.md](docs/refactor/03-gap-analysis.md)。
+断链的逐条证据见 [00-audit.md](docs/reference/00-audit.md) §3；差距处置见 [03-gap-analysis.md](docs/plans/03-gap-analysis.md)。
 
 > **产品轴口径（V1.0–V4.0）**：上面这张表说的是**工程架构轴**的能力状态；用户视角的产品版本与缺口清单看
-> [11-product-vision.md](docs/refactor/11-product-vision.md)（§10 路线、**§8 缺口清单**）。
+> [11-product-vision.md](docs/rules/11-product-vision.md)（§10 路线、**§8 缺口清单**）。
 > **当前 V1.0 未完成**——V1.0「可信学术 RAG」要求的可信化（chunk 真相层、公式/定理检索、原文定位）尚未做，
 > 工作重心在架构轴 **P0**（骨架 + 契约 + 第一条垂直切片），P0 本身不产出产品能力。
 > **2026-10-13 起分母已含产品轴两项**：`11 §8` 第 2 项的一部分登记成 **P2-9（论文自动抓取）/ P2-10（主题分类与语义书架）**，
@@ -99,7 +99,7 @@ flowchart TB
     Loader --> Milvus
 ```
 
-### To-Be（目标，**未实现**，见 [02-target-architecture.md](docs/refactor/02-target-architecture.md)）
+### To-Be（目标，**未实现**，见 [02-target-architecture.md](docs/rules/02-target-architecture.md)）
 
 ```mermaid
 flowchart TB
@@ -205,9 +205,9 @@ uv run python scripts/dev.py down      # 收工（不加 --volumes 不会删数�
    （`volumes/`、`models/`、`data/`、`logs/` 都是 bind mount）。
 
 更细的坑（`daemon.json` 的 BOM、代理键名大小写、`UseContainerdSnapshotter` 切换导致"镜像消失"、
-受限运行下跑测试要指定 TEMP 等）见 [p0-environment.md](docs/refactor/p0-environment.md) §4。
+受限运行下跑测试要指定 TEMP 等）见 [p0-environment.md](docs/plans/p0-environment.md) §4。
 
-完整序列（含首拉耗时、迁移、冒烟、收工）见 [p0-environment.md](docs/refactor/p0-environment.md) §2。
+完整序列（含首拉耗时、迁移、冒烟、收工）见 [p0-environment.md](docs/plans/p0-environment.md) §2。
 
 <details>
 <summary>不用 dev.py 的手工路径</summary>
@@ -223,7 +223,7 @@ cd frontend && npm install && npm run dev
 | PostgreSQL | 5432 | 用户、会话、父级分块 |
 | Redis | 6379 | 缓存、任务状态 |
 | Milvus | 19530 | 向量检索 |
-| S3 存储（compose 服务名仍叫 `minio`，镜像已是 `versity/versitygw`） | 9000 | Milvus 对象存储。**没有 9001 控制台**：MinIO 开源 Server 已被上游归档、镜像全网取不到，换成的 versitygw 不带 Web 控制台（`docs/refactor/12` 台账 C24） |
+| S3 存储（compose 服务名仍叫 `minio`，镜像已是 `versity/versitygw`） | 9000 | Milvus 对象存储。**没有 9001 控制台**：MinIO 开源 Server 已被上游归档、镜像全网取不到，换成的 versitygw 不带 Web 控制台（`docs/rules/12-known-code-issues.md` 台账 C24） |
 | Attu | 8080 | Milvus Web 管理 |
 | 后端 | 8000 | `/`（前端）、`/docs`、`/health`、`/ready` |
 
@@ -243,7 +243,10 @@ ResearchPilot/            # 仓库名、包名、镜像名、指标名已统一�
   scripts/                dev.py（统一入口）、check_contracts.py、check_frontend.py、check_nginx_routes.py、
                           audit_schema.py、export_pbkdf2_golden.py、sync_progress.py
   tests/                  unit/ integration/（chain/ e2e/ 尚未建立）
-  docs/refactor/          现行 spec（08 最高约束、09 任务卡、10 前端结构、00–05/07 事实与实施）
+  docs/README.md          文档目录宪法：分类、优先级、命名与归档规则（先读这一份）
+  docs/rules/             常青规则（最高优先级）：08 原则 / 02 目标架构 / 13 现状架构 / 14 功能模块 / 11 愿景 / 12 台账
+  docs/plans/             会变的详细计划（低优先级）：04 迁移路线 / 05 schema / 09 P0 卡片 / 03 差距 / 07 E2E / 环境
+  docs/reference/         只读事实快照：00/01 审计基线、schema-baseline.json、timestamp-audit.md
   docs/archive/           已归档的旧计划（不作为实施依据）
   alembic/                Python 侧迁移（Go 侧用 server/migrations/，两者边界见 contracts/table-acl.md）
 ```
@@ -307,7 +310,7 @@ P0 的 8 条退出标准现在是 **pass 4（X3/X6/X7/X8）· fail 3（X2/X4/X5�
 fail 那三条的判定脚本已在 2026-10-12 落地并真的跑过——X2 红在 `/api/` 还指向 Python（P0-8），
 X4/X5 红在 `server/internal/auth` 这个 Go 包还不存在（P0-6）。
 **`fail` 与 `not_run` 是两回事**：前者已判定且不合格，后者还没判。X6 虽是 pass，
-但它列出的 `migrate -path migrations` 那一半**跑不了**（golang-migrate 未接线，见 `docs/refactor/12` C18）。
+但它列出的 `migrate -path migrations` 那一半**跑不了**（golang-migrate 未接线，见 `docs/rules/12-known-code-issues.md` C18）。
 **mock 绿灯不等于完成**——这是原则②。
 
 ## 7. 改名收口（2026-10-10 完成）
@@ -327,7 +330,7 @@ X4/X5 红在 `server/internal/auth` 这个 Go 包还不存在（P0-6）。
 
 ## 8. 已知问题与升级注意
 
-功能层面（证据见 [00-audit.md](docs/refactor/00-audit.md)）：
+功能层面（证据见 [00-audit.md](docs/reference/00-audit.md)）：
 
 - 公式感知检索、多模态图表检索、ML 布局分析、论文知识图谱：**代码存在但未接入任何运行链路**。
 - 默认 PDF 解析路径不产层级父块 → Auto-merging 恒不生效、`parent_chunks` 近乎空表。
@@ -350,7 +353,7 @@ X4/X5 红在 `server/internal/auth` 这个 Go 包还不存在（P0-6）。
 - `RATE_LIMIT` 真的生效（`APP_ENV=production` 默认 60/minute，开发环境默认关闭）。
 - 429 与校验失败的错误信封统一为 `{"detail": "..."}`（决策 K1/K4）；校验失败从 422 降级为 400 + 字符串。
 
-## 9. 开发约定（摘要，全文见 [08](docs/refactor/08-principles-and-conventions.md)）
+## 9. 开发约定（摘要，全文见 [08](docs/rules/08-principles-and-conventions.md)）
 
 1. **端到端链路优先**：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态。
 2. **完成 = 端到端可验证行为**：不接受"基本完成/大致可用/已支持"；验收标准必须可机检。

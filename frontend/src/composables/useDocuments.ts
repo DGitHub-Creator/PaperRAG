@@ -1,5 +1,5 @@
 // 文档与长任务状态（模块级单例）：上传/删除的 job 轮询属于业务状态，跨组件卸载仍在跑，
-// 组件卸载不该丢掉进度（`docs/refactor/10` F3）。
+// 组件卸载不该丢掉进度（`docs/rules/10-frontend-structure.md` F3）。
 import { reactive, ref } from "vue"
 import * as api from "../api/client"
 import { describeError } from "../utils/errors"

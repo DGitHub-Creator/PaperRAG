@@ -8,7 +8,7 @@
                      长度、NOT NULL、有无 DEFAULT）。**需要快照里已有 columns**（旧快照没有，
                      此时如实退出 2，绝不静默通过）。
   （默认）live        只读连库核查：表集合、`alembic_version`、列级漂移、索引与约束、
-                     数据体量、时区真相 → 产出 `docs/refactor/schema-baseline.json`。
+                     数据体量、时区真相 → 产出 `docs/reference/schema-baseline.json`。
                      **需要真实 PostgreSQL**；没有库就报错退出，绝不拿离线检查冒充它。
 
 为什么基线不由 ORM 生成（05 §1 末、§2.2）：`init_db()` 曾在 alembic 失败时静默回退
@@ -31,7 +31,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "server" / "migrations"
-DEFAULT_OUT = ROOT / "docs" / "refactor" / "schema-baseline.json"
+DEFAULT_OUT = ROOT / "docs" / "reference" / "schema-baseline.json"
 
 # ── 离线：基线迁移文件的非破坏性检查 ──────────────────────────────
 

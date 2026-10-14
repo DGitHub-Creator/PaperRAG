@@ -1,7 +1,8 @@
 # AGENTS.md —— 给接手这个仓库的 agent
 
 > 目的只有一个：**让下一个 agent 不必重新踩坑**。这里只写「现在是什么样、什么已被推翻、什么绝对不能做」。
-> 项目愿景见 [docs/refactor/11-product-vision.md](docs/refactor/11-product-vision.md)，架构与阶段见 [docs/refactor/](docs/refactor/)，
+> 项目愿景见 [docs/rules/11-product-vision.md](docs/rules/11-product-vision.md)，规则见 [docs/rules/](docs/rules/)、
+> 计划见 [docs/plans/](docs/plans/)，目录怎么放、新文档怎么写见 [docs/README.md](docs/README.md)，
 > 进度真相**只有** [docs/progress.json](docs/progress.json)。
 
 ## 1. 项目一句话
@@ -12,16 +13,21 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 
 ## 2. 文档权威层级（冲突时按此优先级）
 
+> **目录结构、分类、命名与归档规则见 [docs/README.md](docs/README.md)（文档宪法）**；下表是**内容**的权威层级。
+
 | 顺位 | 文件 | 性质 |
 | --- | --- | --- |
-| 1 | `docs/refactor/08-principles-and-conventions.md` | **最高约束**（四条原则、阶段顺序律、任务卡规范、进度同步律） |
+| 1 | `docs/rules/08-principles-and-conventions.md` | **最高约束**（四条原则、阶段顺序律、任务卡规范、进度同步律） |
 | 2 | `docs/progress.json` | **进度唯一真相**；`PROGRESS.md` 与 `progress.html` 是它的生成物，改完必须重跑 `sync_progress.py` |
-| 3 | `docs/refactor/09-milestone-p0.md`、`10-frontend-structure.md` | 当前阶段的任务卡与 X1–X8 退出标准 |
-| 3.5 | `docs/refactor/11-product-vision.md`、`12-known-code-issues.md` | **产品轴（V1–V4）** 与**代码问题台账**；两轴映射见 11 §7 |
-| 3.6 | `docs/refactor/13-frontend-backend-architecture.md`、`14-feature-modules.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划（现状/判据/卡片/顺序）。与 `01` 的区别：`01` 是 dated 审计、本文可复核；与 `02` 的区别：`02` 是 To-Be 目标态 |
+| 3 | `docs/plans/09-milestone-p0.md`、`docs/rules/10-frontend-structure.md` | 当前阶段的任务卡与 X1–X8 退出标准 |
+| 3.5 | `docs/rules/11-product-vision.md`、`docs/rules/12-known-code-issues.md` | **产品轴（V1–V4）** 与**代码问题台账**；两轴映射见 11 §7 |
+| 3.6 | `docs/rules/13-frontend-backend-architecture.md`、`docs/rules/14-feature-modules.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划（现状/判据/卡片/顺序）。与 `01` 的区别：`01` 是 dated 审计、本文可复核；与 `02` 的区别：`02` 是 To-Be 目标态 |
 | 4 | `contracts/` | Go↔Python 契约；改契约改这里，`check_contracts.py` 机检 |
-| 5 | `docs/refactor/00-audit.md`、`01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状** |
+| 5 | `docs/reference/00-audit.md`、`docs/reference/01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状**（只读，不追改） |
 | 6 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
+
+**两层分界（别混用）**：`docs/rules/` = **常青规则**（架构、模块、愿景、台账、原则——长期稳定；改它等于改契约，必须先回文档层对齐再动代码）；
+`docs/plans/` = **会变的详细计划**（迁移路线、P0 卡片、环境、E2E——变动大、优先级低；实施细节以它为准，但与 `rules/` 冲突时让位于 rules）。
 
 ## 3. 现在的事实（2026-10-12）
 
@@ -49,7 +55,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - **golden vectors 的"不含密码明文"落成了可机检的形式**：向量是合成口令的摘要，口令由 `vector_id` 按文件内 `password_rule` 重建（`password = "ResearchPilot golden vector " + vector_id`，UTF-8）；每条期望值都由**生产裁判** `backend/core/auth.py:verify_password` 现算，不一致就拒绝导出。真库 `password_hash` **有意不导出**（提交进仓库就是离线爆破机），`--from-db` 只取形状统计并检查覆盖面（含"库里还有 bcrypt 族 → Go 接管会把这批人锁死"）。
 - **Docker 现状（2026-10-13 更新）**：引擎可用；**数据盘与 WSL distro 本体都在 `D:\DockerData`**（`settings-store.json` 的 `CustomWslDistroDir`），C: 上已无任何 `.vhdx`。**6/6 中间件镜像就位**（postgres/redis/etcd/**versitygw**/milvus/attu；healthy 是「起来时 healthy」，Milvus 会因 etcd 磁盘停顿半路挂掉，见 C28）。来源逐个核过（`docker image inspect --format '{{json .RepoDigests}}'` 会留下原始 registry；⚠️ 本机随后清理了重名 tag，那条 digest 已随之消失，映射以本条与 §5 为准）：postgres/redis/milvus/attu 四张走 `docker.m.daocloud.io`，etcd 直连 `quay.io/coreos/etcd:v3.5.18`，versitygw 走 `docker.1ms.run`——都重打成 compose 期望的 tag。⚠️ versitygw 第一次是从 `latest` 拉的，随后按 `:v1.8.0` 重拉并核对 **digest 一致**（`sha256:30292fc2…`），容器启动横幅自报 `Version v1.8.0, BuildTime 2026-09-04T23:11:49Z`——**拉取时要带版本号的 tag，别拉 latest 再改名**。⚠️ 先前记的「11 个镜像 / 约 4.3 GB」「5/6 镜像 + minio 取不到」都已作废。
 - **搬盘这件事的两个坑**：①`wsl --manage` 只有 `--set-sparse`，**不能搬家**，所以只能走 Docker Desktop 自己的设置（改 `CustomWslDistroDir` 要 `docker desktop stop` 后生效，运行中改会被覆写）；②Docker 是**新建盘而不是搬盘**——旧盘 5.91 GB 成了孤儿（已确认无引用后删除），而当时已拉好的 4.2 GB 镜像全部丢失需重拉。**要挪盘就趁早挪。**
-- **上一条的后果（台账 C20，已解除）**：导出 `docs/refactor/schema-baseline.json` 的那个**原真库随数据卷消失、不可复原**，`.env` 也曾丢失。重建序列本轮已跑通并留下证据（见 P0-0/P0-2 两条）。
+- **上一条的后果（台账 C20，已解除）**：导出 `docs/reference/schema-baseline.json` 的那个**原真库随数据卷消失、不可复原**，`.env` 也曾丢失。重建序列本轮已跑通并留下证据（见 P0-0/P0-2 两条）。
 - **2026-10-13：新增两份 As-Is 文档**——`13-frontend-backend-architecture.md`（前后端与数据面的当前形状）与
   `14-feature-modules.md`（产品轴 17 个功能模块的现状/判据/卡片/顺序）。它们是"现查代码"的产物，每条断言带 `file:line`。
   核对中查出**两处计划与现实的错位**，已登记台账 **C30 / C31**：①`contracts/table-acl.md` 声明 24 张表，
@@ -61,7 +67,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   所以"Go 是唯一公开入口"在本地运行时**没有承载物**，X2 只能静态判 nginx 配置，这不是脚本缺陷。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
-- **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
+- **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已在真 PG 上执行过（2026-10-12 第三轮，此前从未跑过）**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`。真库幂等实测：临时库里连跑两遍 `10→11→11`、两次 exit 0、`ai_executions` 恰 **17 列**；down 一遍有效、第二遍退出 3（「禁止 `DROP TABLE IF EXISTS`」规则的预期后果，见 `server/migrations/README.md`）。**P0-7 距 done 只差 compose 里「ai-core 不发布宿主端口」那一步（P0-8）与 chain 级 `-k ai_executions`（P0-5）**——不缺迁移文件证据了。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
 - **分支布局（2026-10-12 收口）：远端只剩 `main`，本地工作分支就是 `main`（跟踪 `origin/main`）**，
@@ -145,7 +151,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - 验证基线迁移是否真的幂等，用「临时库」法（不碰真库）：`pg_dump --schema-only langchain_app | psql -d <临时库>` 复制结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变。⚠️ `psql` 里 `extract(epoch from …)` 这类表达式**必须带 `SELECT`**（`probe_timestamps.py` 第一版就栽在这，报 `syntax error at or near "extract"`）；而要看列名**别凭印象猜**——本轮把 `chat_messages` 的分组键猜成了 `session_id`，实际是 `session_ref_id`，一跑就 `UndefinedColumn`。
 - Docker 数据盘是 VHDX，**删数据不会自动缩小**；真正回收要压缩/稀疏化。
 - 受限沙箱下：docker 的命名管道、uv 的缓存、git 写 `.git/index.lock` 都可能被拒。**跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**（本机实测），否则 41–42 个 `tmp_path` 用例会以 `PermissionError: [WinError 5]` **假失败**（表现为 `407 passed, 42 errors`——**不是仓库缺陷**）；也**不要**用 `--basetemp` 指到工作区内的既有目录。这些临时目录会带上创建时的完整性标签，策略在 `workspace-write` 与 `danger-full-access` 之间切换后就可能变成**谁都删不掉的毒目录**（本机出现过 `.tmp-pytest`/`.pytest-bt`/`pytest-of-<用户名>`/`tmp*/`），只能靠更高权限运行或用户自有终端清理。
-- 更细的坑见 `docs/refactor/p0-environment.md` §4。
+- 更细的坑见 `docs/plans/p0-environment.md` §4。
 
 ## 6. 运行路径：容器只跑中间件，应用层源码跑
 

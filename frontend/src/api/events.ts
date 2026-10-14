@@ -1,4 +1,4 @@
-// 应用内事件总线（`docs/refactor/10` R7）。
+// 应用内事件总线（`docs/rules/10-frontend-structure.md` R7）。
 // 之前 401 用裸 `window.dispatchEvent(new CustomEvent("auth-expired"))` 广播，
 // 订阅方拿不到退订函数，组件重挂载就重复注册——这里把订阅与退订做成一对。
 

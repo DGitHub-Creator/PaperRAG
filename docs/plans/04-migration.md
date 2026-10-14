@@ -1,7 +1,7 @@
 # 04 — 迁移路线（P0–P3，架构先行）
 
 > 路线：**P0 架构与契约 → P1 后端迁移与最小原型 → P2 功能拓展与数据可信化 → P3 多 Agent 自主探索**（双图属 P4 展望）。
-> 最高约束见 [08-principles-and-conventions.md](08-principles-and-conventions.md)；进度与日程见 [../progress.json](../progress.json)（生成物 [PROGRESS.md](../PROGRESS.md) / [progress.html](../progress.html)）。
+> 最高约束见 [08-principles-and-conventions.md](../rules/08-principles-and-conventions.md)；进度与日程见 [../progress.json](../progress.json)（生成物 [PROGRESS.md](../PROGRESS.md) / [progress.html](../progress.html)）。
 > 排期前提（决策 Q8）：solo，每周 15–20 小时。
 
 ## 0. 路线为什么改版（2026-10-09）
@@ -160,13 +160,13 @@ Milvus 保持"可重建索引"定位，Go 侧记录 `index_state`，索引失败
 
 ## 8. 工作纪律
 
-见 [08-principles-and-conventions.md](08-principles-and-conventions.md) §1、§3、§4、§6。
+见 [08-principles-and-conventions.md](../rules/08-principles-and-conventions.md) §1、§3、§4、§6。
 其中与本路线直接相关的三条：**不在没有端到端验证的情况下宣布阶段完成** ·
 **每次修改同一提交内同步 `docs/progress.json`** · **架构变更先回文档层对齐再写代码**。
 
 ## 9. 与产品愿景的关系
 
-> 对照 [11-product-vision.md](11-product-vision.md)。**P0–P3 是工程架构轴，V1.0–V4.0 是产品价值轴，两条轴的编号不得混用**（`11 §7`）。逐格映射的权威表在 `11 §7`，本节只记本路线的缺口与冲突，不复述那张表。
+> 对照 [11-product-vision.md](../rules/11-product-vision.md)。**P0–P3 是工程架构轴，V1.0–V4.0 是产品价值轴，两条轴的编号不得混用**（`11 §7`）。逐格映射的权威表在 `11 §7`，本节只记本路线的缺口与冲突，不复述那张表。
 
 **已覆盖**：`11 §4.1 AI 论文图书馆` 与 `§4.2 Deep Reader` 的**数据前提** → 本文 P2-1（chunk 真相层）+ P2-2（公式检索）· **`11 §4.1` 的"导入与主题群"本身** → **P2-9（arXiv/DOI 抓取，2026-10-13 立项）**+ **P2-10（主题分类与语义书架，同批）**，登记理由见 `11 §8` 第 2 项与其下的现查证据（这两项不是"没接通"，是代码里**零存在**）· `11 §4.4 Research Mission` 的**执行引擎** → P3 的 ResearchRun/Frontier/Worker · `11 §4.8 Research Writing` 的雏形 → P3 的带引用报告与 `PARTIAL` · `11 §4.5` 双图 → P4 展望（`02 §8`）。P1 的窄链路对应 V2.0 的"一键科研 MVP"入口。
 

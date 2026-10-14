@@ -1,4 +1,4 @@
-// 聊天状态（模块级单例）：不认识 DOM、不认识对话框，滚动与提示由组件负责（`docs/refactor/10` R3/R4）。
+// 聊天状态（模块级单例）：不认识 DOM、不认识对话框，滚动与提示由组件负责（`docs/rules/10-frontend-structure.md` R3/R4）。
 import { ref } from "vue"
 import * as api from "../api/client"
 import { t } from "../i18n"

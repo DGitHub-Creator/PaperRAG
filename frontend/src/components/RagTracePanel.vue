@@ -15,7 +15,7 @@ import type { RagTrace } from "../api/types"
 const props = defineProps<{ trace: RagTrace }>()
 
 // 契约只锁 tool_used / tool_name，其余键随 Python 侧演进，所以按"有什么显示什么"渲染。
-// 此前这里假设 rag_trace 是数组，实际是对象，面板因此恒空白（docs/refactor/10 F7）。
+// 此前这里假设 rag_trace 是数组，实际是对象，面板因此恒空白（docs/rules/10-frontend-structure.md F7）。
 function describe(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (Array.isArray(value)) return t("chat.trace_count", { count: value.length })

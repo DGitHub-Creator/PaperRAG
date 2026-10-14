@@ -1,4 +1,4 @@
-// 会话列表状态（模块级单例，`docs/refactor/10` R3/R4）：不 catch、不弹窗，错误由组件决定怎么显示。
+// 会话列表状态（模块级单例，`docs/rules/10-frontend-structure.md` R3/R4）：不 catch、不弹窗，错误由组件决定怎么显示。
 import { ref } from "vue"
 import * as api from "../api/client"
 import type { SessionInfo } from "../api/types"

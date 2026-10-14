@@ -3,15 +3,18 @@
 这里放的是**被取代的旧计划与旧规划**。留着的唯一目的是追溯"当时为什么这么定"，
 以及给现行文档提供出处（`00-audit` / `02-target` 的输入来自 `refactor-plan-v2.0-researchpilot.md`）。
 
-**现行权威入口只有三处**，与它们冲突时一律以它们为准：
+**现行权威入口**（结构规则见 [`../README.md`](../README.md)）；归档件与它们冲突时，一律以现行件为准：
 
 | 权威文件 | 管什么 |
 | --- | --- |
-| [`../refactor/08-principles-and-conventions.md`](../refactor/08-principles-and-conventions.md) | 最高约束：四条第一性原则、阶段顺序律、任务卡规范、开发规范、进度同步律 |
-| [`../refactor/09-milestone-p0.md`](../refactor/09-milestone-p0.md)（+ [`10-frontend-structure.md`](../refactor/10-frontend-structure.md)） | 当前阶段的任务卡：输入/输出/依赖/验收/证据等级，以及 X1–X8 退出标准 |
+| [`../rules/08-principles-and-conventions.md`](../rules/08-principles-and-conventions.md) | 最高约束：四条第一性原则、阶段顺序律、任务卡规范、开发规范、进度同步律 |
+| [`../plans/09-milestone-p0.md`](../plans/09-milestone-p0.md)（+ [`../rules/10-frontend-structure.md`](../rules/10-frontend-structure.md)） | 当前阶段的任务卡：输入/输出/依赖/验收/证据等级，以及 X1–X8 退出标准 |
 | [`../progress.json`](../progress.json) | 进度真相源（`PROGRESS.md` / `progress.html` 是它的生成物）；契约在 [`../../contracts/`](../../contracts/) |
 
 ## 归档清单
+
+> 「原位置」列记的是**归档当时**的路径（早于 2026-10-14 目录重构的行指向已不存在的 `docs/refactor/`）——这是历史事实，不追改；
+> 旧路径与新位置的对照表见文末。
 
 | 文件 | 原位置 | 归档日期 | 被什么取代 |
 | --- | --- | --- | --- |
@@ -31,3 +34,18 @@
 3. 归档件的正文**逐字保留**，只在文件头加归档抬头——改正文会让"当时的判断"失真，也就失去归档的意义。
 4. 归档不等于删除：`plan-5-academic.md` 里的公式索引、多模态等功能仍在路线上（P2），
    只是不再按旧文档的口径推进；`06` 的 E1–E10 仍是文件级细节的来源。
+
+## 2026-10-14 目录重构：旧路径 → 新位置
+
+`docs/refactor/` 已拆进分层目录（`rules/` / `plans/` / `reference/`）；归档件抬头里残留的 `../refactor/…` 链接按
+"逐字保留"纪律**不追改**。对照表：
+
+| 旧路径（2026-10-14 前） | 新位置 |
+| --- | --- |
+| `docs/refactor/00-audit.md`、`01-current-architecture.md` | `docs/reference/`（dated 事实，只读） |
+| `docs/refactor/` 的 `02` `08` `10` `11` `12` `13` `14` | `docs/rules/`（常青规则，最高优先级） |
+| `docs/refactor/` 的 `03` `04` `05` `07` `09`、`p0-environment.md` | `docs/plans/`（会变的计划，低优先级） |
+| `docs/refactor/schema-baseline.json`、`timestamp-audit.md` | `docs/reference/`（生成物，不手改） |
+| `docs/refactor/README.md` | `docs/README.md`（文档宪法） |
+
+**新文档不再取号**（不再有 `15-`、`16-`…）：分层与命名规则见 [`../README.md`](../README.md) §0/§9。

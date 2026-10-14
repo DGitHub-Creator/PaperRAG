@@ -9,7 +9,7 @@
      列本身是 timestamptz 时不再套用"naive 语义不确定"那套结论。
 
 这些用例**都不连库**，所以任何机器上都能跑。真库上的三法实跑结果记在
-`docs/refactor/timestamp-audit.md`（生成时间、PG 版本、9 组探针数据都在里面）。
+`docs/reference/timestamp-audit.md`（生成时间、PG 版本、9 组探针数据都在里面）。
 """
 
 import sys

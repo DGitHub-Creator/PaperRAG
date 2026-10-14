@@ -1,8 +1,8 @@
 # 02 — 目标架构（To-Be）
 
-> **本文状态（2026-10-09 复核）**：性质=**决策**（To-Be：五条架构律 L1–L5、目录、契约、状态机、写入边界）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。**大部分未实现**：Go 主后端与 Frontier 属 P1/P3，双图与 Evidence 属 P4 展望；已落地的只有契约目录（P0-4，`contracts/`）与 ai-core 内部执行面（P0-7，mock 级）。本文是目标态，不是现状——现状看 [01](01-current-architecture.md)。
+> **本文状态（2026-10-09 复核）**：性质=**决策**（To-Be：五条架构律 L1–L5、目录、契约、状态机、写入边界）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](../plans/04-migration.md)。**大部分未实现**：Go 主后端与 Frontier 属 P1/P3，双图与 Evidence 属 P4 展望；已落地的只有契约目录（P0-4，`contracts/`）与 ai-core 内部执行面（P0-7，mock 级）。本文是目标态，不是现状——现状看 [01](../reference/01-current-architecture.md)。
 > 输入：[plan-v2.0-researchpilot.md](../archive/refactor-plan-v2.0-researchpilot.md)（已归档）§1/§3/§4/§5 + 已确认决策 Q1–Q8（全 A）。
-> 前提事实：[00-audit.md](00-audit.md)、[01-current-architecture.md](01-current-architecture.md)。
+> 前提事实：[00-audit.md](../reference/00-audit.md)、[01-current-architecture.md](../reference/01-current-architecture.md)。
 > **目标不是把代码变成 Go**，而是在功能正确、数据可信、可验证的基础上升级。凡与"数据可信"冲突的架构推进一律让路。
 
 ## 0. 五条不可违反的架构律
@@ -51,8 +51,10 @@ ResearchPilot/
 │   ├── rag/ vectordb/ agent/ core/models.py core/config/ …（沿用）
 ├── contracts/                  # OpenAPI + AI 执行契约 JSON Schema（Go/Python 共用）
 ├── frontend/                   # 保留 Vue 3，不改框架
-├── docs/refactor/              # 本套 spec
-└── docker-compose.yml          # 增加 go-api / go-worker 两个服务
+├── docs/rules/                 # 常青规则：架构、模块、产品愿景、问题台账、原则（最高优先级）
+├── docs/plans/                 # 会变的详细计划：迁移路线、P0 卡片、环境…（低优先级）
+├── docs/reference/             # 只读事实快照：审计基线、schema / 时间戳快照
+└── docker-compose.yml          # ⚠️ 只跑中间件（2026-10-13 定案：应用层不容器化，见 AGENTS §6 / 台账 C29）
 ```
 
 **为什么 Python 保留 `backend/`**：62 个模块 + 41 个测试文件全部使用 `from backend.xxx` 绝对导入，`pyproject.toml` 的 packages.find、coverage source、`Dockerfile`、`main.py` 都指向它。同一次提交里既改目录又改架构会让 diff 不可评审、回归不可定位。

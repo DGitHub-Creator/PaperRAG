@@ -20,7 +20,7 @@ aware 值经 psycopg2 落到 naive 列时，PG 会**按会话 `TimeZone` 转换�
   ③交叉法  同会话内 `chat_messages.timestamp` 与 serial `id` 的单调性违例数，
           违例规模指示混用程度。**同样需要存量数据**。
 
-产出 `docs/refactor/timestamp-audit.md`。混杂到行级不可判定时记 `unknown`，
+产出 `docs/reference/timestamp-audit.md`。混杂到行级不可判定时记 `unknown`，
 并按 05 §4.1 的要求采用保守转换（不猜测偏移，标注数据质量降级）。
 
 ⚠️ **一条必须写进结论的边界（台账 C20）**：仓库里现存的真库快照来自 2026-10-11 那次导出，
@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = ROOT / "docs" / "refactor" / "timestamp-audit.md"
+DEFAULT_OUT = ROOT / "docs" / "reference" / "timestamp-audit.md"
 
 # 探针用的已知时刻：刻意选在一个"整点但不是正午"的位置，
 # 这样任何小时级偏移都能在直方图与文本比对里一眼看出，而分钟/秒级误差仍是 0。

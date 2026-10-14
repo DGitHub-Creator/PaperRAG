@@ -1,4 +1,4 @@
-// 登录态的唯一所有者：反应式状态在这里，持久化委托给 api/token.ts（`docs/refactor/10` R2）。
+// 登录态的唯一所有者：反应式状态在这里，持久化委托给 api/token.ts（`docs/rules/10-frontend-structure.md` R2）。
 import { computed, ref } from "vue"
 import * as api from "../api/client"
 import { clearSession, readStoredUser, readToken, writeSession, writeUser } from "../api/token"

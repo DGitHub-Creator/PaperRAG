@@ -1,4 +1,4 @@
-// 唯一与后端对话的出口（`docs/refactor/10` R1/R2/R5）：
+// 唯一与后端对话的出口（`docs/rules/10-frontend-structure.md` R1/R2/R5）：
 // BASE、鉴权头、错误信封解析、401 处理只在这里实现一次；上层拿到的是 DTO 或 ApiError。
 // check_frontend.py 会拒绝任何其它文件出现 fetch / XMLHttpRequest / .json()。
 import { clearSession, readToken } from "./token"
@@ -7,7 +7,7 @@ import type { DetailError } from "./types"
 
 export const BASE = "/api/v1"
 
-/** 传输层失败的原因码：api 层不产人类文案，翻译交给 utils/errors.ts（`docs/refactor/10` R9） */
+/** 传输层失败的原因码：api 层不产人类文案，翻译交给 utils/errors.ts（`docs/rules/10-frontend-structure.md` R9） */
 export const REASON_EMPTY_BODY = "empty_response_body"
 export const REASON_UPLOAD_FAILED = "upload_failed"
 export const REASON_UPLOAD_TIMEOUT = "upload_timeout"

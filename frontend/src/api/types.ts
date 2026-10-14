@@ -1,6 +1,6 @@
 // 与 contracts/openapi.yaml 的 components/schemas 一一对应的 DTO。
 // 改名规则：schema 名原样搬过来，字段名不翻译——契约与前端必须能逐字对照，
-// Go 接管后端后同一份类型直接复用（`docs/refactor/10` R6）。
+// Go 接管后端后同一份类型直接复用（`docs/rules/10-frontend-structure.md` R6）。
 
 export type Role = "user" | "admin"
 

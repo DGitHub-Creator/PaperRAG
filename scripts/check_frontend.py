@@ -1,4 +1,4 @@
-"""前端结构机检（`docs/refactor/10` §3 的 R1–R11）。
+"""前端结构机检（`docs/rules/10-frontend-structure.md` §3 的 R1–R11）。
 
 为什么要有这个脚本：结构约定光写在文档里会腐烂，`npm run typecheck` 只保证类型不保证分层。
 这里检查的是**形状**而不是类型：谁是唯一的请求出口、谁碰得到 localStorage、状态层里有没有
@@ -296,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"frontend 结构检查未通过，共 {len(problems)} 项：")
         for line in problems:
             print(f"  x {line}")
-        print("\n规则出处：docs/refactor/10-frontend-structure.md §3")
+        print("\n规则出处：docs/rules/10-frontend-structure.md §3")
         return 1
     files = sum(1 for _ in iter_sources(SRC))
     print(f"frontend 结构检查通过：{files} 个源文件，R1–R11 全部满足。")

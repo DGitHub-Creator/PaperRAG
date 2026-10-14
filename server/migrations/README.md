@@ -1,6 +1,6 @@
 # `server/migrations/` —— Go 侧 schema 的唯一来源
 
-> 编号分配与新表口径见 [`docs/refactor/05-database-migration.md`](../../docs/refactor/05-database-migration.md) §2.6，
+> 编号分配与新表口径见 [`docs/plans/05-database-migration.md`](../../docs/plans/05-database-migration.md) §2.6，
 > 本文件只写"在这里加一个迁移要遵守什么、以及哪条机检会拦住你"。
 
 ## 现状：有文件，**没有执行器**
@@ -37,7 +37,7 @@ echo $?   # 0 才算过
 1. **只做登记，不动存量**：`CREATE TABLE IF NOT EXISTS`。出现 `DROP` / `TRUNCATE` / `DELETE` /
    `ALTER` 就是在动已有数据，`--check-baseline` 直接判失败。
 2. 新表的时间列一律 **`TIMESTAMPTZ`**（旧表的 `timestamp without time zone` 语义不确定，见
-   [`timestamp-audit.md`](../../docs/refactor/timestamp-audit.md)）。
+   [`timestamp-audit.md`](../../docs/reference/timestamp-audit.md)）。
 3. **可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`**：PG 里 `NULL ≠ NULL`，
    否则 `UNIQUE(a, b)` 在 `b IS NULL` 的行之间静默失效（`000002` 的 `run_id` 就是这个原因）。
 4. 实现没写到的列**不预先建**（`000002` 只建 `lease_token`，不建 `lease_owner`/`lease_expires_at`）。
@@ -73,4 +73,4 @@ echo $?   # 0 才算过
 | 命令 | 判什么 | 不判什么 |
 | --- | --- | --- |
 | `audit_schema.py --check-baseline` | **文件形态**：up 非破坏、幂等写法、down 配对 | 内容与真库是否一致 |
-| `audit_schema.py --verify-columns` | **内容**：逐列比类型 / varchar 长度 / NOT NULL / DEFAULT，比对对象是 `docs/refactor/schema-baseline.json` 的 `columns` 段 | 快照本身过期了没有——快照需带 `columns`，缺时如实 exit 2 |
+| `audit_schema.py --verify-columns` | **内容**：逐列比类型 / varchar 长度 / NOT NULL / DEFAULT，比对对象是 `docs/reference/schema-baseline.json` 的 `columns` 段 | 快照本身过期了没有——快照需带 `columns`，缺时如实 exit 2 |

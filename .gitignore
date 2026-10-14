@@ -34,7 +34,7 @@ htmlcov/
 coverage.xml
 
 # AI/编辑器工具的本地产物：会话记录、计划草稿、缓存。这些是"某次对话的中间态"，
-# 不是仓库的真相源——真相源只有 docs/refactor/ 与 docs/progress.json。
+# 不是仓库的真相源——真相源只有 docs/（rules/ 与 plans/）与 docs/progress.json。
 .mimocode/
 .claude/
 .qoder/

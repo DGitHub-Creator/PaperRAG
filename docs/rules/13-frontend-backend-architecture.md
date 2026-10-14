@@ -2,7 +2,7 @@
 
 > **本文定位**：[02-target-architecture.md](02-target-architecture.md) 写的是**目标态**，本文写的是
 > **今天代码里真实存在的形状**与两者的差。每条断言都带 `file:line`，取数命令附在各节末，可复跑。
-> 与 [01-current-architecture.md](01-current-architecture.md) 的区别：那份是 2026-10-09 的 **dated 审计基线**
+> 与 [01-current-architecture.md](../reference/01-current-architecture.md) 的区别：那份是 2026-10-09 的 **dated 审计基线**
 > （`AGENTS.md` §7 规定逐字保留、不作为实施依据），本文是**当前可复核的形状**。
 > 功能模块层面的规划在 [14-feature-modules.md](14-feature-modules.md)，本文只给它的证据。
 

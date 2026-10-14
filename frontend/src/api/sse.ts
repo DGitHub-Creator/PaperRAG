@@ -1,4 +1,4 @@
-// SSE 分帧（`docs/refactor/10` F8）：之前 `\\n\\n` 切帧、`data: ` 前缀、`[DONE]` 字面量
+// SSE 分帧（`docs/rules/10-frontend-structure.md` F8）：之前 `\\n\\n` 切帧、`data: ` 前缀、`[DONE]` 字面量
 // 与 JSON.parse 混在 useChat.send() 的几十行里，现在只有这里认识 SSE 语法。
 import type { StreamEvent } from "./types"
 

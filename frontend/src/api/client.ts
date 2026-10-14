@@ -1,4 +1,4 @@
-// 契约里的每条操作对应这里的一个函数（`docs/refactor/10` R1/R6）。
+// 契约里的每条操作对应这里的一个函数（`docs/rules/10-frontend-structure.md` R1/R6）。
 // 路径字面量只出现在这个文件：check_contracts.py 从这些字面量现场抽取「前端实调集合」，
 // 与 contracts/openapi.yaml 双向比对，所以新增接口必须同时改契约与本文件，两边都会机检。
 import { openStream, request, uploadFile } from "./http"

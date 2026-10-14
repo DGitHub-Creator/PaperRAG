@@ -18,7 +18,7 @@
 | 数据体量 | 每表 `count(*)`、时间列 `min/max` | 决定迁移是否可在线执行 |
 | 时区真相 | 见 §4 | 决定 TIMESTAMPTZ 转换方式 |
 
-**产出**：`docs/refactor/schema-baseline.json`（结构快照，进仓库）。Go 的迁移基线由此生成，**不由 ORM 直接生成**。
+**产出**：`docs/reference/schema-baseline.json`（结构快照，进仓库）。Go 的迁移基线由此生成，**不由 ORM 直接生成**。
 
 ## 2. 冻结 alembic，建立 golang-migrate 基线
 
@@ -181,7 +181,7 @@ SHOW timezone;  SHOW log_timezone;  -- 以及 server_version
 2. **分布法**：对 `users.created_at`、`chat_messages.timestamp` 做小时直方图。若峰值集中在 UTC 工作时段之外 8 小时（+08:00 特征），说明落库值是本地时间；与运维记录/已知事件时刻交叉验证。
 3. **交叉法**：同一会话内 `chat_messages.timestamp` 与该行 `id` 递增顺序（serial 单调）应单调不减；违例数量指示混用规模。
 
-**结论写入** `docs/refactor/timestamp-audit.md`，并给出每表每列的判定（UTC / 本地 / 混杂）。混杂时按行不可判定 → 记录为 `unknown` 并采用保守转换（不猜测偏移，标注数据质量降级）。
+**结论写入** `docs/reference/timestamp-audit.md`，并给出每表每列的判定（UTC / 本地 / 混杂）。混杂时按行不可判定 → 记录为 `unknown` 并采用保守转换（不猜测偏移，标注数据质量降级）。
 
 ### 4.2.1 已核查的列级事实与更正（2026-10-11，依据 `schema-baseline.json`）
 
@@ -235,7 +235,7 @@ ALTER TABLE chat_messages ALTER COLUMN timestamp TYPE timestamptz
 
 ## 6. 与产品愿景的关系
 
-> 对照 [11-product-vision.md](11-product-vision.md)（产品轴 V1–V4）。本文只管数据面，产品级缺口集中记在 `11 §8`，此处不复述。
+> 对照 [11-product-vision.md](../rules/11-product-vision.md)（产品轴 V1–V4）。本文只管数据面，产品级缺口集中记在 `11 §8`，此处不复述。
 
 **已覆盖**：`11 §4.2 Deep Reader` 的数据前提（`paper_chunks` 持完整正文 + `page_number`/`start_char` 定位 + `chapter_path`，是"每次回答可跳转 PDF 位置"的地基）· `11 §4.1 AI 论文图书馆` 的实体层（`papers`/`paper_versions`/`paper_files`，`raw_sha256` 去重与版本寻址，即"为什么这篇在我的库里"的落点）· `11 §4.7 Research Lab` 的公式前提（`formula_index_entries`，即 V1.0 的"公式/定理检索"）。
 

@@ -58,7 +58,7 @@
    （反面教材就在仓库里：`tests/conftest.py` 在 import 期 patch 掉 HuggingFace——那是 L0/L1 的合法做法，
    但同一个手法出现在 L3 就等于没测。）
 5. 每个已修缺陷都要有一条**先红后绿**的测试；红灯清单与失败输出写进
-   `docs/refactor/baseline-results.md`（**未实现**：该文件尚未建立，属 P1-6）。
+   `docs/plans/baseline-results.md`（**未实现**：该文件尚未建立，属 P1-6）。
 
 ## 4. 四条主路径用例（T1–T8）
 
@@ -99,7 +99,7 @@
 - **只记录不判定**：nightly 跑完把每题的召回 chunk、是否命中 `expected_signals`、token 与耗时写入
   `baseline-results.md` 的追加表，形成可观察的回归趋势。这是 **P3/P4** 阶段 A/B 实验的**数据管道预置**，
   本身不设阈值门禁（决策 Q8）。
-- 检索否定题是防幻觉的早期信号：`verify.py` 只查编号不查语义（[00-audit](00-audit.md) §2.1），这类题能立刻暴露。
+- 检索否定题是防幻觉的早期信号：`verify.py` 只查编号不查语义（[00-audit](../reference/00-audit.md) §2.1），这类题能立刻暴露。
 
 ## 7. 契约测试（L5，**P0-5 交付，当前未实现**）
 
@@ -109,7 +109,7 @@
 | 内容 | 形式 | 现状 |
 | --- | --- | --- |
 | 浏览器 API | OpenAPI 3.1；对比 Go 与 Python 对同一请求的**状态码 + 响应体 JSON 结构 + 关键头**（错误信封已统一为 `{"detail": ...}`，K1/K4） | 未实现（P0-5） |
-| 流式帧 | 逐帧比对：`data:` 前缀、事件 `type` 顺序、`[DONE]` / `{"type":"done"}` 差异（[01](01-current-architecture.md) §4）——录制-回放（同一 prompt、同 stub LLM）产出字节序列 diff | 未实现（P0-5） |
+| 流式帧 | 逐帧比对：`data:` 前缀、事件 `type` 顺序、`[DONE]` / `{"type":"done"}` 差异（[01](../reference/01-current-architecture.md) §4）——录制-回放（同一 prompt、同 stub LLM）产出字节序列 diff | 未实现（P0-5） |
 | AI 执行契约 | [`ai-execution.schema.json`](../../contracts/ai-execution.schema.json)；Python 侧 Pydantic 严格校验已落（P0-7，29 条 HTTP 级用例），Go 侧 struct 与逐码测试未实现 | **半实现**：Python 侧 mock 级已有；Go 侧属 P0-5 |
 | 密码哈希 | golden vectors：Python 生成若干 `pbkdf2_sha256$...` 串，Go 必须逐条验证通过（**导出物不含密码与盐明文**） | **两侧都已实现（2026-10-12，X5 转 pass）**：导出侧 `scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json` 10 条（6 正 4 负），期望值由生产 `verify_password` 现算；"不含密码与盐明文"落成"不含明文口令、也不含真库摘要"（口令由 `vector_id` 按 `password_rule` 重建，真库只在 `--from-db` 下给形状统计）。Go 侧 `internal/auth/password.go` + `TestVerifyLegacyHash` 逐条对上（标准库 `crypto/pbkdf2`，零新依赖），实跑 rc=0；反向（Go 写 → Python 验）也实跑取过证。**仍未覆盖的一半**：`--from-db` 的真库形状统计（含"是否残留 bcrypt 族"）因原真库随 Docker 数据卷消失而无法执行（台账 C20），Go 侧不实现 bcrypt、只显式拒绝并打 `family=bcrypt` 的 WARN |
 | JWT | golden tokens：Python 签发 → Go 校验（含 `type` 语义、过期、错误 secret） | **令牌半侧已实现（2026-10-12）**：`scripts/export_jwt_golden.py` → `contracts/jwt_golden.json` 9 条（正 3 / 负 6），`expect_accept` 由生产函数 `get_user_from_bearer_token` 现算（桩 db 跑真函数），点名的三件事各有向量，另补缺 `sub`、用户已不在库里、签名被改、历史令牌不带 `type`。Go 侧 `TestParseGoldenTokens` 逐条对上，并按 `rejected_by` 分层认领（令牌层 / 回库层）。配 `tests/unit/test_export_jwt_golden.py` 32 项。<br>⚠️ 两处与 pbkdf2 那份**结构不同**，读文件时要留意：①`--check` 是**语义**校验不是字节比对（token 带 `exp`，不能逐字重建；正向向量有效期钉 10 年作补偿，见文件 `reproducibility` 字段）；②两侧结论**相反**的轴记在 `divergences` 段而不是塞进 vectors（缺 exp：Python 收、Go 拒；alg 白名单：Go 写死 HS256），否则"逐条一致"这个判据会自相矛盾。<br>**仍缺的是"Go 签发 → Python 校验"的进程级互跑**（X4 的 chain 半侧）：今天只有 claims 形状逐字段对齐 + 密码哈希那一向的实跑取证，`pytest -m chain -k go_auth` 收 0 项、rc=5，要等 P0-5 的容器 fixture |
@@ -140,7 +140,7 @@
 
 ## 10. 与产品愿景的关系
 
-> 对照 [11-product-vision.md](11-product-vision.md)。产品级缺口集中记在 `11 §8`，本节只列 E2E 面的**模式维度缺口**。
+> 对照 [11-product-vision.md](../rules/11-product-vision.md)。产品级缺口集中记在 `11 §8`，本节只列 E2E 面的**模式维度缺口**。
 
 **已覆盖**：`11 §4.4 Research Mission` 的**崩溃恢复**（T8 的"最终一致"、§3 的"入库判定来自数据库"）· `11 §4.8 Evidence-grounded Writing` 的**最小地基**（T3 的"每个 `chunk_id` 可回查"+ §3 第 3 条"引用定位必须能回原文"）· `11 §4.2 Deep Reader` 的**定位**前提（T5 公式链路 + §3 第 3 条按 `page_number`+`start_char` 回 PDF）· `11 §4.3` 的**跨论文比较**只被 §6 的"跨论文比较 3 题"**记录性**碰到。
 

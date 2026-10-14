@@ -1,7 +1,7 @@
 -- 000001_baseline.up.sql —— ResearchPilot PostgreSQL 结构基线（P0-2，golang-migrate 形态）
 --
 -- 结构与来源（务必按此复核，勿凭 ORM 猜测）：
---   * 对象集合权威 = docs/refactor/schema-baseline.json（audit_schema.py --live 从真库只读导出：
+--   * 对象集合权威 = docs/reference/schema-baseline.json（audit_schema.py --live 从真库只读导出：
 --     source=live-postgres、PG 15.18、10 张表、alembic head=add_paper_knowledge_graph）。
 --     本文件的每一条索引与约束都逐字对应它的 indexes / constraints 两段。
 --   * 该 JSON 导出时**不含列清单**（旧版脚本的 payload 只有 tables/indexes/constraints/column_diff），

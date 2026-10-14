@@ -1,6 +1,6 @@
 # 00 — Phase 0 代码审计
 
-> **本文状态（2026-10-09 复核）**：性质=**事实**（审计基线 `main @ c55129e`，逐文件读源码 + grep 调用点验证）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。结论仍然有效；文中提到的修复去向已按 04 §0 重映射，已落地的部分（A0-1 `996cf777`、A0-3 `335aeb7e`、FE-1、P0-4、P0-7）见 [../progress.json](../progress.json)。
+> **本文状态（2026-10-09 复核）**：性质=**事实**（审计基线 `main @ c55129e`，逐文件读源码 + grep 调用点验证）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](../plans/04-migration.md)。结论仍然有效；文中提到的修复去向已按 04 §0 重映射，已落地的部分（A0-1 `996cf777`、A0-3 `335aeb7e`、FE-1、P0-4、P0-7）见 [../progress.json](../progress.json)。
 
 > 依据 [plan-v2.0-researchpilot.md](../archive/refactor-plan-v2.0-researchpilot.md) §2 要求产出（该计划已归档，见 [../archive/README.md](../archive/README.md)）。
 > 审计对象：`main @ c55129e`（2026-10-09）。方法：逐文件读源码 + grep 调用点验证，**所有结论以代码为第一依据，文档声明不作为事实**。

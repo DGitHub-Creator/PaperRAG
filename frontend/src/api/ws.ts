@@ -1,4 +1,4 @@
-// WebSocket 的 URL 也归 api 层（`docs/refactor/10` F1）：路径与 BASE 同源，
+// WebSocket 的 URL 也归 api 层（`docs/rules/10-frontend-structure.md` F1）：路径与 BASE 同源，
 // 换前缀时不用再回忆"还有一处手拼 location.host"。
 import { BASE } from "./http"
 

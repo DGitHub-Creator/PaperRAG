@@ -1,6 +1,6 @@
 # 08 — 原则与开发规范（最高约束）
 
-> **效力**：本文件是 `docs/refactor/` 的顶层约束。与其他任何文件冲突时**以本文件为准**；
+> **效力**：本文件是 `docs/` 全部文档的顶层约束（目录结构与分类规则见 [`docs/README.md`](../README.md)）。与其他任何文件冲突时**以本文件为准**；
 > 与已锁定决策 Q1–Q8 冲突时，只有 §2 的阶段顺序律覆盖 Q1，其余 Q2–Q8 继续有效。
 > 来源：用户《重构执行总纲》四条第一性原则（2026-10-09）+ 仓库既有规范与审计事实。
 > 基线：`main @ 106f17dd`，2026-10-09。
@@ -38,8 +38,8 @@ P0 架构与契约  →  P1 后端迁移 + 最小原型  →  P2 功能拓展  �
 **关键推论（必须接受，否则等于偷偷回到旧 Q1）**：
 
 1. **不存在"Go 之前的一轮基线修复里程碑"**。旧系统剩余缺陷按「是否阻塞本阶段的端到端演示」决定去留：
-   阻塞 → 进本阶段任务卡；不阻塞 → 进对应阶段（映射见 [04-migration.md](04-migration.md) §3）。
-2. 已完成的 A0-1（前端故障 + typecheck 门禁）与 A0-3（鉴权与运行安全）——旧卡编号，重映射见 [04 §0.3](04-migration.md)**保留**，不重做、不回填。
+   阻塞 → 进本阶段任务卡；不阻塞 → 进对应阶段（映射见 [04-migration.md](../plans/04-migration.md) §3）。
+2. 已完成的 A0-1（前端故障 + typecheck 门禁）与 A0-3（鉴权与运行安全）——旧卡编号，重映射见 [04 §0.3](../plans/04-migration.md)**保留**，不重做、不回填。
 3. P1 的最小原型允许跑在**尚不可信的 chunk 层**上，但其引用**不得宣称是证据链**；
    证据级引用是 P2 的验收项，文档与 README 的口径必须区分这两档。
 4. chunk 可信化改在 **Go 侧新 schema**（`server/migrations/`）上做，不再由 Python 侧建表过渡。
@@ -48,7 +48,7 @@ P0 架构与契约  →  P1 后端迁移 + 最小原型  →  P2 功能拓展  �
 
 ## 3. 任务卡规范（原则③的落地形式）
 
-每张任务卡（`docs/refactor/09-*.md` 与 `docs/progress.json` 一一对应）**必须**有七个字段：
+每张任务卡（`docs/plans/09-milestone-p0.md-*.md` 与 `docs/progress.json` 一一对应）**必须**有七个字段：
 
 | 字段 | 要求 |
 | --- | --- |
@@ -99,7 +99,7 @@ requires: mock | real | e2e                 # 宣称 done 所需的最低等级
 `backend/agent/`（LangGraph 图与提示词）、`backend/core/config/`、`frontend/` 现有组件、307 项既有测试。
 
 **允许新增**：`server/`（Go）、`contracts/`、`scripts/`、`backend/internal_api/`、`tests/chain|e2e`、
-`docs/refactor/`、`docs/progress.*`。
+`docs/rules/`、`docs/plans/`、`docs/progress.*`（文档目录结构与分类规则见 `docs/README.md`）。
 
 **禁止**：
 

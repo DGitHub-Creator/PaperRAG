@@ -32,7 +32,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | 无依赖。需要 `.env` 里可用的 `JWT_SECRET_KEY`（`335aeb7e` 后缺失即拒绝启动） |
-| 输出 | `scripts/dev.py`（新，跨平台统一入口；**当前命令面 10 个子命令**：`doctor/up/infra/serve/down/ps/logs/migrate/test/gen`——本卡原先列的六项只是 P0-0 当时的面，`infra`/`serve` 由 2026-10-11 补、`gen` 由 P0-3 补；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/refactor/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
+| 输出 | `scripts/dev.py`（新，跨平台统一入口；**当前命令面 10 个子命令**：`doctor/up/infra/serve/down/ps/logs/migrate/test/gen`——本卡原先列的六项只是 P0-0 当时的面，`infra`/`serve` 由 2026-10-11 补、`gen` 由 P0-3 补；`seed` 顺延到 P1——种开发数据要先有上传链路，现在写只会是空壳命令）、`pyproject.toml`（注册 `unit/integration/chain/e2e/slow` marker）、`tests/conftest.py`（目录即分层的自动补标）、`.env.example`（删死键 `AGENT_ENABLED`/`ENTAILMENT_BACKEND`，补 `APP_ENV`，`AICORE_INTERNAL_TOKEN` 标为 P0-7 预留）、`.gitattributes`（`* text=auto eol=lf` + 二进制不转换）、`docs/plans/p0-environment.md`（新，从零启动序列 + §3 实跑记录表） |
 | 依赖 | 无 |
 | 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
 | 等级 | real（启动序列必须**实跑**，不是照抄文档） |
@@ -56,12 +56,12 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | 存量 PG 库（可能无 `alembic_version`）；`05` §1/§2/§4 |
-| 输出 | `scripts/audit_schema.py`（新，只读：表集合、时间列语义、有无 `alembic_version`）+ `docs/refactor/schema-baseline.json`、`scripts/probe_timestamps.py` + `docs/refactor/timestamp-audit.md`、`server/migrations/000001_baseline.up.sql`/`.down.sql`（把**现有**结构登记为基线，纯 `CREATE TABLE IF NOT EXISTS` 或 `-- 已存在，仅登记`，禁止 DROP）、`server/migrations/README.md`（后续 schema 唯一来源） |
+| 输出 | `scripts/audit_schema.py`（新，只读：表集合、时间列语义、有无 `alembic_version`）+ `docs/reference/schema-baseline.json`、`scripts/probe_timestamps.py` + `docs/reference/timestamp-audit.md`、`server/migrations/000001_baseline.up.sql`/`.down.sql`（把**现有**结构登记为基线，纯 `CREATE TABLE IF NOT EXISTS` 或 `-- 已存在，仅登记`，禁止 DROP）、`server/migrations/README.md`（后续 schema 唯一来源） |
 | 依赖 | P0-0（需容器） |
 | 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
 | 等级 | real |
 | 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`335aeb7e` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤（否则开发环境起不来） |
-| 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测（今天这套是 37 项，见下），含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论。<br>**2026-10-12 两处推进**：①列级失真终于有了机检——`--live` 的 payload 补 `columns`，新增离线模式 `--verify-columns` 逐列比类型/varchar 长度/NOT NULL/DEFAULT（`test_audit_schema.py` 由 19 项增至 **37 项**：15 项列级机检随 `--verify-columns` 落，另 3 项随 `000002` 落地补上——"每张已交付的 up 都能被解析器读懂""`ai_executions` 的 DDL 记的是 P0-7 拍板的那几条""后一张迁移新增的表只算提示不算漂移"；含"解析真基线得 10 表/59 列"这条防解析器脱节的用例），up/down 的注释规则也统一了（台账 C1/C2）；②本卡最后挂着的收尾（`sqlc.yaml` 指到 `migrations/` 并与 `dev.py gen --check` 同原子改动）已完成，临时参照删除（台账 C3/C4）。**仍未 done 的两条**：`--verify-columns` 只到 mock——仓库里现存那份 `schema-baseline.json` 是补 `columns` 之前导的，命令如实返回 2，要等 Docker 起来重导一次；`probe_timestamps.py` 与 `timestamp-audit.md` 未产（本机 Docker daemon 当前不可达，且"每表时间列判定"是 X6 验收明文要求的一项）<br>**2026-10-12 第三轮转 done（real）**——两条尾巴都解了：①`--live` 用重建库重导，快照现在带 `columns`（10 表 / 59 列，`column_diff` 仍是 23 条与原审计一致），**`--verify-columns` 从 exit 2 变成真正的逐列比对 exit 0**（类型/varchar 长度/NOT NULL/DEFAULT 四项）；②`scripts/probe_timestamps.py` + `docs/refactor/timestamp-audit.md` 落地（11 个 naive 时间列逐个判定，配 25 项单测），**探针法实测证实了 `05 §4` 的断言**：会话时区 `Asia/Shanghai` 下 aware `datetime.now(UTC)` 写进 naive 列会落成 +8 小时偏移（07:08:09→15:08:09）。⚠️ 分布法/交叉法**如实报 `no_data`**——重建库是空的，而带历史数据那个库已永久消失（C20），所以这不是"等以后有数据"。另外补了卡片一直列着、文件却从未存在的 `server/migrations/README.md` |
+| 当前状态 | 2026-10-09 部分：`scripts/audit_schema.py` 落地，两模式分离且不互相冒充——`--check-baseline`（离线，审 `.sql` 是否非破坏/幂等/down 配对）与 `--live`（只读连库，出 `schema-baseline.json`：表集合、`alembic_version` 三态、列级 diff、索引与约束分查、会话时区）。判定逻辑 19 项单测（今天这套是 37 项，见下），含"两套类型命名不是漂移""注释里的 DROP 不算 DDL"这类会把核查废掉的噪声点。本机 `--check-baseline` 如实返回 1（`server/migrations/` 还空着）。**基线文件不在没有真库时生成**：05 §1 末与 §2.2 明确"由核查出的实际结构生成，不由 ORM 生成"，用 ORM 声明冒充只会把已知漂移（`ix_paper_nodes_id` 缺失、`filename` 是 unique index 非 constraint）洗掉。`probe_timestamps.py` 同样留到真库：探针法/分布法/交叉法三种判定全都要往库里写或读，没有库时它只能产出假结论。<br>**2026-10-12 两处推进**：①列级失真终于有了机检——`--live` 的 payload 补 `columns`，新增离线模式 `--verify-columns` 逐列比类型/varchar 长度/NOT NULL/DEFAULT（`test_audit_schema.py` 由 19 项增至 **37 项**：15 项列级机检随 `--verify-columns` 落，另 3 项随 `000002` 落地补上——"每张已交付的 up 都能被解析器读懂""`ai_executions` 的 DDL 记的是 P0-7 拍板的那几条""后一张迁移新增的表只算提示不算漂移"；含"解析真基线得 10 表/59 列"这条防解析器脱节的用例），up/down 的注释规则也统一了（台账 C1/C2）；②本卡最后挂着的收尾（`sqlc.yaml` 指到 `migrations/` 并与 `dev.py gen --check` 同原子改动）已完成，临时参照删除（台账 C3/C4）。**仍未 done 的两条**：`--verify-columns` 只到 mock——仓库里现存那份 `schema-baseline.json` 是补 `columns` 之前导的，命令如实返回 2，要等 Docker 起来重导一次；`probe_timestamps.py` 与 `timestamp-audit.md` 未产（本机 Docker daemon 当前不可达，且"每表时间列判定"是 X6 验收明文要求的一项）<br>**2026-10-12 第三轮转 done（real）**——两条尾巴都解了：①`--live` 用重建库重导，快照现在带 `columns`（10 表 / 59 列，`column_diff` 仍是 23 条与原审计一致），**`--verify-columns` 从 exit 2 变成真正的逐列比对 exit 0**（类型/varchar 长度/NOT NULL/DEFAULT 四项）；②`scripts/probe_timestamps.py` + `docs/reference/timestamp-audit.md` 落地（11 个 naive 时间列逐个判定，配 25 项单测），**探针法实测证实了 `05 §4` 的断言**：会话时区 `Asia/Shanghai` 下 aware `datetime.now(UTC)` 写进 naive 列会落成 +8 小时偏移（07:08:09→15:08:09）。⚠️ 分布法/交叉法**如实报 `no_data`**——重建库是空的，而带历史数据那个库已永久消失（C20），所以这不是"等以后有数据"。另外补了卡片一直列着、文件却从未存在的 `server/migrations/README.md` |
 
 ### P0-3 Go 数据访问层
 
@@ -127,7 +127,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | P0-1、P0-6、P0-7 |
-| 输出 | `scripts/dev.py`（**Go 侧的源码启动路径**：把 `go-api`/`go-worker` 与 `ai-core` 拉起来，`infra` 仍只管中间件）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `335aeb7e` 语义）、`.env.example` 补 Go 侧变量、`docs/refactor/p0-environment.md` 更新为「中间件容器 + 应用源码」的完整序列。<br>⚠️ **2026-10-13 定案**：原卡列的「`docker-compose.yml` 新增 `go-api`/`go-worker`/`ai-core` 三个服务、`backend` 改角色并去掉宿主端口」**取消**——容器只跑中间件。随之 `docker-compose.yml` 里现存的 `backend`（`build: target: backend`，16.5 GB）与 `nginx` 两个服务、以及 `dev.py up` 这条命令，都变成与定案冲突的遗留物，**按台账 C29 处置**（要么删、要么明确标注为「仅 prod/部署用，不参与任何验收」）。`server/Dockerfile` 同理：目前没有任何验收路径引用它 |
+| 输出 | `scripts/dev.py`（**Go 侧的源码启动路径**：把 `go-api`/`go-worker` 与 `ai-core` 拉起来，`infra` 仍只管中间件）、`nginx/nginx.conf`（`/api/` upstream 切 `go-api`；`TRUST_PROXY_HEADERS` 相关头部保持 `335aeb7e` 语义）、`.env.example` 补 Go 侧变量、`docs/plans/p0-environment.md` 更新为「中间件容器 + 应用源码」的完整序列。<br>⚠️ **2026-10-13 定案**：原卡列的「`docker-compose.yml` 新增 `go-api`/`go-worker`/`ai-core` 三个服务、`backend` 改角色并去掉宿主端口」**取消**——容器只跑中间件。随之 `docker-compose.yml` 里现存的 `backend`（`build: target: backend`，16.5 GB）与 `nginx` 两个服务、以及 `dev.py up` 这条命令，都变成与定案冲突的遗留物，**按台账 C29 处置**（要么删、要么明确标注为「仅 prod/部署用，不参与任何验收」）。`server/Dockerfile` 同理：目前没有任何验收路径引用它 |
 | 依赖 | P0-1、P0-6、P0-7 |
 | 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据）。⚠️ X1/X2 的判据已随定案改写（见上表），本卡按改写后的判据收 |
 | 等级 | real |
@@ -139,7 +139,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 输入 | 上述全部 |
-| 输出 | `tests/e2e/p0-auth.spec.ts`（Playwright，新）+ `frontend/package.json` 的 `test:e2e` 脚本、`docs/refactor/p0-demo.md`（§2 的 30 秒演示脚本）、`docs/progress.json` 里 X1–X8 的状态与证据等级收口 |
+| 输出 | `tests/e2e/p0-auth.spec.ts`（Playwright，新）+ `frontend/package.json` 的 `test:e2e` 脚本、`docs/plans/p0-demo.md`（§2 的 30 秒演示脚本）、`docs/progress.json` 里 X1–X8 的状态与证据等级收口 |
 | 依赖 | P0-8 |
 | 验收 | X2、X8 + `cd frontend && npm run test:e2e` 在 Go 后端全绿；`uv run pytest -q` 原 307 项保持绿 |
 | 等级 | e2e |
@@ -200,7 +200,7 @@ P0-0 ─→ P0-1 ─→ P0-4 ─→ P0-5
 
 ## 5. 与产品愿景的关系
 
-> 对照 [11-product-vision.md](11-product-vision.md)。**P0 属工程架构轴，不产出任何产品版本**（`11 §7`：两条轴编号不得混用）；产品级缺口集中记在 `11 §8`。
+> 对照 [11-product-vision.md](../rules/11-product-vision.md)。**P0 属工程架构轴，不产出任何产品版本**（`11 §7`：两条轴编号不得混用）；产品级缺口集中记在 `11 §8`。
 
 **已覆盖**：**只有两条架构前提，没有产品能力**。① `11 §2` 的三层能力演进要求"项目状态必须可持久、可查询、可审计（L3）、模型输出必须被证据绑定后才算事实（L4）"——P0-4 的契约与 `table-acl.md`、P0-7 的 `evidence_candidates` 只作为**建议**上报，是这条的骨架形态；② `11 §4.4 Research Mission` 的**长期项目记忆**与 `§6` 的 Go Research Engine —— P0-1 的 `cmd/worker` 空循环与 P0-1 的 `/ready` 是它的第一步（真正的 Run/Frontier 属 P3）。另有 `11 §4.10` 隐含的可复现环境前提（P0-0）。
 

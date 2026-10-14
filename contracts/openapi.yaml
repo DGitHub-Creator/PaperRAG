@@ -1,7 +1,7 @@
 # ResearchPilot 对浏览器的 HTTP 契约（Go 为唯一公开入口）
 #
-# 依据：docs/refactor/01-current-architecture.md §3（25 条 As-Is，其中 13 条前端在调）、
-#       §6（三个必须保持形状的语义）、docs/refactor/02-target-architecture.md §2/§3.5。
+# 依据：docs/reference/01-current-architecture.md §3（25 条 As-Is，其中 13 条前端在调）、
+#       §6（三个必须保持形状的语义）、docs/rules/02-target-architecture.md §2/§3.5。
 # 版本选择 3.0.3 而非 3.1：本文件是**手写的人读契约**，3.0.3 的 `nullable` 无歧义，
 # 且 P0-5 的跨语言测试只需比对结构与字段，不需要和服务器的自动导出做字节级 diff。
 #
