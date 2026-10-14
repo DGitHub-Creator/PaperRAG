@@ -66,6 +66,14 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   （`frontend/vite.config.js:8-14`），两份 compose 里都没有 `go-api`/`go-worker`——
   所以"Go 是唯一公开入口"在本地运行时**没有承载物**，X2 只能静态判 nginx 配置，这不是脚本缺陷。
 - **2026-10-14：前端重建完成（引入 vue-router，13 条路由页全部就位）**。用户拍板引入 vue-router 4（`docs/rules/10 §7.1` 的选项 B 落地），前端从「`useNav` 三值枚举 + 三个视图」变成 `router/index.ts` 的 **13 条懒加载路由** + `AppShell`/`AppRail`/`TopBar` 外壳 + `views/` 13 页。⚠️ 三条别踩的：①**9 页是 mock**（比较矩阵/问题与假设/知识双图/自主运行/研究实验室/报告写作/文献雷达/工作区/阅读器，另加书架的主题群与抓取两个页签），真实接口只有 4 处（对话、书架的文献页签、历史会话、文档管理）——每张 mock 页顶部有「示例数据」徽标 + 归属卡号，**别把 mock 页当成已实现**；②**图标一律用 `components/Icon.vue` 的内联 SVG**——Font Awesome 从未被引入（`index.html` 无 link、`package.json` 无依赖），旧模板里的图标一直渲染成空白，别再写 `<i class="fas …">`；③mock 数据在 `frontend/src/mock/` 且**只用英文**（R9 禁 CJK 字面量），要接后端时换成 composable + `api/client.ts` 调用，**不要往 `client.ts` 加契约里没有的端点**（会让 `check_contracts.py` 变红）。证据等级是 **mock**：浏览器级 e2e 判据仍属 P0-9 的 X7。
+- **2026-10-14（第十轮）：dev 单一入口打通 + 管理员账号就位**。①**Go 成了 dev 形态的唯一公开入口**——
+  `server/internal/httpapi/upstream.go` 反代 + `cmd/api` 读 `PYTHON_UPSTREAM`，把未迁移路径转发给源码跑的 Python
+  （`vite.config.js` 的 `/api` 已改指 `:8080`）；这是「门面先于重写」，**不是**把 Python 全搬完才算。②**`attu` 端口 8080→3001**
+  （8080 归 go-api，也是 X1 判据落点）——此前 Go 没在 dev 起过，冲突一直没暴露。③**管理员账号**：`server/cmd/seed` + `dev.py seed-admin`，
+  口令**只从 `ADMIN_PASSWORD` 环境变量取**（不接受 CLI 参数），`ADMIN_RESET_PASSWORD=1` 才重置。④**真库实跑（本轮唯一 real 级证据）**：
+  `register/login/me` 在真 PG 上跑通、`health`/`ready` 各 200、一条未迁移路径经反代打到上游 200。⚠️ 边界：上游是**仓库外一次性 stub**
+  （不是 `dev.py serve` 起的真 ai-core），所以 **X1 仍不判 pass**；`nginx` 未切 Go，属 P0-8；`.env` 新增的 `ADMIN_PASSWORD`
+  是**本机开发口令**，不入库。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
@@ -161,10 +169,17 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 
 ```bash
 uv run python scripts/dev.py infra     # 只起中间件：postgres/redis/etcd/minio(versitygw)/milvus/attu
-uv run python scripts/dev.py serve     # 宿主 uvicorn --reload（就是 ai-core）
-cd server && go run ./cmd/api          # go-api（P0-8 会把 Go 侧启动并进 dev.py）
-cd frontend && npm run dev             # vite（只监听 ::1，用 localhost 访问）
+uv run python scripts/dev.py seed-admin  # 建/校管理员账号（口令只从 ADMIN_PASSWORD 环境变量取）
+uv run python scripts/dev.py serve     # 宿主 uvicorn --reload（就是 ai-core，尚未搬走的路径由 Go 反代到此）
+uv run python scripts/dev.py go-serve  # go-api（:8080，dev 单一入口；自动做 DATABASE_URL 归一化）
+cd frontend && npm run dev             # vite（只监听 ::1，用 localhost 访问；/api 已代理到 :8080）
 ```
+
+⚠️ **dev 入口已切到 Go（2026-10-14）**：vite 的 `/api` 代理指向 `:8080`（go-api），Go 再把**尚未迁移的路径**
+（`/api/*`、`/internal/*`、`/ws/*`、`/metrics`）反代给 `PYTHON_UPSTREAM`（默认 `http://127.0.0.1:8000`）——
+即 `14 §19` 铁律 2「门面先于重写」：**搬一条路由就少转发一条**。`go-serve` 与 `seed-admin` 会读 `.env`
+并把 `DATABASE_URL` 的 `+psycopg2` 后缀去掉（pgx 不认 SQLAlchemy 方言）。⚠️ **`attu` 的宿主端口是 `3001` 不是 `8080`**
+（8080 让给 go-api，也是 X1 判据的落点）。`nginx` **还没**切到 Go，属 P0-8。
 
 ⚠️ `dev.py up`（全栈容器，会为此构建那个 **16.5 GB** 的 backend 镜像）**不再是验收路径**，X1 的判据已随之改写
 （改成「中间件容器 + 应用源码起进程」）。它与 dev compose 里的 `backend`/`nginx` 两个服务、`server/Dockerfile`、
