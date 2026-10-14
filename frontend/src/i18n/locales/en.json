@@ -15,7 +15,6 @@
     "register_tip": "Register to use chat, library and the research workspace; admins can manage the document knowledge base.",
     "hero_title": "Turn a paper's conclusion into a traceable chain of evidence",
     "hero_desc": "ResearchPilot is built for researchers: retrieval, extraction, comparison, verification and writing all happen on one chain, and every claim can be traced back to its source location.",
-    "hero_foot": "Containers run middleware only; Go is the only entry point and the only global scheduler, Python executes a single AI task, and PostgreSQL is the single source of business truth.",
     "point_retrieval": "Hybrid retrieval: vectors plus keywords, with explainable recall",
     "point_evidence": "Citations verified one by one; unsupported claims are flagged",
     "point_workspace": "From session to report, the research process stays traceable and reproducible",

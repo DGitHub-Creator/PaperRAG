@@ -15,7 +15,6 @@
     "register_tip": "注册后即可使用问答、书架与研究工作区；管理员可管理文档知识库。",
     "hero_title": "把一篇论文的结论，变成可回溯的证据链",
     "hero_desc": "ResearchPilot 面对研究者：检索、抽取、比较、验证、成文都在同一条链路上完成，每一句结论都能回到原文位置。",
-    "hero_foot": "容器只跑中间件；Go 是唯一入口与全局调度，Python 执行单次 AI 任务，PostgreSQL 是唯一业务真相。",
     "point_retrieval": "混合检索：向量 + 关键词，召回可解释",
     "point_evidence": "引用逐条校验，未支持的结论会被标出",
     "point_workspace": "从会话到报告，研究过程留痕可复现",

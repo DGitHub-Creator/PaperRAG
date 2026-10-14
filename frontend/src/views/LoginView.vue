@@ -13,7 +13,6 @@
           <span>{{ $t(key) }}</span>
         </li>
       </ul>
-      <div class="hero-foot">{{ $t("auth.hero_foot") }}</div>
     </section>
 
     <section class="auth-main">
@@ -83,7 +82,6 @@ function handleAuthenticated(): void {
 .hero-points { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .hero-points li { display: flex; align-items: center; gap: 9px; font-size: 13px; }
 .hero-points li :deep(.rp-icon) { color: #5b8ff5; }
-.hero-foot { margin-top: 20px; font-size: 11.5px; color: #5d6f86; }
 
 .auth-main { display: flex; align-items: center; justify-content: center; padding: 40px 28px; }
 .auth-card { width: 100%; max-width: 380px; padding: 28px 26px; box-shadow: var(--shadow); }
