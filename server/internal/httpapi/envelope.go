@@ -11,6 +11,14 @@ import (
 // 具体文案沿用 FastAPI/Starlette 的现状，形状由 P0-4 的 contracts/error-codes.md 正式锁定，
 // 这里不提前发明更丰富的错误体——那会让跨语言契约测试各验一套。
 
+// 两句要在多个业务包里复用的对外文案，唯一副本放在信封的归属层。
+// 同一个服务里出现两种 500 文案正是 `01 §6.3` 记过的坑（台账 C23），
+// 所以 internal/auth 与后面的每个接管包都从这里取，而不是各写一遍字面量。
+const (
+	DetailInternalError    = "Internal server error"
+	DetailNotAuthenticated = "Not authenticated"
+)
+
 // WriteJSON 输出响应体。编码失败只可能发生在连接已断时，记 debug 后忽略。
 func WriteJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")

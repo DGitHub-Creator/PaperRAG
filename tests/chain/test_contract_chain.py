@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 pytestmark = pytest.mark.chain
@@ -71,12 +72,28 @@ def test_missing_header_detail_is_identical(http, chain_endpoints):
     assert go.json()["detail"] == py.json()["detail"] == "Not authenticated"
 
 
+def _checks_of(resp: httpx.Response) -> dict:
+    """从 200 的平铺体或 503 的 `{"detail": {...}}` 信封里取出 checks。
+
+    两侧失败时的形状不同是**契约现状**（Python 走 HTTPException 所以整个体被包进 detail，
+    Go 的 WriteError 也一样），这里把它们抹平是为了比探测语义，不是为了比信封。
+    """
+    body = resp.json()
+    if "checks" not in body and isinstance(body.get("detail"), dict):
+        body = body["detail"]
+    return body.get("checks") or {}
+
+
 def test_probe_endpoints_agree_on_shared_keys(http, chain_endpoints):
     """存活/就绪探针：两侧**共有的**那部分必须给同一个答案。
 
-    只比共有的键是刻意的——Go 的 `checks` 目前只有 `database`，Python 有
-    database/redis/milvus；把"Go 还没探 redis"判成缺陷会掩盖真正要判的那条
-    （compose healthcheck 与监控按的是同一个键名，键名或取值语义不一致才是事故）。
+    两点刻意的宽松，都不是放水：
+    ①只比共有的探测键——Go 的 `checks` 目前只有 `database`，Python 有 database/redis/milvus，
+      把"Go 还没探 redis/milvus"判成缺陷会掩盖真正要判的那条（键名与取值语义才是事故源）。
+      这条缺口已记进 `progress.json` 的 X1 红点与台账 C33 同一类问题。
+    ②不要求 /ready 是 200——Python 探 milvus，而 dev 形态下 Milvus 常不起（起来也会因
+      etcd 磁盘停顿半路挂，台账 C28）。**探针的状态由环境决定，判据只能断言"两侧说法一致"**。
+      反过来 `/health` 不碰任何依赖，所以那条严格断言 200 与 status=="ok"。
     """
     go = http.get(chain_endpoints.go("/api/v1/health"))
     py = http.get(chain_endpoints.py("/health"))
@@ -84,11 +101,23 @@ def test_probe_endpoints_agree_on_shared_keys(http, chain_endpoints):
     assert {"status", "version"} <= set(go.json()) and {"status", "version"} <= set(py.json())
     assert go.json()["status"] == py.json()["status"] == "ok"
 
-    py_ready = http.get(chain_endpoints.py("/ready"))
-    assert py_ready.status_code == 200, py_ready.text
     go_ready = http.get(chain_endpoints.go("/api/v1/ready"))
-    assert go_ready.status_code == 200, go_ready.text
-    shared = set(go_ready.json()["checks"]) & set(py_ready.json()["checks"])
-    assert shared, "两侧没有任何共有的探测键，探针语义已经分叉"
-    for name in shared:
-        assert go_ready.json()["checks"][name]["status"] == py_ready.json()["checks"][name]["status"], name
+    py_ready = http.get(chain_endpoints.py("/ready"))
+    assert go_ready.status_code in (200, 503), go_ready.text
+    assert py_ready.status_code in (200, 503), py_ready.text
+
+    go_checks, py_checks = _checks_of(go_ready), _checks_of(py_ready)
+    shared = set(go_checks) & set(py_checks)
+    assert shared, f"两侧没有任何共有的探测键，探针语义已经分叉：go={sorted(go_checks)} py={sorted(py_checks)}"
+    for name in sorted(shared):
+        assert go_checks[name]["status"] == py_checks[name]["status"], (
+            f"探测键 {name} 两侧说法不一致：go={go_checks[name]} py={py_checks[name]}"
+        )
+
+
+def test_go_readiness_reports_database_ok_when_pg_is_up(http, chain_endpoints):
+    """Go 的 /ready 必须真的探到 PG——这一条不给"永远 200"的假探针留空间。"""
+    ready = http.get(chain_endpoints.go("/api/v1/ready"))
+    checks = _checks_of(ready)
+    assert "database" in checks, f"Go 的 /ready 没有 database 探测键：{sorted(checks)}"
+    assert checks["database"]["status"] == "ok", checks["database"]

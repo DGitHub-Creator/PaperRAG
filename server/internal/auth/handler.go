@@ -23,8 +23,8 @@ const (
 	detailAdminChannelClosed  = "系统未配置管理员邀请码，管理员注册已关闭"
 	detailAdminCodeMismatch   = "管理员邀请码错误"
 	detailInvalidToken        = "无效或过期的认证令牌"
-	detailNotAuthenticated    = "Not authenticated"
-	detailInternalError       = "Internal server error"
+	detailNotAuthenticated    = httpapi.DetailNotAuthenticated
+	detailInternalError       = httpapi.DetailInternalError
 	// detailWrongPassword 没有 Python 对照（改密码是新开的 Go 面），文案与其余 400 一路用英文。
 	detailWrongPassword = "Current password is incorrect"
 	// 偏好的两条 400 同样没有 Python 对照；取值域在契约的 enum 里（openapi.yaml）。

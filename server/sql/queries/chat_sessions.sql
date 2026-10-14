@@ -1,0 +1,25 @@
+-- 会话读写的 Go 侧查询（P1-1 的第一条真业务接口）。
+--
+-- 真相在 PG：chat_sessions / chat_messages 两张表都在 000001 基线里，
+-- Python 侧的 ConversationStorage 也是直连这两张表（Redis 只是缓存），
+-- 所以这里读的是同一份行，不存在双写。table-acl.md 里这两张表的归属本轮随接管补齐（C30 的反向空档之一）。
+
+-- name: ListSessionInfosForUser :many
+-- 形状与语义逐条对齐 backend/services/conversation_storage.py:137 的 list_session_infos：
+-- 每个会话带消息数、按 updated_at 倒序。LEFT JOIN 让"零消息的会话"也算出 0，
+-- 与 Python 那条独立的 COUNT() 等价（换成 INNER JOIN 就会把空会话整条吞掉）。
+SELECT cs.session_id,
+       cs.updated_at,
+       COUNT(cm.id)::int AS message_count
+FROM chat_sessions cs
+LEFT JOIN chat_messages cm ON cm.session_ref_id = cs.id
+WHERE cs.user_id = $1
+GROUP BY cs.id, cs.session_id, cs.updated_at
+ORDER BY cs.updated_at DESC;
+
+-- name: DeleteSessionForUser :execrows
+-- 按 (user_id, session_id) 删：这两个键是 chat_sessions 上的 UNIQUE 约束（uq_user_session），
+-- 所以"别人的会话"与"不存在的会话"落到同一个 0 行，Python 侧也是同一句 404，不给归属探测留缝。
+-- chat_messages 由 ON DELETE CASCADE 带走（000001 基线里那条外键就是这个用途）。
+DELETE FROM chat_sessions
+WHERE user_id = $1 AND session_id = $2;

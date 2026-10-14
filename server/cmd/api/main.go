@@ -21,6 +21,7 @@ import (
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/db"
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/httpapi"
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/session"
 )
 
 func main() {
@@ -49,7 +50,8 @@ func main() {
 		Timeout:  cfg.ReadyTimeout,
 		Upstream: upstreamProxy(cfg, logger),
 	})
-	mountAuthRoutes(router, cfg, pool, poolErr, logger)
+	authSvc := mountAuthRoutes(router, cfg, pool, poolErr, logger)
+	mountSessionRoutes(router, authSvc, pool, poolErr, logger)
 	logger.Info("upstream_configured", "url", cfg.UpstreamURL)
 
 	server := &http.Server{
@@ -84,7 +86,10 @@ func main() {
 //
 // 挂在这里而不是 httpapi.NewRouter 里，是因为 auth 要用 httpapi 的信封写入器：
 // 若 httpapi 反过来 import auth 就成了环（详见 httpapi.NewRouter 的注释）。
-func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) {
+//
+// 返回那个 *auth.Service 是给业务面复用身份解析的唯一途径——每条接管的路由都要先知道
+// "这是谁"，而令牌校验只能有一份实现（各处各抄就会漂出不同的 401 语义，那是安全语义）。
+func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) *auth.Service {
 	svc := auth.NewService(
 		userStore(pool, poolErr),
 		auth.TokenConfig{
@@ -108,6 +113,42 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 	router.Post("/api/v1/auth/password", auth.ChangePasswordHandler(svc))
 	router.Get("/api/v1/me/preferences", auth.GetPreferencesHandler(svc))
 	router.Put("/api/v1/me/preferences", auth.PutPreferencesHandler(svc))
+	return svc
+}
+
+// mountSessionRoutes 挂会话面（P1-1 接管的第一条业务读接口：列表与删除）。
+// 消息详情 `GET /sessions/{session_id}` 还没搬，见下方注释与台账 C34——
+// 那条返回的 rag_trace 要过 Python 的 RagTrace 投影，不是"照着读一张表"能了事的。
+//
+// 显式路由优先于 NewRouter 里那条 `/api/*` 通配转发（chi 的 trie 按具体度匹配），
+// 所以接管一条就少转发一条，不用动反代本身。
+func mountSessionRoutes(router *chi.Mux, authSvc *auth.Service, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) {
+	svc := &session.Service{
+		Auth:   authSvc,
+		Store:  sessionStore(pool, poolErr),
+		Logger: logger,
+	}
+	router.Get("/api/v1/sessions", session.ListHandler(svc))
+	router.Delete("/api/v1/sessions/{session_id}", session.DeleteHandler(svc))
+}
+
+// sessionStore 与 userStore 同构：池不可用时给一个"一律报错"的实现，于是会话面回 500，
+// 而不是因为路由没挂而回 404——后者会把人引向完全错误的排查方向。
+func sessionStore(pool *pgxpool.Pool, poolErr error) session.Store {
+	if pool == nil {
+		return unavailableSessionStore{reason: fmt.Sprintf("数据库不可用: %v", poolErr)}
+	}
+	return db.New(pool)
+}
+
+type unavailableSessionStore struct{ reason string }
+
+func (u unavailableSessionStore) ListSessionInfosForUser(context.Context, int32) ([]db.ListSessionInfosForUserRow, error) {
+	return nil, errors.New(u.reason)
+}
+
+func (u unavailableSessionStore) DeleteSessionForUser(context.Context, db.DeleteSessionForUserParams) (int64, error) {
+	return 0, errors.New(u.reason)
 }
 
 // upstreamProxy 建到 Python 上游的反向代理（14 §19 铁律 2）。地址非法或为空时返回 nil，
