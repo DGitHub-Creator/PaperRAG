@@ -101,6 +101,23 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   但「知识库管理」块**只验到错误路径**（Go 把 `/api/*` 反代到未启动的 Python → 红 toast「上游服务不可用」），
   **上传/删除的成功路径本轮没有重跑**，那属 P0-9 的 X7（浏览器级 e2e）。四条门禁全绿：`check_frontend.py`（55 源文件）/
   `check_contracts.py`（21 操作）/ `sync_progress.py --check` / 全量 pytest **572 passed**。
+- **2026-10-14（第十三轮）：chain 容器 fixture 落地（P0-5），X4 转 pass，并顺带抓出五条 Python 面的合法请求全 500**。
+  新增 `tests/chain/`：`_runtime.py` 把「基础设施不可达时该红还是该跳」做成**可单测的纯函数**
+  ——显式 `-m chain` 时**必须红**（否则「`-m chain -k go_auth` 全绿」可以是「一个都没跑」），
+  被全量收集路过时 skip（否则 CI 在没有真栈的机器上长期红）；`conftest.py` 的种子**直接写 PG**
+  （不走被测面，避免"铺数据失败"掩盖真实缺陷），时间列给显式 naive 值、一带微秒一不带，
+  为的是验 `isoformat()` 那个「微秒为 0 就整段省略」的形状。用例覆盖 X4 缺的那一向
+  （**Go 签发 → Python 校验**）＋ 伪造 secret 两侧都拒 ＋ role 一律回库取 ＋ login/me/错误文案的
+  跨语言逐字对拍。**实跑形态**：6 容器 healthy（Milvus 这次也起来了，`/ready` 三键全 ok）＋
+  `dev.py serve`（绑 `127.0.0.1`）＋ `go-serve` → **chain 9 项全绿，全量 593 passed**。
+  ⚠️ **这条 chain 层第一次真跑就抓出一个生产缺陷（台账 C32，已修）**：slowapi 要求被装饰端点同时有
+  `request: Request` 与 `response: Response` 两个**按名字**注入的形参，而实现里 `request` 是请求体、
+  `response` 压根没声明——于是 register/login/refresh/chat/chat-stream **五条面对任何合法请求都回 500**。
+  两条教训要留住：①**用无效 body 的用例覆盖不到限流路径**（422 在 wrapper 之前就返回了），所以
+  「572 项全绿」与「真实登录 500」可以同时成立；②**门面会掩盖上游坏死**——dev 的登录自第十轮起走 Go，
+  Python 那条没人再打过，「前端能用」不构成「后端没坏」的证据。
+  同批新记 **C33**：Go 侧**没有任何限流层**，而本轮定的处置方式是"接管一条就删 Python 那条"——
+  所以**每接管一条路由就静默丢掉它的限流**，登录/注册这两个最该限流的面其实已经丢了。接管批次要带上限流。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `user_preferences`（2026-10-14 落，设置页偏好）/ `000004` `fix_drift` / `000005` `paper_chunks`（后两者随本轮顺延一位）；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
@@ -170,6 +187,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「契约里有 `GET /api/v1/health`，所以打它就通」 | **今天只有 Go 满足**。Python 的 `health_router` 在 `app.py:149` 注册时**不带 `/api/v1` 前缀**，路由本体是根路径 `/health`、`/ready`（`api/health.py:92,121`）；Go 两边都挂（`internal/httpapi/router.go:45-50`）。而 nginx/vite 现在都把 `/api/` 指向 Python，所以按契约调 `/api/v1/health` 是 404。`check_contracts.py` **抓不到**——它只比"前端实调集合 ↔ 契约"，不校验服务侧路由（台账 C31） |
 | 「`/metrics` 在契约里，说明监控已就位」 | **三不管端点**。契约声明它（`openapi.yaml:427`）、Python 有实现（`app.py:150`），但 nginx 没有对应 location、前端不调、Go 未实现 |
 | 「prod compose 里写了 `env_file: .env.production`，`${VAR:?}` 就能取到密钥」 | **不能**。service 级 `env_file:` 只注入**容器**环境，不参与 compose **顶层变量插值**，所以 `${POSTGRES_PASSWORD:?}` 与 `${MINIO_ACCESS_KEY:?}` 仍看宿主环境。实测（临时目录放一份 `.env.production` 再 `config`）：不带 `--env-file` → 三条 required 全报缺失、rc=1；`docker compose --env-file .env.production -f docker-compose.prod.yml config` → rc=0。所以 prod 的启动命令**必须**带 `--env-file`（已写进该文件头注释）。⚠️ 顺带查实 `.env.production` **不在 `.gitignore` 里**（只有 `.env` 在）——是个真实的泄密入口，已补 |
+| 「Python 的 `/auth/login`、`/auth/register`、`/auth/refresh`、`/chat`、`/chat/stream` 是可用的（毕竟 572 项测试全绿）」 | **错，而且错得很难发现**：这五条面被 slowapi 装饰却缺它要求的 `request: Request` 与 `response: Response` 两个按名字注入的形参，于是**任何合法请求都回 500**。测试之所以全绿，是因为打这些路由的用例（`test_error_envelope.py:25`）都送**无效 body**——422 在校验阶段就返回了，压根没执行 wrapper。而 dev 的登录自第十轮起走 Go 原生面，Python 那条从此没人打（台账 **C32**，2026-10-14 由 chain 层第一次真跑抓到并已修）。**通用教训**：门面会掩盖上游坏死，「前端能用」不构成「后端没坏」的证据；凡是按名字注入的框架约定要做静态检查，别靠发请求 |
 
 ## 5. 本机环境要点
 
