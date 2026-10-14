@@ -2,7 +2,7 @@
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -33,9 +33,15 @@ logger = get_logger(__name__)
 
 @router.post("/auth/register", response_model=AuthResponse)
 @limiter.limit("10/minute")
-async def register(request: RegisterRequest, request_obj: Request, db: Session = Depends(get_db)):
-    username = (request.username or "").strip()
-    password = (request.password or "").strip()
+async def register(
+    request: Request, response: Response, body: RegisterRequest, db: Session = Depends(get_db)
+):
+    # `request` / `response` 这两个名字是 slowapi 的硬要求（它按 kwargs 取注入对象，
+    # headers_enabled=True 时要往 response 上写 X-RateLimit-*），请求体因此只能叫 `body`。
+    # 形状由 tests/unit/test_rate_limit_signatures.py 机检——名字写错时合法请求会全 500，
+    # 而 body 不合法的用例反而在 422 阶段就返回，测不出来。
+    username = (body.username or "").strip()
+    password = (body.password or "").strip()
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
@@ -62,7 +68,7 @@ async def register(request: RegisterRequest, request_obj: Request, db: Session =
     if exists:
         raise HTTPException(status_code=409, detail="Username already exists")
 
-    role = resolve_role(request.role, request.admin_code)
+    role = resolve_role(body.role, body.admin_code)
     user = User(username=username, password_hash=get_password_hash(password), role=role)
     db.add(user)
     db.commit()
@@ -80,8 +86,8 @@ async def register(request: RegisterRequest, request_obj: Request, db: Session =
 
 @router.post("/auth/login", response_model=AuthResponse)
 @limiter.limit("20/minute")
-async def login(request: LoginRequest, request_obj: Request, db: Session = Depends(get_db)):
-    user = authenticate_user(db, request.username, request.password)
+async def login(request: Request, response: Response, body: LoginRequest, db: Session = Depends(get_db)):
+    user = authenticate_user(db, body.username, body.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -104,7 +110,7 @@ async def me(current_user: User = Depends(get_current_user)):
 @router.post("/auth/refresh", response_model=AuthResponse)
 @limiter.limit("20/minute")
 async def refresh_token(
-    request: RefreshTokenRequest, request_obj: Request, db: Session = Depends(get_db)
+    request: Request, response: Response, body: RefreshTokenRequest, db: Session = Depends(get_db)
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -112,12 +118,12 @@ async def refresh_token(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(request.refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "refresh":
-            logger.warning("Refresh token type mismatch: %s", payload.get("type"))
+        claims = jwt.decode(body.refresh_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if claims.get("type") != "refresh":
+            logger.warning("Refresh token type mismatch: %s", claims.get("type"))
             raise credentials_exception
-        username: str | None = payload.get("sub")
-        role: str | None = payload.get("role")
+        username: str | None = claims.get("sub")
+        role: str | None = claims.get("role")
         if not username or not role:
             logger.warning("Refresh token is missing sub or role")
             raise credentials_exception

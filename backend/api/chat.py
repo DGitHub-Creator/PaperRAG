@@ -3,7 +3,7 @@
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from backend.core.auth import get_current_user
@@ -20,13 +20,15 @@ logger = get_logger(__name__)
 @router.post("/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")
 async def chat_endpoint(
-    request: ChatRequest,
-    http_request: Request,
+    request: Request,
+    response: Response,
+    body: ChatRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # `request`/`response` 归 slowapi 注入，请求体因此叫 `body`（形状有机检，见 auth.py 那条注释）
     try:
-        session_id = request.session_id or "default_session"
-        resp = chat_with_agent(request.message, current_user.username, session_id)
+        session_id = body.session_id or "default_session"
+        resp = chat_with_agent(body.message, current_user.username, session_id)
         if isinstance(resp, dict):
             return ChatResponse(**resp)
         return ChatResponse(response=resp)
@@ -53,15 +55,18 @@ async def chat_endpoint(
 @router.post("/chat/stream")
 @limiter.limit("20/minute")
 async def chat_stream_endpoint(
-    request: ChatRequest,
-    http_request: Request,
+    request: Request,
+    response: Response,
+    body: ChatRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # 直接返回 StreamingResponse 时 FastAPI 不再合并注入那个 response 的头，
+    # 所以这条面上的 X-RateLimit-* 不会出现——429 拦截本身照常生效（它在进函数体之前）。
     async def event_generator():
         try:
-            session_id = request.session_id or "default_session"
+            session_id = body.session_id or "default_session"
             async for chunk in chat_with_agent_stream(
-                request.message, current_user.username, session_id
+                body.message, current_user.username, session_id
             ):
                 yield chunk
         except Exception as e:
