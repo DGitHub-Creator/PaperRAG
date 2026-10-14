@@ -18,6 +18,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 2 | `docs/progress.json` | **进度唯一真相**；`PROGRESS.md` 与 `progress.html` 是它的生成物，改完必须重跑 `sync_progress.py` |
 | 3 | `docs/refactor/09-milestone-p0.md`、`10-frontend-structure.md` | 当前阶段的任务卡与 X1–X8 退出标准 |
 | 3.5 | `docs/refactor/11-product-vision.md`、`12-known-code-issues.md` | **产品轴（V1–V4）** 与**代码问题台账**；两轴映射见 11 §7 |
+| 3.6 | `docs/refactor/13-frontend-backend-architecture.md`、`14-feature-modules.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划（现状/判据/卡片/顺序）。与 `01` 的区别：`01` 是 dated 审计、本文可复核；与 `02` 的区别：`02` 是 To-Be 目标态 |
 | 4 | `contracts/` | Go↔Python 契约；改契约改这里，`check_contracts.py` 机检 |
 | 5 | `docs/refactor/00-audit.md`、`01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状** |
 | 6 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
@@ -49,6 +50,15 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 - **Docker 现状（2026-10-13 更新）**：引擎可用；**数据盘与 WSL distro 本体都在 `D:\DockerData`**（`settings-store.json` 的 `CustomWslDistroDir`），C: 上已无任何 `.vhdx`。**6/6 中间件镜像就位**（postgres/redis/etcd/**versitygw**/milvus/attu；healthy 是「起来时 healthy」，Milvus 会因 etcd 磁盘停顿半路挂掉，见 C28）。来源逐个核过（`docker image inspect --format '{{json .RepoDigests}}'` 会留下原始 registry；⚠️ 本机随后清理了重名 tag，那条 digest 已随之消失，映射以本条与 §5 为准）：postgres/redis/milvus/attu 四张走 `docker.m.daocloud.io`，etcd 直连 `quay.io/coreos/etcd:v3.5.18`，versitygw 走 `docker.1ms.run`——都重打成 compose 期望的 tag。⚠️ versitygw 第一次是从 `latest` 拉的，随后按 `:v1.8.0` 重拉并核对 **digest 一致**（`sha256:30292fc2…`），容器启动横幅自报 `Version v1.8.0, BuildTime 2026-09-04T23:11:49Z`——**拉取时要带版本号的 tag，别拉 latest 再改名**。⚠️ 先前记的「11 个镜像 / 约 4.3 GB」「5/6 镜像 + minio 取不到」都已作废。
 - **搬盘这件事的两个坑**：①`wsl --manage` 只有 `--set-sparse`，**不能搬家**，所以只能走 Docker Desktop 自己的设置（改 `CustomWslDistroDir` 要 `docker desktop stop` 后生效，运行中改会被覆写）；②Docker 是**新建盘而不是搬盘**——旧盘 5.91 GB 成了孤儿（已确认无引用后删除），而当时已拉好的 4.2 GB 镜像全部丢失需重拉。**要挪盘就趁早挪。**
 - **上一条的后果（台账 C20，已解除）**：导出 `docs/refactor/schema-baseline.json` 的那个**原真库随数据卷消失、不可复原**，`.env` 也曾丢失。重建序列本轮已跑通并留下证据（见 P0-0/P0-2 两条）。
+- **2026-10-13：新增两份 As-Is 文档**——`13-frontend-backend-architecture.md`（前后端与数据面的当前形状）与
+  `14-feature-modules.md`（产品轴 17 个功能模块的现状/判据/卡片/顺序）。它们是"现查代码"的产物，每条断言带 `file:line`。
+  核对中查出**两处计划与现实的错位**，已登记台账 **C30 / C31**：①`contracts/table-acl.md` 声明 24 张表，
+  基线 SQL 只建 11 张 → **18 张的 `go: W` 是纸面归属**（表还不存在），反向有 5 张实建表未进 ACL；
+  ②契约声明 `GET /api/v1/health`/`ready`，而 Python 的 health_router **不带 `/api/v1` 前缀**（`app.py:149`）——
+  今天只有 Go 满足这两条，`check_contracts.py` 抓不到（它只比"前端实调 ↔ 契约"，不校验服务侧）。
+  ⚠️ 另有一条容易踩空的事实：**dev 形态下 vite 把 `/api` 直接代理到 `127.0.0.1:8000`（Python）**
+  （`frontend/vite.config.js:8-14`），两份 compose 里都没有 `go-api`/`go-worker`——
+  所以"Go 是唯一公开入口"在本地运行时**没有承载物**，X2 只能静态判 nginx 配置，这不是脚本缺陷。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/refactor/05` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
@@ -114,6 +124,9 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「密码长度校验用 `len(password)` 就行」 | **Go 里会错**。生产侧是 Python 的 `len(str)` = **码点**数，Go 的 `len(string)` = **字节**数；含中文的口令在 Go 侧会被判得更严，同一个口令 Python 放行、Go 拒绝。用 `utf8.RuneCountInString`（已有用例钉住） |
 | 「P0-8 要在 compose 里新增 `go-api`/`go-worker`/`ai-core` 三个服务，X1 才算起来」 | **前提被 2026-10-13 的定案推翻**：容器只跑中间件，应用层源码跑。X1 的判据、X2 的 R4、M0.0/M0.4 的写法、卡片 P0-8 的输出清单都已按此改写，台账 C6 作废、遗留冲突记 C29。**别照着旧卡片去加 compose 服务**——那等于把定案推翻一次 |
 | 「minio 镜像拉不到是网络问题，换镜像源或配代理就能解」 | **不是网络故障，是上游归档**。MinIO 把开源 Server 归档了：`dl.min.io` 对当前版与**所有归档版**返回 410 Gone，Docker Hub 的公开镜像也没了，所以 `minio/minio:RELEASE.2024-05-28T17-19-04Z` 在任何源上都给不出（daocloud `denied`、两个备用源 `not found`、quay 无该命名空间）。解法是**换 S3 实现**而不是换源：dev 与 prod 两份 compose 已换成 `versity/versitygw:v1.8.0`（Apache-2.0，服务名仍叫 `minio`，所以 Milvus 的 `MINIO_ADDRESS` 一字未改）。按"起不来就是 `dev.py` 有问题"去查会完全查错方向（台账 C24 / 决策 D9） |
+| 「`contracts/table-acl.md` 里某表写着 `go: W`，所以 Go 现在就在写这张表」 | **纸面归属，不是现状**。ACL 声明 24 张，基线 SQL 只建 11 张：`papers`/`paper_versions`/`paper_files`/`paper_chunks` 与全部 `research_*`、`outbox_events`、`knowledge_items`、`evidence_links`、`report_sections` 等 **18 张在 SQL 里根本不存在**；反向有 5 张实建表未进 ACL（`parent_chunks`/`paper_nodes`/`citation_edges`/`glossary_entries`/`alembic_version`）。判归属前先求差集：ACL 的 24 行表名 对比 `server/migrations/*.up.sql` 里的 `CREATE TABLE IF NOT EXISTS`，两条取数命令与逐张差集清单见台账 C30 与 `13` §6.1 |
+| 「契约里有 `GET /api/v1/health`，所以打它就通」 | **今天只有 Go 满足**。Python 的 `health_router` 在 `app.py:149` 注册时**不带 `/api/v1` 前缀**，路由本体是根路径 `/health`、`/ready`（`api/health.py:92,121`）；Go 两边都挂（`internal/httpapi/router.go:45-50`）。而 nginx/vite 现在都把 `/api/` 指向 Python，所以按契约调 `/api/v1/health` 是 404。`check_contracts.py` **抓不到**——它只比"前端实调集合 ↔ 契约"，不校验服务侧路由（台账 C31） |
+| 「`/metrics` 在契约里，说明监控已就位」 | **三不管端点**。契约声明它（`openapi.yaml:427`）、Python 有实现（`app.py:150`），但 nginx 没有对应 location、前端不调、Go 未实现 |
 | 「prod compose 里写了 `env_file: .env.production`，`${VAR:?}` 就能取到密钥」 | **不能**。service 级 `env_file:` 只注入**容器**环境，不参与 compose **顶层变量插值**，所以 `${POSTGRES_PASSWORD:?}` 与 `${MINIO_ACCESS_KEY:?}` 仍看宿主环境。实测（临时目录放一份 `.env.production` 再 `config`）：不带 `--env-file` → 三条 required 全报缺失、rc=1；`docker compose --env-file .env.production -f docker-compose.prod.yml config` → rc=0。所以 prod 的启动命令**必须**带 `--env-file`（已写进该文件头注释）。⚠️ 顺带查实 `.env.production` **不在 `.gitignore` 里**（只有 `.env` 在）——是个真实的泄密入口，已补 |
 
 ## 5. 本机环境要点

@@ -14,11 +14,13 @@
 | **最高约束**：四条第一性原则、阶段顺序律、任务卡规范、开发规范 | [docs/refactor/08-principles-and-conventions.md](docs/refactor/08-principles-and-conventions.md) |
 | **产品愿景**：五个入口、十项能力、V1–V4 路线、差异化与缺口清单 | [docs/refactor/11-product-vision.md](docs/refactor/11-product-vision.md) |
 | **代码问题台账**：已发现的代码层问题（证据/影响/建议/归属），按愿景检查产出 | [docs/refactor/12-known-code-issues.md](docs/refactor/12-known-code-issues.md) |
+| **前后端架构（As-Is 实测）**：运行形态、逐条端点、数据面差集、死代码清单，每条带 `file:line` | [docs/refactor/13-frontend-backend-architecture.md](docs/refactor/13-frontend-backend-architecture.md) |
+| **功能模块规划**：M1…M17 逐模块的现状 / 目标行为 / 判据 / 卡片或提案 / 顺序约束 | [docs/refactor/14-feature-modules.md](docs/refactor/14-feature-modules.md) |
 | **现在该做什么**：P0 任务卡（输入/输出/依赖/验收/证据等级）+ X1–X8 退出标准 | [docs/refactor/09-milestone-p0.md](docs/refactor/09-milestone-p0.md) |
 | **进度多少 / 还差多少**：唯一真相源（`PROGRESS.md`、`progress.html` 是它的生成物） | [docs/progress.json](docs/progress.json) · [可视化看板](docs/progress.html) |
 | 契约（浏览器面 / Go↔Python 内部面 / 错误码 / 表写入矩阵） | [contracts/](contracts/) |
 | 目标架构（To-Be，大部分**未实现**） | [docs/refactor/02-target-architecture.md](docs/refactor/02-target-architecture.md) |
-| 当前架构（As-Is 事实快照） | [docs/refactor/01-current-architecture.md](docs/refactor/01-current-architecture.md) |
+| 当前架构（**2026-10-09 dated 审计快照**，逐字保留、不作实施依据；要看今天的形状用上面的 `13`） | [docs/refactor/01-current-architecture.md](docs/refactor/01-current-architecture.md) |
 | 从零起环境的命令序列 + 实跑记录 + 已知坑 | [docs/refactor/p0-environment.md](docs/refactor/p0-environment.md) |
 | 文档索引与阅读顺序 | [docs/refactor/README.md](docs/refactor/README.md) |
 
