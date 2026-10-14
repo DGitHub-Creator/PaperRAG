@@ -79,15 +79,19 @@
 | 进程 | 实际挂载 | 位置 |
 | --- | --- | --- |
 | `cmd/api` | `/api/v1/health`、`/api/v1/ready`、`/health`、`/ready` | `internal/httpapi/router.go:45-50` |
-| | `/api/v1/auth/register`、`/login`、`/me`（**仅此 3 条业务路由**） | `cmd/api/main.go:96-98` |
+| | `/api/v1/auth/register`、`/login`、`/me` | `cmd/api/main.go`（`mountAuthRoutes`） |
+| | `/api/v1/auth/password`、`/api/v1/me/preferences`（GET/PUT）（2026-10-14 新增，**无 Python 对照**） | `cmd/api/main.go`（`mountAuthRoutes`）；实现 `internal/auth/{service,handler,preferences}.go` |
+| | 未注册的 `/api/*`、`/internal/*`、`/ws/*`、`/metrics` → 反代到 `PYTHON_UPSTREAM` | `internal/httpapi/upstream.go`、`router.go` 的 `Deps.Upstream` |
 | `cmd/worker` | 只有 `/health`、`/ready`；**无调度循环** | `cmd/worker/main.go:37-38`，自述 `:52`「调度器属 P3，本进程当前只提供探针」 |
 
 `internal/` 五个包（无空目录）：`auth`（PBKDF2 / JWT / 注册登录 me）、`config`（env 装载 + `ValidateAuth()` fail-fast）、
 `db`（sqlc 生成物 + pgx 池）、`httpapi`（chi 组装、错误信封、中间件、探针）、`observability`（slog + trace）。
 
-⚠️ **数据访问层的真实覆盖面**：sqlc 只对 `users` 生成了 SQL——`server/sql/queries/users.sql` 四条
-（`InsertUser:4`、`GetUserByUsername:15`、`GetUserByID:21`、`GetProfileByUsername:30`）。
-`internal/db/models.go` 里其余 **10 张表的 struct 只是声明，零查询**（P0-3 把 10 表 59 字段生成进 model 是"看得见"，不等于"用得着"）。
+⚠️ **数据访问层的真实覆盖面**：sqlc 只对 **2 张表**生成了 SQL——`server/sql/queries/users.sql` 六条
+（`InsertUser:4`、`GetUserByUsername:15`、`GetUserByID:21`、`GetProfileByUsername:30`、
+`UpdateUserPasswordByUsername:38`、`UpdateUserRoleByUsername:46`）与 `server/sql/queries/user_preferences.sql` 两条
+（`GetUserPreferences:4`、`UpsertUserPreferences:11`，2026-10-14 随迁移 000003 新增）。
+`internal/db/models.go` 里其余表的 struct 只是声明，零查询（P0-3 把表字段生成进 model 是"看得见"，不等于"用得着"）。
 
 ```powershell
 # 取数
@@ -154,14 +158,19 @@ Select-String -Path server/migrations/*.up.sql -Pattern 'CREATE TABLE IF NOT EXI
 
 | 集合 | 数量 | 成员 |
 | --- | --- | --- |
-| 基线实建（`000001` + `000002`） | **11** | `users`、`chat_sessions`、`chat_messages`、`parent_chunks`、`workspaces`、`workspace_members`、`paper_nodes`、`citation_edges`、`glossary_entries`、`alembic_version`、`ai_executions` |
-| ACL 声明（`contracts/table-acl.md`） | **24** | 上述 6 张 + 下面 18 张 |
+| 建表 SQL 合计数（`000001` + `000002` + `000003`） | **12** | `users`、`chat_sessions`、`chat_messages`、`parent_chunks`、`workspaces`、`workspace_members`、`paper_nodes`、`citation_edges`、`glossary_entries`、`alembic_version`、`ai_executions`、**`user_preferences`（000003，2026-10-14）** |
+| ACL 声明（`contracts/table-acl.md`） | **25** | 上述 SQL 里实建的 7 张 + 下面 18 张 |
 | **只在 ACL 里、SQL 里不存在**（纸面归属） | **18** | `papers`、`paper_versions`、`paper_files`、`paper_chunks`、`research_projects`、`research_runs`、`research_plans`、`research_tasks`、`research_task_dependencies`、`research_events`、`outbox_events`、`research_budget_usage`、`model_usage_records`、`knowledge_items`、`exploration_gaps`、`evidence_links`、`research_claims`、`report_sections` |
 | **只在 SQL 里、ACL 未覆盖** | **5** | `parent_chunks`、`paper_nodes`、`citation_edges`、`glossary_entries`、`alembic_version`（归属问题即决策 **D6**） |
 
 ⚠️ 这条必须写明白：ACL 里那 18 张表的 `go: W` 是**计划归属**，不是现状——库里没有这些表，
 所以任何"Go 独占写 X 表"的说法在 P2/P3 建表之前都不可执行。反向的 5 张则相反：**库里已经有表但 ACL 没管**，
 其中 `parent_chunks` 是**活表**（11 处读写，见 §6.4），`paper_nodes`/`citation_edges`/`glossary_entries` 是死表。
+
+⚠️ **两张新表（`ai_executions`/`user_preferences`）在真库里的状态不一样，别混说**：`user_preferences` 已于
+2026-10-14 在 dev 库上实建（连跑两遍 `up.sql`，第二遍 `NOTICE relation already exists, skipping`，rc=0，表数 10→11→11），
+并通过 Go 走完 PUT→GET→落库往返；`ai_executions` **至今没在任何长期库上建过**（只在临时库里验过幂等），
+所以 dev 库距"12 张表齐全"还差 `000002` 那一步——这是 P0-7 的活，不是本条遗漏。
 
 ### 6.2 Milvus：可重建索引，字段就是能力的天花板
 

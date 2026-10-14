@@ -74,9 +74,21 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   `register/login/me` 在真 PG 上跑通、`health`/`ready` 各 200、一条未迁移路径经反代打到上游 200。⚠️ 边界：上游是**仓库外一次性 stub**
   （不是 `dev.py serve` 起的真 ai-core），所以 **X1 仍不判 pass**；`nginx` 未切 Go，属 P0-8；`.env` 新增的 `ADMIN_PASSWORD`
   是**本机开发口令**，不入库。
+- **2026-10-14（第十一轮）：Go 改密码 + 用户偏好（设置页的后端地基）**。新增两条 **Go 原生自助面**
+  （`POST /api/v1/auth/password`、`GET|PUT /api/v1/me/preferences`）＋迁移 **`000003_user_preferences`**（同批登记 `sqlc.yaml`，
+  生成物入库）。**这两条没有 Python 对照**——是新开的 Go 面，不是照抄生产侧，所以判据是"Go 自己的不变量"，
+  别拿去套 X4 的跨语言兼容。四条口径写在代码与单测里：①**旧口令错回 400 而不是 401**（前端把 401 当"会话过期"收尾，
+  而打错旧口令不该把人踢出登录态）；②新口令与 register 同一套规则（码点长度 + 至少两类 ASCII 字符），且**不 strip**；
+  ③`theme` 是闭集（迁移 CHECK ＋ Go 常量 ＋ 契约 enum 三处同值），`start_view` **只校验形状**（小写 slug）——
+  不把前端路由表抄进 Go，不认识的名字由前端回退到 chat；④库里没有偏好行时**回默认值而不是 404**。
+  同批把 `user_preferences` 登记进 `contracts/table-acl.md`（`go: W / python: X`）、契约补 3 个操作与 2 个 schema
+  （`operationId` 唯一、401、`check_contracts.py` 双向绿）。**真库实跑**：`user_preferences` 在 dev 库上连跑两遍
+  `up.sql`（第二遍 `skipping`、rc=0、表数 10→11→11），`login → PUT → GET → 落库` 往返一致、时间列落 `+00`（UTC），
+  改密码在一次性用户上验完（新口令可登、旧口令不可登）后清理测试行。⚠️ 两条边界：**`ai_executions`（`000002`）至今没在任何长期库上建过**
+  （dev 库距 12 张表齐还差这一步，属 P0-7），本轮**没顺手补**；前端设置页 UI 属下一批（任务 #22），本轮只到 API 层。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
-- **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
+- **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `user_preferences`（2026-10-14 落，设置页偏好）/ `000004` `fix_drift` / `000005` `paper_chunks`（后两者随本轮顺延一位）；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已在真 PG 上执行过（2026-10-12 第三轮，此前从未跑过）**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`。真库幂等实测：临时库里连跑两遍 `10→11→11`、两次 exit 0、`ai_executions` 恰 **17 列**；down 一遍有效、第二遍退出 3（「禁止 `DROP TABLE IF EXISTS`」规则的预期后果，见 `server/migrations/README.md`）。**P0-7 距 done 只差 compose 里「ai-core 不发布宿主端口」那一步（P0-8）与 chain 级 `-k ai_executions`（P0-5）**——不缺迁移文件证据了。
 - Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
 - **分支布局（2026-10-12 收口）：远端只剩 `main`，本地工作分支就是 `main`（跟踪 `origin/main`）**，
@@ -117,7 +129,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 「只验骨架可跳过 LLM key」 | **错**。`app.py` 的 startup 无条件调 `validate_config()`，缺 `LLM_API_KEY`/`LLM_MODEL` 即 `RuntimeError` 拒绝启动 |
 | 「测试基线 448 / 333 / 307 项」 | **都过期了**。现状 **572 passed**（2026-10-12 第三轮，46.8s；unit 515 / integration 57）。沿革：448 → 449 → 515 → 547 → 572，每次涨的都是新增判据用例。**读数一律 `uv run python -m pytest -q` 现场取，别抄任何文档里的数字** |
 | 「`09` X6 有两条判定命令，`pass` 等于两条都跑过」 | **只跑过一条**。`cd server && migrate -path migrations -database $DATABASE_URL version` **今天无法执行**：PATH 上没有 `migrate`，`server/go.mod` 里没有 golang-migrate 依赖，`dev.py migrate` 实际是容器内 `alembic upgrade head`（`dev.py:257-259`）。`server/migrations/` 现在只有 `audit_schema.py` 与 sqlc 两个**离线读者**，没有执行器。X6 的 real 级幂等证据来自「临时库法」人工实跑。命令列已按 `progress.json` 更正，接线属 P0-8/P1（台账 C18） |
-| 「文档里的数量/命令面是按机器现状写的」 | **不是**。2026-10-12 扫了一遍，全部已就地更正：`09` 的 unit 310/integration 23 → **458/57**、`dev.py` 命令面六项 → **10 个子命令**（漏 `infra`/`serve`/`gen`）、`audit_schema` 判定单测 19/34 → **37**、`07` 的 391 → 458 与 449 → 515、`08` 的 Python ≥ 3.11 → **≥ 3.12**（约束源是 `pyproject` 的 `requires-python`）、`05 §2.5` 的"第二个后续迁移" → **第三个**（`000002` 已被 `ai_executions` 占了）、`05 §3` 的 `000004_paper_chunks.sql` → **`.{up,down}.sql` 且必须同批登记 sqlc**。还修掉两处**互相矛盾**的记录：`p0-environment.md` §4 曾让人把 `TEMP`/`TMP` 指到**工作区内**，与 §5 的"必须指到工作区外、否则产生删不掉的毒目录"正相反——以 §5 为准 |
+| 「文档里的数量/命令面是按机器现状写的」 | **不是**。2026-10-12 扫了一遍，全部已就地更正：`09` 的 unit 310/integration 23 → **458/57**、`dev.py` 命令面六项 → **10 个子命令**（漏 `infra`/`serve`/`gen`）、`audit_schema` 判定单测 19/34 → **37**、`07` 的 391 → 458 与 449 → 515、`08` 的 Python ≥ 3.11 → **≥ 3.12**（约束源是 `pyproject` 的 `requires-python`）、`05 §2.5` 的"第二个后续迁移" → **第三个**（`000002` 已被 `ai_executions` 占了；2026-10-14 又因 `user_preferences` 占了 `000003` 而顺延成 **第四个**）、`05 §3` 的 `000004_paper_chunks.sql` → **`.{up,down}.sql` 且必须同批登记 sqlc**（2026-10-14 顺延为 `000005`）。还修掉两处**互相矛盾**的记录：`p0-environment.md` §4 曾让人把 `TEMP`/`TMP` 指到**工作区内**，与 §5 的"必须指到工作区外、否则产生删不掉的毒目录"正相反——以 §5 为准 |
 | `09` P0-7 的输入行点名 `backend/services/agent_runner.py` | **该文件不存在**（目录里只有 `agent.py`/`cache.py`/`conversation_storage.py`/`tools.py`/`upload_jobs.py`）。P0-7 真正接线的复用点是 `core/dependencies.py` 的 `get_document_loader`/`get_milvus_writer`（见 `internal_api/registry.py:13`），已按实引用改写 |
 | 「X2/X5 有判定命令，所以它们是 not_run（等着跑）」 | **错**。那两条命令引用的 `scripts/check_nginx_routes.py`、`scripts/export_pbkdf2_golden.py` **当时根本不存在**，等于退出标准没有判据。2026-10-12 两个脚本落地，三条退出（X2/X4/X5）转 `fail` 并写明红在哪；`sync_progress.py` 同批加了"命令里引用的脚本必须存在"的机检 |
 | 「`cp .env.example .env` 就能起」 | **旧模板会炸**：`KEY= #值` 的行内注释被 python-dotenv 当成真实值（`int('#1024')`），2026-10-10 已把 11 行改成整行注释 |

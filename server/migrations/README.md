@@ -27,8 +27,9 @@ echo $?   # 0 才算过
 | --- | --- | --- |
 | `000001` | `baseline`：从真库结构抄录的 10 张表 / 59 列 | 已落，已在真 PG 上验过幂等 |
 | `000002` | `ai_executions`：17 列，逐列回指 `backend/internal_api/executions.py` 的 dataclass | 已落，已在真 PG 上验过幂等 |
-| `000003` | `fix_drift` | 预留 |
-| `000004` | `paper_chunks` | 预留 |
+| `000003` | `user_preferences`：设置页的偏好（theme / start_view），Go 独占写 | 已落（2026-10-14，mock；未在真 PG 上执行过） |
+| `000004` | `fix_drift` | 预留（2026-10-14 由 `000003` 顺延：本表未开工，`user_preferences` 先被设置页用到） |
+| `000005` | `paper_chunks` | 预留 |
 
 **条件性的预留不占号**（例如 `auth_compat`：只在真要补列时才存在）。拿着没用的号比空着更糟。
 

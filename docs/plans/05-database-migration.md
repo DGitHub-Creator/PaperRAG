@@ -30,11 +30,11 @@
 | 2.2 | 生成 `server/migrations/000001_baseline.{up,down}.sql` | 内容 = §1 核查出的**实际结构**（不是 ORM 声明），含**真库 10 张表**（9 张业务表 + `alembic_version`）+ 索引 + 约束 |
 | 2.3 | 存量库打基线戳 | `migrate version 1`（只写 `schema_migrations`，不执行 DDL）；新库走 `000001_baseline.up.sql` |
 | 2.4 | `alembic/` 保留为只读历史 | 在 `alembic/README` 与 CI 中标注 FROZEN；禁止新增 revision。`models.py` 继续用于 Python 侧 ORM 读，但**不再作为 schema 来源** |
-| 2.5 | 漂移修复作为**第三个**迁移（号 `000003`；此前本行写"第二个"，因为那时 `000002` 还空着） | `000003_fix_drift`：补 `ix_paper_nodes_id`；`paper_nodes.filename` 唯一索引转 UNIQUE 约束（**先核查是否与现网语义等价**，等价则记为"不改"，避免无收益 DDL）。编号让位的原因见 §2.6 |
+| 2.5 | 漂移修复作为**第四个**迁移（号 `000004`；2026-10-14 因 `user_preferences` 先占了 `000003` 而顺延，此前本行写"第三个"） | `000004_fix_drift`：补 `ix_paper_nodes_id`；`paper_nodes.filename` 唯一索引转 UNIQUE 约束（**先核查是否与现网语义等价**，等价则记为"不改"，避免无收益 DDL）。编号让位的原因见 §2.6 |
 
 **幂等纪律**：所有迁移可重复执行安全检查；`down` 必须真实可回退，禁止 `down` 里写 `DROP TABLE IF EXISTS` 掩盖问题。
 
-### 2.6 迁移编号分配与新表口径（2026-10-12 拍板）
+### 2.6 迁移编号分配与新表口径（2026-10-12 拍板，2026-10-14 顺延一次）
 
 `000002` 这个号此前被**三处各自预定给了不同的表**（本节 2.5 的 `fix_drift`、§3 的 `paper_chunks` 占了 `000003`、`09` P0-6 卡输出行里条件式的 `auth_compat`），而台账 C5 与 P0-7 要的是 `ai_executions`。编号在 golang-migrate 里**就是执行顺序**，所以按"实际开工顺序"重新分配，并把它定成规则：
 
@@ -42,11 +42,12 @@
 | --- | --- | --- | --- |
 | `000001` | 存量库结构基线（10 表 / 59 列） | P0-2 | 已落，real |
 | `000002` | `ai_executions`（Python 独占写的执行记录） | P0-7 | **2026-10-12 已落**（mock，见下） |
-| `000003` | `fix_drift`（基线两处已知漂移的处置） | P0-2 尾 | 未开工 |
-| `000004` | `paper_chunks` 等 chunk 可信化新表 | P2-1 / §3 | 未开工 |
+| `000003` | `user_preferences`（设置页偏好：theme / start_view） | P0-6 尾 / 前端设置页 | **2026-10-14 已落**（mock） |
+| `000004` | `fix_drift`（基线两处已知漂移的处置） | P0-2 尾 | 未开工（2026-10-14 由 `000003` 顺延） |
+| `000005` | `paper_chunks` 等 chunk 可信化新表 | P2-1 / §3 | 未开工 |
 | 下一个空位 | `auth_compat`（`09` P0-6 卡的条件式预留：仅在 D3 拍「保留旧哈希兼容」时才需要） | P1 | 不预定号 |
 
-规则两条：**(a)** 号按依赖顺序给，谁先被运行链路需要谁靠前，`fix_drift` 修的是基线所以紧随其后；**(b)** 条件式的预留**不占号**——占了一个用不上的号，后来的人只能继续往后挪，挪到最后没人知道哪个号对应哪件事。
+规则两条：**(a)** 号按依赖顺序给，谁先被运行链路需要谁靠前——`fix_drift` 修的是基线，但**当前没有任何运行链路需要它**（它的处置还是"先核查是否等价"），而 `user_preferences` 被正在落地的设置页直接需要，所以 2026-10-14 让 `000003` 给了后者、`fix_drift` 顺延到 `000004`；**(b)** 条件式的预留**不占号**——占了一个用不上的号，后来的人只能继续往后挪，挪到最后没人知道哪个号对应哪件事。
 
 `ai_executions` 是**第一张由本文档新建的表**，不是对存量的登记，所以四条口径与基线不同，都拍在此处（新表照此办理）：
 
@@ -59,7 +60,7 @@
 
 现状问题（03 §2）：叶子块正文只在 Milvus 且 `VARCHAR(2000)` 截断；`parent_chunks` 只收 level 1/2 而 PDF 默认路径不产 → 实际近空；无版本、无定位、无哈希。
 
-新增（`server/migrations/000004_paper_chunks.{up,down}.sql`，**P2-1** 交付；按 §2.6 的规则成对交付，`down` 只 `DROP TABLE` 本迁移新建的表，交付后**必须同时登记进 `sqlc.yaml` 的 `schema` 列表**，否则 `dev.py gen` 的前置检查会直接拒绝；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
+新增（`server/migrations/000005_paper_chunks.{up,down}.sql`，**P2-1** 交付；按 §2.6 的规则成对交付，`down` 只 `DROP TABLE` 本迁移新建的表，交付后**必须同时登记进 `sqlc.yaml` 的 `schema` 列表**，否则 `dev.py gen` 的前置检查会直接拒绝；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
 
 ```sql
 CREATE TABLE papers (

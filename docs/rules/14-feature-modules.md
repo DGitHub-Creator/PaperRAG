@@ -219,6 +219,10 @@
 - **现状（进行中，属架构轴 P0）**：认证 Python 为裁判、Go 已实现并被 golden vectors 钉住（X5 pass）；
   契约目录与静态门禁 done（X3 pass）；`/internal/v1/ai/*` 七条内部面**已建好但零 caller**；
   预算与 usage 记账的 `/stats/usage` 前端不调；任务态在进程内存（C9）。
+  **2026-10-14 新增两条 Go 原生自助面**（`POST /api/v1/auth/password`、`GET|PUT /api/v1/me/preferences`）：
+  它们**没有 Python 对照**，是新开的 Go 面——所以判据是"Go 自己的不变量"（旧口令错回 400 不 401、
+  新口令与 register 同规则、`user_preferences` 的 created_at/updated_at 由写方给 UTC），
+  不属于 X4 的跨语言兼容范围。数据面随之多一张实建表 `user_preferences`（迁移 `000003`）。
 - **目标行为**：Go 是唯一公开入口与唯一调度方；任务态与记账落 PG；12 条未调用接口逐条有审计与 Deprecation 头。
 - **判据**：X1/X2/X4/X6/X7/X8 + Y1/Y4/Y5 + Z4。
 - **归属**：P0-1 / P0-5 / P0-6 / P0-7 / P0-8 + P1-0…P1-8 + P2-6。
