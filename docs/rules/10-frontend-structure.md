@@ -1,7 +1,9 @@
 # 10 — 前端结构：分层、单一请求边界、单一状态模式
 
 > **性质**：本文是 `09` 之外的**结构专项**（用户指令 2026-10-09：「前端要重构」「先按照核心原则把前端结构做完整，做完善」）。
-> **不改框架**（`08` §9）：Vue 3 + Vite + TS + vue-i18n 保留，不引入 Pinia/Router/新请求库。
+> **不改框架**（`08` §9）：Vue 3 + Vite + TS + vue-i18n 保留，不引入 Pinia / 新请求库。
+> **2026-10-14 变更（拍板）**：**引入 vue-router 4**——§7 的选项 B 落地，用于五个产品入口与各功能模块页的深链接。
+> `§3 R10` 的 `NavKey` 随之扩为**路由名的联合类型**，`activeNav`/`historyOpen` 状态被路由取代（`useNav.ts` 保留为导航模型与 `NavKey` 的唯一所在地）。
 > 按原则③先出本文再动代码，同日按 §5 的增量顺序实施；每个增量的判据就是 §4，不靠"看起来改完了"。
 
 ## 0. 为什么"结构"本轮必须做，且不违反 08 §5
@@ -38,13 +40,16 @@ frontend/src/
 │   ├── sse.ts                # SSE 帧解析（分帧 / data 前缀 / [DONE] / JSON）
 │   ├── ws.ts                 # WS URL（token 走 query：浏览器 WebSocket 带不了 Authorization 头）
 │   └── client.ts             # 一条 operationId 一个函数；路径字面量只在这里，check_contracts 从它抽实调集合
+├── router/                   # 路由表（2026-10-14 引入 vue-router）：name 一律取自 composables/useNav 的 NavKey
+│   └── index.ts              # createRouter + 路由守卫（未登录跳 /login）
 ├── composables/              # 唯一状态层，**只允许一种模式**：模块级单例 + 零 DOM/零对话框
 │   ├── useAuth.ts            # 登录态反应式视图（持久化委托给 api/token）
-│   ├── useNav.ts             # activeNav / 历史面板开合（视图状态，非路由）
+│   ├── useNav.ts             # NavKey（路由名联合类型）+ 导航分组模型；视图状态已交给路由
 │   ├── useChat.ts            # 消息、流式、sessionId
 │   ├── useSessions.ts        # 会话列表
 │   ├── useDocuments.ts       # 文档列表 + 上传/删除 job（轮询定时器由本层持有，不外泄）
 │   └── useWebSocket.ts       # WS 通道（URL 由 api/ws.ts 给）
+├── views/                    # 被路由挂载的页面（每页一个文件）；不认识 api/http，只经 composables
 ├── components/               # 只有渲染 + 用户意图 → action；对话框/滚动在这一层
 ├── utils/
 │   ├── markdown.ts           # 保持
@@ -74,7 +79,7 @@ frontend/src/
 | R7 | 事件只经 `src/api/events.ts`；订阅方必须拿到退订函数并在 `onUnmounted` 调用 | F5 |
 | R8 | `src/**` 禁止 `any`（allowlist 只有 `env.d.ts` 的 SFC 声明垫片与 `i18n/index.ts` 的 locale 两处） | F7：`any` 是类型边界的洞 |
 | R9 | 用户可见字面串必须是 i18n 键：`i18n/` 之外的字符串字面量里不得出现中文字符（注释不受约束） | F10 |
-| R10 | 枚举化视图状态：`NavKey = "newChat" \| "history" \| "settings"`，`AuthMode = "login" \| "register"`；`activeNav` 的 props 不得退回 `string` | F11 |
+| R10 | 枚举化视图状态：`NavKey` 是**路由名的联合类型**（`composables/useNav.ts`，**必须写在一行**——`check_frontend.py` 只取该声明的首行），路由 `name` 与 `NavKey` 同源；`AuthMode = "login" \| "register"`；`activeNav` 类 props 不得退回 `string` | F11 |
 | R11 | 依赖必须双向干净：`dependencies` 里声明的包要在 `src/**` 被 import（无死依赖），import 到的包要在 `package.json` 里声明（无未声明依赖）；相对路径与 `@/` 别名不算包 | F9：删掉 axios 却留着它的条目，和留着代码一样会误导下一个读的人 |
 
 **`rag_trace` 的形状按契约来**：类型是对象（`RagTrace`，契约只锁 `tool_used`/`tool_name`，其余透传），
@@ -104,7 +109,7 @@ FE-a…FE-e 是本轮的**完成判据**；FE-f 属于 P0-9，所以 FE-1 卡的
 
 ## 6. 明确不做（防止范围漂移）
 
-- 不加 Router、不加 Pinia、不引 SSR、不做代码分割（`build` 的 1.4 MB 警告留到 P2-7 产品化一起处理）。
+- ~~不加 Router~~ → **2026-10-14 已引入 vue-router**（§7 的选项 B 落地）。仍不加 Pinia、不引 SSR；新页面按路由**懒加载**（`build` 的体积告警留到 P2-7 收口）。
 - 不重排视觉样式，不改 `assets/*.css` 的类名（结构重构只碰 `.vue` 的 `<script setup>` 与必要的模板绑定）。
 - 不动 `vite.config.js` 的代理与 `index.html` 的标题（改名属于全仓一次性动作，随 P1-5 基址切换做）。
 - 不新增前端测试框架（本轮无可运行的浏览器，Playwright 属 P0-9）。
@@ -117,7 +122,36 @@ FE-a…FE-e 是本轮的**完成判据**；FE-f 属于 P0-9，所以 FE-1 卡的
 
 **未覆盖**：`11 §3` 的**五个产品入口作为导航一级**（现 `NavKey = newChat | history | settings`，R10 枚举里根本没有入口/mode 概念）· `11 §4.2` 的**左 PDF 右助手**版式与"每次回答可跳转到 PDF 位置"· `11 §4.3` 比较矩阵 · `11 §4.5` 双图可视化 · `11 §4.6` Hypothesis Board · `11 §4.9` Research Radar · `11 §4.10` 的报告版本 / 项目目标 / 任务清单 / AI 预算面板 · `11 §5①` 研究问题反向导航。全部指向 `11 §8`。
 
-**需拍板/冲突**：**有，一处**。本文 §6 明确"**不加 Router**、不引 Pinia、`activeNav` 是视图状态而非路由"，而五个入口 + Workspace + 报告版本需要**可寻址、可分享、可回到某次探索**的深链接。两个选项：
-- **选项 A（守 §6）**：入口切换仍走 `useNav` 的枚举状态，深链接用 query 参数（`?mode=deep_reading&paper=...`）自己解析；代价是刷新后状态恢复、报告版本回退、浏览器前进/后退都要手写。
-- **选项 B（破 §6）**：V2 之前引入 Router（vue-router）给五个入口与 Workspace 子页；代价是 §3 R6 的"契约↔前端"对照面变大，且与 `08 §9` 的"不引入新依赖"口径冲突，须先改 `08`。
-无论选哪个，入口名/mode 名都必须走 i18n 键（R9），`NavKey` 需要扩成两层枚举（入口 × 子视图），这会让 R10 的机检规则一并加严。
+### 7.1 已定案：引入 vue-router（2026-10-14，原「需拍板」项收口）
+
+本文 §6 曾明确「不加 Router」，而五个产品入口 + Workspace + 报告版本需要**可寻址、可分享、可回到某次探索**的深链接。
+两个选项里 **选项 B（引入 vue-router）** 已被用户拍板采纳，理由：入口多、需要深链接与浏览器前进/后退，手写枚举状态无法承载。
+**连带改动（同批，缺一即不一致）**：
+
+1. `08 §9` 的「不改前端框架」注上 Router 例外；
+2. 本文 §6 的"不加 Router"改为"已引入"；§2 目录树加 `router/` 与 `views/`；
+3. §3 R10 的 `NavKey` 从三值扩为**路由名联合类型**（仍必须写在一行，checker 只取首行）；
+4. `frontend/package.json` 增 `vue-router@4`（同时满足 R11：import 的包必须已声明）。
+
+**路由表（`NavKey` = 路由 `name`，同源）**——入口分组对应 `11 §3` 的五个产品入口与 `14` 的功能模块：
+
+| 分组 | 路由名（NavKey） | 页面 | 对应模块 / 卡片 | 数据来源 |
+| --- | --- | --- | --- | --- |
+| 研究 | `chat` | 对话 / Deep Reader 问答 | M4/M6/M7（P1-4、P2-7） | **真实**（`useChat`） |
+| 研究 | `library` | 书架：文献 / 主题群 / 自动抓取 | M1/M2/M9（P2-9、P2-10） | 文献真实；主题群与抓取为 **mock** |
+| 研究 | `reader` | 论文阅读器（左 PDF 右助手） | M7（P2-7） | **mock** |
+| 分析 | `compare` | 多论文比较矩阵 | M10（提案 F-1） | **mock** |
+| 分析 | `gaps` | Gap Explorer / 假设看板 | M11（提案 F-2） | **mock** |
+| 分析 | `graph` | 知识双图与证据链 | M16（提案 F-8） | **mock** |
+| 运行 | `runs` | 自主研究运行（Run / Frontier / 预算） | M15（P3-1…P3-7） | **mock** |
+| 运行 | `lab` | Research Lab | M12（提案 F-3） | **mock** |
+| 产出 | `writing` | 研究报告写作 | M13（P3-5） | **mock** |
+| 产出 | `radar` | 文献雷达与 Knowledge Diff | M14（提案 F-4） | **mock** |
+| 产出 | `history` | 历史会话 | M8（P1-1） | **真实**（`useSessions`） |
+| 管理 | `workspace` | 工作区（项目 / 任务 / 笔记 / 预算） | M8（提案 F-7） | **mock** |
+| 管理 | `settings` | 设置（文档管理） | M1（P1-3） | **真实**（`useDocuments`） |
+
+⚠️ **mock 页面不得伪装成已实现**：每页顶部必须有「示例数据 / Sample data」徽标，并在页脚给出该模块的**归属卡片号**（`14` 的 M 号 + `progress.json` 的卡片）。mock 数据放 `frontend/src/mock/`，**只用英文内容**（学术数据本就是英文）以通过 R9；**不得往 `api/client.ts` 加契约里没有的端点**（那会让 `check_contracts.py` 变红）——mock 一律走本地数据。
+
+**仍未覆盖**：`11 §4.10` 的报告版本回退、`11 §5①` 研究问题反向导航的**交互语义**（页面壳有了，行为待后端）。
+每个 mock 页的"升级为真实"判据 = 该模块卡片转 done 时把 mock 数据换成 composable + `api/client` 调用。

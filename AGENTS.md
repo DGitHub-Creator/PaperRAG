@@ -21,7 +21,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
 | 2 | `docs/progress.json` | **进度唯一真相**；`PROGRESS.md` 与 `progress.html` 是它的生成物，改完必须重跑 `sync_progress.py` |
 | 3 | `docs/plans/09-milestone-p0.md`、`docs/rules/10-frontend-structure.md` | 当前阶段的任务卡与 X1–X8 退出标准 |
 | 3.5 | `docs/rules/11-product-vision.md`、`docs/rules/12-known-code-issues.md` | **产品轴（V1–V4）** 与**代码问题台账**；两轴映射见 11 §7 |
-| 3.6 | `docs/rules/13-frontend-backend-architecture.md`、`docs/rules/14-feature-modules.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划（现状/判据/卡片/顺序）。与 `01` 的区别：`01` 是 dated 审计、本文可复核；与 `02` 的区别：`02` 是 To-Be 目标态 |
+| 3.6 | `docs/rules/13-frontend-backend-architecture.md`、`docs/rules/14-feature-modules.md`、`docs/rules/frontend-backend-division-of-labor.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划（现状/判据/卡片/顺序），`frontend-backend-division-of-labor` = M1–M17 × 前端/Go/Python 三方分工 + 表级写入边界 + 三方进度快照。与 `01` 的区别：`01` 是 dated 审计、本文可复核；与 `02` 的区别：`02` 是 To-Be 目标态 |
 | 4 | `contracts/` | Go↔Python 契约；改契约改这里，`check_contracts.py` 机检 |
 | 5 | `docs/reference/00-audit.md`、`docs/reference/01-current-architecture.md` | **dated 事实**：描述历史审计基线，**不是现状**（只读，不追改） |
 | 6 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
@@ -65,6 +65,7 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   ⚠️ 另有一条容易踩空的事实：**dev 形态下 vite 把 `/api` 直接代理到 `127.0.0.1:8000`（Python）**
   （`frontend/vite.config.js:8-14`），两份 compose 里都没有 `go-api`/`go-worker`——
   所以"Go 是唯一公开入口"在本地运行时**没有承载物**，X2 只能静态判 nginx 配置，这不是脚本缺陷。
+- **2026-10-14：前端重建完成（引入 vue-router，13 条路由页全部就位）**。用户拍板引入 vue-router 4（`docs/rules/10 §7.1` 的选项 B 落地），前端从「`useNav` 三值枚举 + 三个视图」变成 `router/index.ts` 的 **13 条懒加载路由** + `AppShell`/`AppRail`/`TopBar` 外壳 + `views/` 13 页。⚠️ 三条别踩的：①**9 页是 mock**（比较矩阵/问题与假设/知识双图/自主运行/研究实验室/报告写作/文献雷达/工作区/阅读器，另加书架的主题群与抓取两个页签），真实接口只有 4 处（对话、书架的文献页签、历史会话、文档管理）——每张 mock 页顶部有「示例数据」徽标 + 归属卡号，**别把 mock 页当成已实现**；②**图标一律用 `components/Icon.vue` 的内联 SVG**——Font Awesome 从未被引入（`index.html` 无 link、`package.json` 无依赖），旧模板里的图标一直渲染成空白，别再写 `<i class="fas …">`；③mock 数据在 `frontend/src/mock/` 且**只用英文**（R9 禁 CJK 字面量），要接后端时换成 composable + `api/client.ts` 调用，**不要往 `client.ts` 加契约里没有的端点**（会让 `check_contracts.py` 变红）。证据等级是 **mock**：浏览器级 e2e 判据仍属 P0-9 的 X7。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `fix_drift` / `000004` `paper_chunks`；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。

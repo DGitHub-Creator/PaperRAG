@@ -42,6 +42,7 @@
 | [`02-target-architecture.md`](rules/02-target-architecture.md) | **To-Be 架构**：五条架构律 L1–L5、目录、Go↔Python 契约、状态机、模块所有权与写入边界（大部分**未实现**） |
 | [`13-frontend-backend-architecture.md`](rules/13-frontend-backend-architecture.md) | **As-Is 实测架构**：运行形态、逐条端点（带 `file:line`）、数据面差集、前端结构、死代码清单（**可复核**） |
 | [`14-feature-modules.md`](rules/14-feature-modules.md) | **功能模块规划**：M1…M17 逐模块的现状 / 目标行为 / 判据 / 卡片 / 顺序 / 风险 |
+| [`frontend-backend-division-of-labor.md`](rules/frontend-backend-division-of-labor.md) | **前后端分工与进度记录**：M1–M17 × 前端/Go/Python 三方归属、表级写入边界、三方各自进度与断层（分工常青、进度为 dated 快照） |
 | [`11-product-vision.md`](rules/11-product-vision.md) | **产品愿景（产品价值轴）**：五个入口、十项能力、V1–V4 路线、缺口清单 |
 | [`12-known-code-issues.md`](rules/12-known-code-issues.md) | **代码问题台账**：证据 / 影响 / 建议 / 归属卡片；2026-10-12 起按 P0 顺序逐条处置 |
 | [`10-frontend-structure.md`](rules/10-frontend-structure.md) | **前端结构规定**：F1–F11 缺陷、R1–R11 规定、`check_frontend.py` 机检口径 |
@@ -93,6 +94,7 @@
 - **要动手**：`08 → 09 → 07 → 05`（09 是 P0 的文件级计划；前端专项看 `10`）
 - **想知道"现在真是什么样"**：`13`（带 `file:line` 与取数命令）→ 与 `02` 的 To-Be 对照看差距
 - **想按功能排期**：`14`（M1…M17 的现状与判据）→ `11 §7` 两轴映射 → `04` 路线
+- **想看清谁做什么、做到哪**：`frontend-backend-division-of-labor`（M1–M17 × 前端/Go/Python 分工 + 进度快照）
 - **看进度**：`../progress.html`（可视化）或 `../PROGRESS.md`（文本）
 
 ## 8. 写作纪律（原则②③的落地方式）
@@ -127,5 +129,7 @@
 8. 按 solo、每周 15–20 小时规划；真实 E2E/集成/契约/10–15 题固定回归必做；A/B/C 实验、20+ 题 benchmark、消融 DEFER 到最后阶段之后；≥95%/≥90% 保留为质量目标，不作当前门禁。
 9. **K1–K4（2026-10-09 定案，落点见 `plans/09` §3）**：429 统一到 `{"detail": ...}`；sqlc 生成物入库并用 `git diff` 门禁；nginx upstream 切换放在 P0-8 末、P0-9 前且先过 X5；422 降级为 400 + 字符串 `detail`。
 10. **容器只跑中间件（2026-10-13 定案）**：Go / Python / 前端一律**源码运行**，应用层不容器化（见 `AGENTS.md` §6、台账 `C29`）。
+11. **前端引入 vue-router（2026-10-14 定案）**：`10 §7` 的选项 B 落地，用于五个产品入口与各功能模块页的深链接；
+    连带改 `08 §9`（前端框架例外）、`10 §6`（"不加 Router" → 已引入）与 `10 §3 R10`（`NavKey` = 路由名联合类型）。
 
 **目标不是让代码变成 Go**，而是让 ResearchPilot 在功能正确、数据可信、可验证的基础上，成为 Go + Python 的自主科研平台。
