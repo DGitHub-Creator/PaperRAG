@@ -118,11 +118,38 @@ Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动�
   Python 那条没人再打过，「前端能用」不构成「后端没坏」的证据。
   同批新记 **C33**：Go 侧**没有任何限流层**，而本轮定的处置方式是"接管一条就删 Python 那条"——
   所以**每接管一条路由就静默丢掉它的限流**，登录/注册这两个最该限流的面其实已经丢了。接管批次要带上限流。
+- **2026-10-14（第十四–十五轮）：Go 接管第一条业务读接口 + X1 转 pass + P0-1 转 done**。
+  ①**`GET /api/v1/sessions` 与 `DELETE /api/v1/sessions/{session_id}` 现在是 Go 原生**（新包 `internal/session`
+  ＋ `sql/queries/chat_sessions.sql` 两条查询 ＋ `cmd/api` 的 `mountSessionRoutes`）。**判据是 chain 级**：
+  `pytest -m chain -k go_read` 收 6 项，头一条证的是「同一份真库、同一个令牌，Go 与 Python 的 JSON **逐字相同**」。
+  两处最容易漂的形状专门钉住了：naive `TIMESTAMP` 的 `isoformat()`（带微秒 6 位、微秒为 0 整段省略、无时区后缀，
+  **不能用 `RFC3339Nano`**）与「空结果必须是 `[]` 不是 `null`」（Go 的 nil 切片会编成 `null`，前端 `.map()` 直接炸）。
+  ⚠️ **三条后续各卡一道前置，别顺手做**：`GET /sessions/{id}`（消息）卡在 `rag_trace` 是 **pydantic 投影而非透传**
+  （实测：未知键被丢弃、响应恰好 39 键、库里缺必填 `tool_used`/`tool_name` 会让 **Python 自己 500**，
+  与 `openapi.yaml:723`＋`types.ts:61` 那句「其余字段透传」**互相矛盾**——按契约实现反而错，见台账 **C34**）；
+  `/documents` 卡在文档真相不在 PG（且列表还依赖 Milvus 取 chunk 数，实测停掉直接 500）；
+  **Go 的删除不失效 Python 的 Redis 会话缓存**，所以「删完仍能从 Python 读到旧消息」的脏读窗口今天是真实的（台账 **C35**，
+  倾向直接去掉那层缓存）。chain 用例里**刻意没断言**这一半，免得把已知缺口写成偶发红。
+  ②**X1 转 pass（real）**：`internal/httpapi/redischeck.go` 手写一次 RESP PING 补上 `redis` 探测键
+  （不引 go-redis；AUTH 先于 PING；失败文案只带首条单词，因为 detail 会进日志与响应）。
+  X1 从前只注册 `database`，expect 点名的 Redis **无物可判**——与 C33（Go 没限流层）是同一形状：**接管一条面就丢原面一项能力，且没有门禁会红**。
+  ③**P0-1 转 done（real）**：它的 real 缺口是「未进 compose、未与 Python 联调」，前者被定案取消、后者已由 chain 发生。
+  边界：go-worker 只验到「进程能起 + 探针」，调度器属 P3。
+  ④用户拍板**「先收 P0，再开 P1」**：把 `/sessions` 落 Go 后想标 P1-1 in_progress 被 `sync_progress.py --check` 拦下
+  （阶段顺序律），证据因此记在 P0-8；接管 documents/流式/删 Python 浏览器面这些 P1 活**要等 P0 收口后由用户再批**。
+  ⑤两条新纪律（`08 §6`「文件体积」「后台进程」）**第一次被执行**：Redis 探测单开文件没往 `checks.go` 叠，
+  会话面新开包没塞进 `internal/auth`，`SettingsView.vue` 439 行拆成 54 行视图 + 五个板块组件；
+  收尾时容器 0 个、端口全 free——并抓到 **`TaskStop` 只杀外层 shell、vite 的子进程仍占着 5173**，
+  所以**每次收尾要复验端口，不能只看任务状态**。同一条纪律的另一半是 I/O：**全量套件一个批次只跑一次**。
+  读数：P0 退出 **7/8 pass，只剩 X2**（nginx 还指 Python）；`-m chain` 15 项、全量 **599 passed**。
 - **别把重建出的库当原库用**：`alembic upgrade head` 建的是**全新库**，拿它验 X6 的「在**存量库**上幂等」是自证。那一问的原对象已永久失去，只保留 2026-10-11「临时库法」的实跑记录作历史证据；本轮用「alembic 建出的 10 表库」当作存量形态重验了一遍幂等（结果通过），但**它不等于当年那个 `create_all`+alembic 混合库**。
 - **流程教训**：real 级证据必须落成**仓库内的文件**（快照 / 实跑记录），只存在于容器卷里的证据等于没有证据——一次清空就抹掉了。
 - **2026-10-12 拍板了迁移编号分配**（详见 `docs/plans/05-database-migration.md` §2.6）：`000001` 基线 / `000002` `ai_executions`（已落）/ `000003` `user_preferences`（2026-10-14 落，设置页偏好）/ `000004` `fix_drift` / `000005` `paper_chunks`（后两者随本轮顺延一位）；**条件性预留不占号**（如 `auth_compat`），避免拿着没用的号。新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
 - **`000002_ai_executions.{up,down}.sql` 已在真 PG 上执行过（2026-10-12 第三轮，此前从未跑过）**：17 列逐条回指 `backend/internal_api/executions.py:26-42` 的 dataclass（这张表的列清单**没有任何文档逐字写过**），已登记进 `server/sqlc.yaml` 并生成 `AiExecution`。真库幂等实测：临时库里连跑两遍 `10→11→11`、两次 exit 0、`ai_executions` 恰 **17 列**；down 一遍有效、第二遍退出 3（「禁止 `DROP TABLE IF EXISTS`」规则的预期后果，见 `server/migrations/README.md`）。**P0-7 距 done 只差 compose 里「ai-core 不发布宿主端口」那一步（P0-8）与 chain 级 `-k ai_executions`（P0-5）**——不缺迁移文件证据了。
-- Go 骨架 `gofmt`/`go vet`/`go test` 全绿，但**尚未进 compose、未与 Python 联调**（P0-1 的 real 缺口）。
+- Go 骨架 `gofmt`/`go vet`/`go test` 全绿；~~尚未进 compose、未与 Python 联调（P0-1 的 real 缺口）~~
+  **2026-10-14 第十五轮已解除**：「进 compose」被 2026-10-13 定案取消（容器只跑中间件），「与 Python 联调」由 chain 层 15 项用例取证
+  （Go ↔ 源码跑的 ai-core ↔ 真 PG/Redis 双向互验）→ **P0-1 转 done（real）**。
+  ⚠️ 边界：`go-worker` 只验到「进程能起 + 暴露探针」（`cmd/worker/main.go:52` 自陈 `worker_idle`），调度器属 P3。
 - **分支布局（2026-10-12 收口）：远端只剩 `main`，本地工作分支就是 `main`（跟踪 `origin/main`）**，
   旧的 `main-sync`（本地与远端）已删除。⚠️ 两条容易踩的：
   ①**本地 `main` 已被重置到重写后的历史**，重写前的 92 个提交只在 `backup/main-pre-rewrite-20261012`（tip `e6cc211`）——
