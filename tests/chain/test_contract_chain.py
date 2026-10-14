@@ -88,9 +88,9 @@ def test_probe_endpoints_agree_on_shared_keys(http, chain_endpoints):
     """存活/就绪探针：两侧**共有的**那部分必须给同一个答案。
 
     两点刻意的宽松，都不是放水：
-    ①只比共有的探测键——Go 的 `checks` 目前只有 `database`，Python 有 database/redis/milvus，
-      把"Go 还没探 redis/milvus"判成缺陷会掩盖真正要判的那条（键名与取值语义才是事故源）。
-      这条缺口已记进 `progress.json` 的 X1 红点与台账 C33 同一类问题。
+    ①只比共有的探测键——契约上 Go 现在也探 redis（X1 的 expect 点名了 PG/Redis），
+      但 Go **不探 milvus**，把"Go 还没探 milvus"判成缺陷会掩盖真正要判的那条
+      （键名与取值语义才是事故源）。Go 侧的键集合由另一条用例单独收紧。
     ②不要求 /ready 是 200——Python 探 milvus，而 dev 形态下 Milvus 常不起（起来也会因
       etcd 磁盘停顿半路挂，台账 C28）。**探针的状态由环境决定，判据只能断言"两侧说法一致"**。
       反过来 `/health` 不碰任何依赖，所以那条严格断言 200 与 status=="ok"。
@@ -115,9 +115,14 @@ def test_probe_endpoints_agree_on_shared_keys(http, chain_endpoints):
         )
 
 
-def test_go_readiness_reports_database_ok_when_pg_is_up(http, chain_endpoints):
-    """Go 的 /ready 必须真的探到 PG——这一条不给"永远 200"的假探针留空间。"""
+def test_go_readiness_probes_exactly_what_x1_names(http, chain_endpoints):
+    """X1 的 expect 点名「/ready 的 **PG/Redis** 依赖探活通过」——那就必须两个键都在、且都是 ok。
+
+    这条是补上 C33 那一类缺口的判据：Go 从前只注册 `database`，Redis 那一格**无物可判**，
+    一个只会回答 database 的探针看着像全绿，而没有任何门禁会因此变红。
+    """
     ready = http.get(chain_endpoints.go("/api/v1/ready"))
     checks = _checks_of(ready)
-    assert "database" in checks, f"Go 的 /ready 没有 database 探测键：{sorted(checks)}"
-    assert checks["database"]["status"] == "ok", checks["database"]
+    assert {"database", "redis"} <= set(checks), f"Go 的 /ready 缺探测键：{sorted(checks)}"
+    for name in ("database", "redis"):
+        assert checks[name]["status"] == "ok", f"{name} 没探通：{checks[name]}"

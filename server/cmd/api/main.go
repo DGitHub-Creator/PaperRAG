@@ -210,10 +210,18 @@ func (u unavailableStore) UpdateUserPasswordByUsername(context.Context, db.Updat
 }
 
 func databaseChecks(pool *pgxpool.Pool, poolErr error, cfg config.Config) []httpapi.Check {
+	checks := []httpapi.Check{}
 	if pool == nil {
-		return []httpapi.Check{httpapi.NotConfiguredCheck("database", poolErr.Error())}
+		checks = append(checks, httpapi.NotConfiguredCheck("database", poolErr.Error()))
+	} else {
+		checks = append(checks, httpapi.PostgresCheck(pool))
 	}
-	return []httpapi.Check{httpapi.PostgresCheck(pool)}
+	// redis 这一格不是顺手加的：X1 的 expect 点名「/ready 的 PG/Redis 依赖探活通过」，
+	// 而 Go 从前只注册 database——于是那一半**无物可判**，一个只会回答 database 的探针
+	// 看着像全绿。同一条毛病在 C33（Go 没限流层）上是同一个形状：接管一条面就顺手丢掉
+	// 原面上的一项能力，而且没有任何门禁会因此变红。
+	checks = append(checks, httpapi.RedisCheck(cfg.RedisURL))
+	return checks
 }
 
 func checkNames(checks []httpapi.Check) []string {

@@ -22,6 +22,11 @@ type Config struct {
 	// DatabaseURL 是 PostgreSQL 连接串。为空时 go-api 仍能起，/ready 会报 database 不可用；
 	// production 下直接拒绝启动（与 A0-3 的 JWT 密钥 fail-fast 同一条律）。
 	DatabaseURL string
+	// RedisURL 是 /ready 的 redis 探测目标。键名与默认值都跟 Python 共用同一份 `.env`
+	// （backend/core/config 读的就是 REDIS_URL），两侧读出的必须指向同一个实例，
+	// 否则"Go 说 redis ok、Python 说 error"这种分歧会一直说不清。
+	// 为空时不拒绝启动：dev 形态下没 Redis 是常见状态，/ready 如实报 error 就是它的正确行为。
+	RedisURL string
 	// Version 进 /health 响应，与 Python 侧的 version 字段同位。
 	Version string
 	// ReadyTimeout 是单项依赖探测的超时上限，默认对齐 backend/api/health.py 的 3s。
@@ -98,6 +103,7 @@ func Load(service, defaultAddr string) (Config, error) {
 		Env:          envString("APP_ENV", "development"),
 		Addr:         defaultAddr,
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
+		RedisURL:     envString("REDIS_URL", "redis://127.0.0.1:6379/0"),
 		Version:      envString("VERSION", "dev"),
 		ReadyTimeout: envDuration("READY_TIMEOUT", 3*time.Second),
 		UpstreamURL:  envString("PYTHON_UPSTREAM", "http://127.0.0.1:8000"),
