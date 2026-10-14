@@ -242,6 +242,13 @@ cd frontend && npm run dev             # vite（只监听 ::1，用 localhost �
 - **不把 mock 绿灯说成完成**：`status=done` 必须 `evidence ≥ requires`，由 `sync_progress.py --check` 强制。
 - 不删 `docs/archive/` 里的归档件；不改 `00-audit.md`/`01-current-architecture.md` 里 dated 的事实（它们是历史证据）。
 - 密钥只经环境变量，不提交 `.env`；注释一律中文。
+- **不要攒后台进程**（`08 §6`「后台进程」）：只起判据需要的最小集合，起之前先 `netstat`/`docker compose ps` 盘点，
+  验证一结束就停。遗留进程会占端口（本项目两次因 stale go-api 占 `:8080` 起服务失败），
+  多起的容器会放大 etcd/Milvus 的磁盘停顿（台账 **C28**：Milvus 约 25 分钟自挂）。
+- **不要把新能力继续往大文件里叠**（`08 §6`「文件体积」）：新增一块默认落到**新文件/新包**，
+  软上限 300 行、硬上限 500 行；拆的边界按 `08 §6` 指的分层口径走（Go `internal/<domain>`、
+  Python `backend/<layer>/<module>`、前端 `10 §2` 五层——**一个板块一个组件**），不是"顺手分个 utils"。
+  存量超标文件不追改，但**碰到就必须顺手拆**，且不许让它更长。
 
 ## 8. 提交纪律
 
