@@ -38,11 +38,11 @@ function chipText(cite: CitationItem): string {
 
 <style scoped>
 .citations-section {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
+  margin-top: 10px;
+  padding: 11px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .citations-header {
@@ -50,12 +50,13 @@ function chipText(cite: CitationItem): string {
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
-  font-size: 13px;
-  color: #666;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .citations-title {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .citation-chips {
@@ -66,35 +67,35 @@ function chipText(cite: CitationItem): string {
 
 .citation-chip {
   display: inline-block;
-  padding: 4px 10px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-family: monospace;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-family: var(--font-mono);
 }
 
 .citation-chip.verified {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid #c6ecd2;
 }
 
 .citation-chip.unsupported {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeeba;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border: 1px solid #fbd9bf;
   text-decoration: line-through;
 }
 
 .unsupported-section {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--border);
 }
 
 .unsupported-label {
-  font-size: 12px;
-  color: #999;
-  margin-bottom: 4px;
   display: block;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 </style>

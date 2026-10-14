@@ -1,99 +1,99 @@
-/* History Sidebar */
+/* 会话列表样式（专业科研风，2026-10-14 重写）。
+   历史上这是右侧抽屉；引入路由后同一批类名同时服务于抽屉与整页视图。 */
+
 .history-sidebar {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 320px;
-    height: 100%;
-    background-color: var(--white);
-    border-left: 1px solid #f0f0f0;
-    box-shadow: -4px 0 20px rgba(0,0,0,0.1);
-    z-index: 20;
     display: flex;
     flex-direction: column;
-    animation: slideInRight 0.3s ease;
-}
-
-@keyframes slideInRight {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
 }
 
 .history-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 20px;
-    border-bottom: 1px solid #f0f0f0;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
 }
 
 .history-header h3 {
-    color: var(--primary-color);
-    font-size: 1.2rem;
+    font-size: 14px;
+    color: var(--text-strong);
 }
 
 .close-btn {
-    background: none;
-    border: none;
-    color: var(--text-light);
-    font-size: 1.3rem;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-faint);
+    font-size: 14px;
     cursor: pointer;
-    padding: 5px 10px;
-    border-radius: 50%;
     transition: var(--transition);
 }
 
 .close-btn:hover {
-    background-color: #f5f5f5;
-    color: var(--primary-color);
+    background: var(--bg-hover);
+    color: var(--text-color);
 }
 
 .history-list {
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
+    padding: 8px;
 }
 
 .empty-history {
-    text-align: center;
     padding: 40px 20px;
-    color: var(--text-light);
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13px;
 }
 
 .history-item {
-    padding: 15px;
-    margin-bottom: 8px;
-    border-radius: 12px;
-    background-color: #f9f9f9;
-    cursor: pointer;
-    transition: var(--transition);
-    border: 2px solid transparent;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-bottom: 4px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: var(--transition);
 }
 
 .history-item:hover {
-    background-color: #fff0f0;
-    border-color: var(--primary-light);
-    transform: translateX(-3px);
+    background: var(--bg-hover);
+    border-color: var(--border);
 }
 
 .history-item.active {
-    background-color: var(--primary-light);
-    color: var(--white);
-    border-color: var(--primary-color);
+    background: var(--accent-soft);
+    border-color: #cfe0fd;
+}
+
+.session-body {
+    flex: 1;
+    min-width: 0;
 }
 
 .session-info {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 3px;
+    min-width: 0;
 }
 
 .session-title {
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 13px;
+    font-weight: 550;
+    color: var(--text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -102,34 +102,37 @@
 .session-meta {
     display: flex;
     justify-content: space-between;
-    font-size: 0.75rem;
-    color: var(--text-light);
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-faint);
 }
 
-.history-item.active .session-meta {
-    color: rgba(255, 255, 255, 0.8);
-}
-
-.session-body {
-    flex: 1;
+.history-item.active .session-title {
+    color: var(--accent);
 }
 
 .history-delete-btn {
-    background: none;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
     border: none;
-    color: var(--text-light);
+    border-radius: var(--radius-sm);
+    color: var(--text-faint);
     cursor: pointer;
-    padding: 8px;
-    border-radius: 10px;
+    opacity: 0;
     transition: var(--transition);
 }
 
-.history-delete-btn:hover {
-    background-color: rgba(255, 107, 107, 0.1);
-    color: #ff6b6b;
+.history-item:hover .history-delete-btn,
+.history-item.active .history-delete-btn {
+    opacity: 1;
 }
 
-.history-item.active .history-delete-btn {
-    color: var(--white);
-    background-color: rgba(255, 255, 255, 0.15);
+.history-delete-btn:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
 }

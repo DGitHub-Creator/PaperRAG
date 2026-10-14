@@ -1,28 +1,38 @@
 <template>
-  <div class="settings-panel">
-    <div class="settings-header">
-      <h2><i class="fas fa-cog"></i> {{ $t("settings.title") }}</h2>
-      <p>{{ $t("settings.desc") }}</p>
+  <div class="page-inner">
+    <div class="page-header">
+      <div class="ph-text">
+        <h2><Icon name="sliders" :size="19" />{{ $t("settings.title") }}</h2>
+        <p>{{ $t("settings.desc") }}</p>
+      </div>
+      <div class="ph-actions">
+        <button class="btn-secondary" @click="reload"><Icon name="refresh" :size="14" />{{ $t("settings.refresh") }}</button>
+      </div>
     </div>
 
-    <div class="upload-section">
-      <h3><i class="fas fa-upload"></i> {{ $t("settings.upload_title") }}</h3>
+    <section class="upload-section">
+      <h3><Icon name="upload" :size="16" />{{ $t("settings.upload_title") }}</h3>
       <div class="upload-area">
         <input type="file" ref="fileInputRef" @change="onFileSelect" accept=".pdf,.doc,.docx,.xls,.xlsx" style="display:none" />
-        <button @click="fileInputRef?.click()" class="upload-btn"><i class="fas fa-cloud-upload-alt"></i> {{ $t("settings.select_file") }}</button>
+        <button @click="fileInputRef?.click()" class="upload-btn"><Icon name="upload" :size="15" />{{ $t("settings.select_file") }}</button>
         <div v-if="selectedFile" class="selected-file">
-          <i class="fas fa-file"></i> {{ selectedFile.name }}
-          <button @click="upload" class="btn-primary" :disabled="isUploading"><i class="fas fa-upload"></i> {{ isUploading ? $t('settings.uploading') : $t('settings.start_upload') }}</button>
+          <Icon name="file" :size="17" />
+          <span>{{ selectedFile.name }}</span>
+          <button @click="upload" class="btn-primary" :disabled="isUploading">
+            <span v-if="isUploading" class="spinner"></span>
+            <Icon v-else name="upload" :size="14" />
+            {{ isUploading ? $t("settings.uploading") : $t("settings.start_upload") }}
+          </button>
         </div>
         <div v-if="uploadSteps.length" class="upload-progress" :class="{ collapsed: uploadCollapsed }">
           <button type="button" class="upload-progress-header" @click="uploadCollapsed = !uploadCollapsed">
             <span class="upload-message">{{ uploadText }}</span>
-            <span class="upload-toggle">{{ uploadCollapsed ? $t('settings.expand') : $t('settings.collapse') }}</span>
+            <span class="upload-toggle">{{ uploadCollapsed ? $t("settings.expand") : $t("settings.collapse") }}</span>
           </button>
           <div v-show="!uploadCollapsed" class="upload-step-list">
             <div v-for="step in uploadSteps" :key="step.key" class="upload-step" :class="`upload-step-${step.status}`">
               <div class="upload-step-header">
-                <span class="upload-step-label">{{ stepLabel(step, 'upload_steps') }}</span>
+                <span class="upload-step-label">{{ stepLabel(step, "upload_steps") }}</span>
                 <span class="upload-step-percent">{{ step.percent }}%</span>
               </div>
               <div class="upload-step-bar"><div class="upload-step-fill" :style="{ width: step.percent + '%' }"></div></div>
@@ -31,19 +41,21 @@
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="documents-section">
-      <h3><i class="fas fa-list"></i> {{ $t("settings.documents_title") }}</h3>
-      <button @click="reload" class="btn-secondary"><i class="fas fa-sync"></i> {{ $t("settings.refresh") }}</button>
-      <div v-if="isLoading" class="loading-indicator">{{ $t("app.loading") }}</div>
-      <div v-else-if="!documents.length" class="empty-documents"><i class="fas fa-inbox"></i><p>{{ $t("settings.empty_documents") }}</p></div>
+    <section class="documents-section">
+      <h3><Icon name="database" :size="16" />{{ $t("settings.documents_title") }}</h3>
+      <div v-if="isLoading" class="loading-indicator"><span class="spinner"></span></div>
+      <div v-else-if="!documents.length" class="empty-documents">
+        <Icon name="inbox" :size="30" />
+        <p>{{ $t("settings.empty_documents") }}</p>
+      </div>
       <div v-else class="documents-list">
         <div v-for="doc in documents" :key="doc.filename" class="document-item" :class="{ deleting: deleteJobs[doc.filename]?.status === 'running' }">
           <div class="document-main">
             <div class="document-row">
               <div class="document-info">
-                <div class="document-icon"><i :class="fileIcon(doc.file_type)"></i></div>
+                <div class="document-icon" :class="`tone-${fileTone(doc.file_type)}`">{{ doc.file_type }}</div>
                 <div class="document-details">
                   <div class="document-name">{{ doc.filename }}</div>
                   <div class="document-meta">
@@ -53,7 +65,7 @@
                 </div>
               </div>
               <button @click="confirmDelete(doc.filename)" class="btn-danger" :disabled="isDeleting(doc.filename)" :title="$t('settings.delete')">
-                <i :class="deleteIcon(doc.filename)"></i>
+                <Icon :name="deleteIcon(doc.filename)" :size="14" />
               </button>
             </div>
             <div v-if="deleteJobs[doc.filename]" class="upload-progress delete-progress" :class="{ collapsed: deleteJobs[doc.filename].collapsed }">
@@ -64,7 +76,7 @@
               <div v-show="!deleteJobs[doc.filename].collapsed" class="upload-step-list">
                 <div v-for="step in deleteJobs[doc.filename].steps" :key="step.key" class="upload-step" :class="`upload-step-${step.status}`">
                   <div class="upload-step-header">
-                    <span class="upload-step-label">{{ stepLabel(step, 'delete_steps') }}</span>
+                    <span class="upload-step-label">{{ stepLabel(step, "delete_steps") }}</span>
                     <span class="upload-step-percent">{{ step.percent }}%</span>
                   </div>
                   <div class="upload-step-bar"><div class="upload-step-fill" :style="{ width: step.percent + '%' }"></div></div>
@@ -75,15 +87,16 @@
           </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
+import Icon from "../components/Icon.vue"
 import { useDocuments } from "../composables/useDocuments"
 import type { StepView } from "../composables/useDocuments"
-import { fileIcon } from "../utils/fileIcon"
+import { fileTone } from "../utils/fileIcon"
 import { alertDialog, confirmDialog } from "../utils/dialog"
 import { describeError } from "../utils/errors"
 import { t } from "../i18n"
@@ -126,9 +139,9 @@ function isDeleting(filename: string): boolean {
 
 function deleteIcon(filename: string): string {
   const status = deleteJobs[filename]?.status
-  if (status === "running") return "fas fa-spinner fa-spin"
-  if (status === "completed") return "fas fa-check"
-  return "fas fa-trash"
+  if (status === "running") return "refresh"
+  if (status === "completed") return "check"
+  return "trash"
 }
 
 onMounted(() => { void reload() })

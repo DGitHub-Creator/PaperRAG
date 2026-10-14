@@ -1,10 +1,11 @@
-// 从 services/api.ts 迁出：图标类名是渲染细节，不是"与后端对话"的一部分。
-const ICONS: Record<string, string> = {
-  PDF: "fas fa-file-pdf",
-  Word: "fas fa-file-word",
-  Excel: "fas fa-file-excel",
+// 文件类型 → 展示色调（图标资源在 components/Icon.vue，这里只管类型语义）。
+// As-Is：后端 file_type 实测是 PDF / Word / Excel 三种字面量，未知类型退回 other。
+const TONES: Record<string, string> = {
+  PDF: "pdf",
+  Word: "word",
+  Excel: "excel",
 }
 
-export function fileIcon(fileType: string): string {
-  return ICONS[fileType] || "fas fa-file"
+export function fileTone(fileType: string): string {
+  return TONES[fileType] || "other"
 }

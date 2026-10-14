@@ -1,15 +1,33 @@
 <template>
   <div class="chat-area">
     <header class="chat-header">
-      <div class="header-info"><div class="status-dot"></div><span>{{ $t("chat.online") }}</span></div>
-      <div class="header-actions"><button class="icon-btn" :title="$t('chat.more')"><i class="fas fa-ellipsis-h"></i></button></div>
+      <div class="header-info">
+        <div class="status-dot" :class="isConnected ? 'on' : 'off'"></div>
+        <span>{{ isConnected ? $t("chat.online") : $t("chat.offline") }}</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" :title="$t('nav.new_chat')" @click="newChat">
+          <Icon name="plus" :size="15" />
+        </button>
+        <button class="icon-btn" :title="$t('nav.clear_chat')" @click="handleClear">
+          <Icon name="trash" :size="15" />
+        </button>
+        <RouterLink class="icon-btn" :title="$t('history.title')" :to="{ name: 'history' }">
+          <Icon name="clock" :size="15" />
+        </RouterLink>
+      </div>
     </header>
 
     <div ref="chatContainer" class="chat-container">
       <div v-if="!messages.length" class="welcome-screen">
-        <div class="big-avatar">🐱</div>
+        <div class="big-avatar">R</div>
         <h3>{{ $t("chat.welcome_title") }}</h3>
         <p>{{ $t("chat.welcome_desc") }}</p>
+        <div class="welcome-suggestions">
+          <button v-for="key in suggestions" :key="key" class="suggestion" @click="useSuggestion($t(key))">
+            {{ $t(key) }}
+          </button>
+        </div>
       </div>
 
       <div v-for="(msg, i) in messages" :key="i" :class="['message', msg.isUser ? 'user-message' : 'bot-message']">
@@ -45,7 +63,9 @@
 
     <div class="input-area-wrapper">
       <div class="input-area">
-        <button class="attach-btn"><i class="fas fa-paperclip"></i></button>
+        <button class="attach-btn" :title="$t('chat.attach_hint')">
+          <Icon name="paperclip" :size="16" />
+        </button>
         <textarea
           v-model="userInput"
           @keydown="handleKeyDown"
@@ -57,10 +77,10 @@
           ref="textareaRef"
         ></textarea>
         <button v-if="isLoading" @click="stop" class="send-btn stop-btn" :title="$t('chat.stop')">
-          <i class="fas fa-stop"></i>
+          <Icon name="stop" :size="15" />
         </button>
         <button v-else @click="handleSend" class="send-btn" :title="$t('chat.send')">
-          <i class="fas fa-paper-plane"></i>
+          <Icon name="send" :size="16" />
         </button>
       </div>
       <div class="footer-text">{{ $t("chat.footer_hint") }}</div>
@@ -70,17 +90,24 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from "vue"
-import RagTracePanel from "./RagTracePanel.vue"
-import CitationChips from "./CitationChips.vue"
+import RagTracePanel from "../components/RagTracePanel.vue"
+import CitationChips from "../components/CitationChips.vue"
+import Icon from "../components/Icon.vue"
 import { useChat } from "../composables/useChat"
+import { useWebSocket } from "../composables/useWebSocket"
 import { escapeHtml, parseMarkdown } from "../utils/markdown"
+import { confirmDialog } from "../utils/dialog"
+import { t } from "../i18n"
 
-const { messages, isLoading, revision, send, stop } = useChat()
+const { messages, isLoading, revision, send, stop, newChat, clearChat } = useChat()
+const { isConnected } = useWebSocket()
 
 const userInput = ref("")
 const isComposing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const chatContainer = ref<HTMLElement | null>(null)
+
+const suggestions = ["chat.suggestion_1", "chat.suggestion_2", "chat.suggestion_3"]
 
 // 状态层只递增 revision，"滚到底"这件事只有持有容器元素的组件说得清
 let scrollFrame = 0
@@ -110,6 +137,15 @@ function handleSend(): void {
   if (!text || isLoading.value || isComposing.value) return
   userInput.value = ""
   void send(text)
+}
+
+function useSuggestion(text: string): void {
+  userInput.value = text
+  handleSend()
+}
+
+function handleClear(): void {
+  if (confirmDialog(t("nav.clear_confirm"))) clearChat()
 }
 
 function autoResize(e: Event): void {
