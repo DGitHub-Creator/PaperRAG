@@ -28,6 +28,10 @@ type fakeStore struct {
 	profileCalls    int
 	insertCalls     int
 	lastInsert      db.InsertUserParams
+	// 改密码路径的调用记录：新哈希落进 users，同时留一份给用例断言
+	// （"重名 409 先于邀请码 403"那种顺序性质靠计数，改密码靠 lastPasswordHash 验真写进去了）。
+	updatePasswordCalls int
+	lastPasswordHash    string
 }
 
 func newFakeStore() *fakeStore {
@@ -101,6 +105,20 @@ func (f *fakeStore) InsertUser(_ context.Context, arg db.InsertUserParams) (db.I
 		Role:      arg.Role,
 		CreatedAt: arg.CreatedAt,
 	}, nil
+}
+
+func (f *fakeStore) UpdateUserPasswordByUsername(_ context.Context, arg db.UpdateUserPasswordByUsernameParams) (db.UpdateUserPasswordByUsernameRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updatePasswordCalls++
+	f.lastPasswordHash = arg.PasswordHash
+	user, ok := f.users[arg.Username]
+	if !ok {
+		return db.UpdateUserPasswordByUsernameRow{}, pgx.ErrNoRows
+	}
+	user.PasswordHash = arg.PasswordHash
+	f.users[arg.Username] = user
+	return db.UpdateUserPasswordByUsernameRow{ID: user.ID, Username: user.Username, Role: user.Role}, nil
 }
 
 func testService(store UserStore) *Service {
@@ -526,7 +544,7 @@ func TestMePathNeverReadsPasswordHash(t *testing.T) {
 
 // ── 测试辅助 ──────────────────────────────────────────────────────────
 
-// brokenStore 的三个方法一律返回同一个错误，用来验证"库故障"不会被折叠成业务失败。
+// brokenStore 的四个方法一律返回同一个错误，用来验证"库故障"不会被折叠成业务失败。
 type brokenStore struct{ err error }
 
 func (b *brokenStore) GetUserByUsername(context.Context, string) (db.User, error) {
@@ -539,6 +557,10 @@ func (b *brokenStore) GetProfileByUsername(context.Context, string) (db.GetProfi
 
 func (b *brokenStore) InsertUser(context.Context, db.InsertUserParams) (db.InsertUserRow, error) {
 	return db.InsertUserRow{}, b.err
+}
+
+func (b *brokenStore) UpdateUserPasswordByUsername(context.Context, db.UpdateUserPasswordByUsernameParams) (db.UpdateUserPasswordByUsernameRow, error) {
+	return db.UpdateUserPasswordByUsernameRow{}, b.err
 }
 
 type recordCapture struct {

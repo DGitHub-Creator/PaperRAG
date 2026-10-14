@@ -17,7 +17,7 @@ info:
   version: 0.1.0
   description: |
     Go (`go-api`) 是唯一面向浏览器的入口（02 §0 律 1、X2）。
-    本契约覆盖 13 条前端在用接口 + 5 条探针接口（共 18 个操作）；其余 12 条 As-Is
+    本契约覆盖 16 条前端在用接口 + 5 条探针接口（共 21 个操作）；其余 12 条 As-Is
     接口无人调用，处置见 03-gap-analysis §5，**不在本契约内**——Go 不实现它们，
     直到 P1 有需求。
   x-decisions:
@@ -44,7 +44,7 @@ info:
 
 servers:
   - url: /
-    description: nginx 同源；dev 下由 Vite 代理到 8000（vite.config.js:10）
+    description: nginx 同源；dev 下由 Vite 代理到 8080（go-api，vite.config.js:13；2026-10-13 前指向 8000/Python）
 
 # 默认全部需要 Bearer；公开接口逐个用 `security: []` 覆盖（register/login/探针）。
 # check_contracts.py 依赖这个约定判定「需鉴权却没声明 401」。
@@ -124,6 +124,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/auth/password:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      summary: 改密码（校验旧口令后写入新哈希）
+      description: |
+        2026-10-14 新开的 **Go 独占**面：As-Is 的 Python 侧没有这个端点，
+        所以这里没有需要对齐的旧行为。两处口径是新的、且写进了 Go 单测：
+        ①**旧口令错回 400 而不是 401**——前端把 401 当"会话过期"来收尾（清 token 跳登录页），
+        而"旧口令打错了"不该把用户踢出登录态；
+        ②新口令与 register 同一套规则（码点长度 + 至少两类字符），不 strip。
+        成功体只有 `{"status":"ok"}`，**不重新签发 token**（旧 token 在 exp 前仍有效，
+        这与 As-Is 一致：令牌按 exp 失效，不做改密即吊销）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOkResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/preferences:
+    get:
+      tags: [auth]
+      operationId: getPreferences
+      summary: 读当前用户的偏好（设置页的「偏好设置」「外观·主题」）
+      description: |
+        库中没有行时回默认值 `{theme: system, start_view: chat}`，**不是 404**：
+        "还没设置过"与"设置读不出来"是两回事，后者才该报错。
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [auth]
+      operationId: putPreferences
+      summary: 整行覆盖当前用户偏好（upsert）
+      description: |
+        两个字段都是闭集/短 slug，所以是整行覆盖而不是部分更新。
+        `theme` 是闭集（与迁移的 CHECK、Go 常量同值）；`start_view` 只校验**形状**
+        （小写 slug），不把前端的路由名抄进 Go——不认识的名字由前端在跳转时回退到 chat。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPreferences"
+      responses:
+        "200":
+          description: 成功（回显实际落库的值）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -599,6 +673,41 @@ components:
         role:
           allOf:
             - $ref: "#/components/schemas/Role"
+
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+        new_password:
+          type: string
+
+    StatusOkResponse:
+      type: object
+      description: 无实体可回的操作的统一成功体（当前只有改密码）
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: ["ok"]
+
+    UserPreferences:
+      type: object
+      description: |
+        设置页的用户自助偏好。`theme` 是闭集，三处同值：迁移 000003 的 CHECK、
+        Go 的 auth.Theme* 常量、这里的 enum——改一处必须同改另两处。
+        `start_view` 只锁**形状**（小写 slug），具体路由名归前端（router/index.ts）。
+      required: [theme, start_view]
+      properties:
+        theme:
+          type: string
+          enum: ["light", "dark", "system"]
+          default: system
+        start_view:
+          type: string
+          pattern: "^[a-z][a-z0-9_-]{0,31}$"
+          default: chat
 
     ChatRequest:
       type: object

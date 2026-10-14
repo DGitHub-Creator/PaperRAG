@@ -9,6 +9,7 @@
 | table | go | python | transition | note |
 | --- | --- | --- | --- | --- |
 | `users` | W | R | - | Python 只校验服务身份，不改业务主体 |
+| `user_preferences` | W | X | - | 设置页的用户自助面（theme / start_view），只读自己的行；与 `users` 同属 Go 的账号域 |
 | `workspaces` | W | R | - | 同上 |
 | `workspace_members` | W | R | - | 同上 |
 | `chat_sessions` | W | X | - | 迁移后 Python 不再持久化对话 |

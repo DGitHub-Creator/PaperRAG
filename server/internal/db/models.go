@@ -101,6 +101,14 @@ type User struct {
 	CreatedAt    pgtype.Timestamp
 }
 
+type UserPreference struct {
+	UserID    int32
+	Theme     string
+	StartView string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type Workspace struct {
 	ID        int32
 	Name      string

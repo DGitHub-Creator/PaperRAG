@@ -79,7 +79,8 @@ func main() {
 	logger.Info("shutdown_complete")
 }
 
-// mountAuthRoutes 挂 P0-6 的三条认证路由。路径逐字取自 contracts/openapi.yaml。
+// mountAuthRoutes 挂认证与用户自助路由（P0-6 的三条 + 设置页的改密码/偏好）。
+// 路径逐字取自 contracts/openapi.yaml。
 //
 // 挂在这里而不是 httpapi.NewRouter 里，是因为 auth 要用 httpapi 的信封写入器：
 // 若 httpapi 反过来 import auth 就成了环（详见 httpapi.NewRouter 的注释）。
@@ -96,9 +97,17 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 		cfg.MinPasswordLength,
 		logger,
 	)
+	// 偏好面单独注入：*db.Queries 同时满足 UserStore 与 PrefsStore，池不可用时给 nil，
+	// 偏好路由随即回 500（而不是让 go-api 起不来——认证面本来就不依赖它）。
+	if pool != nil {
+		svc.Prefs = db.New(pool)
+	}
 	router.Post("/api/v1/auth/register", auth.RegisterHandler(svc))
 	router.Post("/api/v1/auth/login", auth.LoginHandler(svc))
 	router.Get("/api/v1/auth/me", auth.MeHandler(svc))
+	router.Post("/api/v1/auth/password", auth.ChangePasswordHandler(svc))
+	router.Get("/api/v1/me/preferences", auth.GetPreferencesHandler(svc))
+	router.Put("/api/v1/me/preferences", auth.PutPreferencesHandler(svc))
 }
 
 // upstreamProxy 建到 Python 上游的反向代理（14 §19 铁律 2）。地址非法或为空时返回 nil，
@@ -153,6 +162,10 @@ func (u unavailableStore) GetProfileByUsername(context.Context, string) (db.GetP
 
 func (u unavailableStore) InsertUser(context.Context, db.InsertUserParams) (db.InsertUserRow, error) {
 	return db.InsertUserRow{}, errors.New(u.reason)
+}
+
+func (u unavailableStore) UpdateUserPasswordByUsername(context.Context, db.UpdateUserPasswordByUsernameParams) (db.UpdateUserPasswordByUsernameRow, error) {
+	return db.UpdateUserPasswordByUsernameRow{}, errors.New(u.reason)
 }
 
 func databaseChecks(pool *pgxpool.Pool, poolErr error, cfg config.Config) []httpapi.Check {

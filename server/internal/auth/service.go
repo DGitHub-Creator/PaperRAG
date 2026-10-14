@@ -26,6 +26,8 @@ type UserStore interface {
 	GetUserByUsername(ctx context.Context, username string) (db.User, error)
 	GetProfileByUsername(ctx context.Context, username string) (db.GetProfileByUsernameRow, error)
 	InsertUser(ctx context.Context, arg db.InsertUserParams) (db.InsertUserRow, error)
+	// UpdateUserPasswordByUsername 供改密码路径使用（P0-8 后的设置页）。入参已是哈希串。
+	UpdateUserPasswordByUsername(ctx context.Context, arg db.UpdateUserPasswordByUsernameParams) (db.UpdateUserPasswordByUsernameRow, error)
 }
 
 // pgUniqueViolation 是 PostgreSQL 的唯一约束冲突码。用户名重复靠它翻译成 409。
@@ -48,6 +50,10 @@ var (
 	ErrAdminCodeMismatch  = errors.New("管理员邀请码错误")
 	// ErrUnauthenticated 对应 me 的 401：令牌层任何失败与"用户已不在库里"都折叠成它。
 	ErrUnauthenticated = errors.New("令牌无效或已过期")
+	// ErrWrongPassword 对应改密码的 400：旧口令对不上。
+	// **刻意不是 401**——前端把 401 当"会话过期"来收尾（清 token 并跳登录页），
+	// 而"旧口令打错了"不该把用户踢出登录态。语义上它是请求体的校验失败，不是身份失效。
+	ErrWrongPassword = errors.New("当前密码不正确")
 )
 
 // PasswordTooShortError 带上配置值，因为生产的文案里含这个数字：
@@ -83,6 +89,9 @@ type AuthResult struct {
 
 // Identity 是 me 的成功产物，对应契约的 CurrentUserResponse（只有两项）。
 type Identity struct {
+	// ID 是 users.id。响应里**不带**它（契约只有 username/role），
+	// 但依赖用户的其它面（如偏好读写）需要它来定位行，所以放在这里共享同一次查库。
+	ID       int32
 	Username string
 	// Role 一律取自数据库行，不采信令牌里的 role 声明——生产侧
 	// get_user_from_bearer_token 的注释写明了理由：避免降级/改名后旧令牌继续持有旧权限。
@@ -101,7 +110,10 @@ type Service struct {
 	// MinPasswordLength 为 0 时关闭长度与字符类别两条校验（生产侧同款开关：
 	// `if MIN_PASSWORD_LENGTH > 0 and ...`）。
 	MinPasswordLength int
-	Logger            *slog.Logger
+	// Prefs 是偏好读写面（见 preferences.go）。为 nil 时偏好路由回 500：
+	// 单测与不面向浏览器的进程不需要它，故不放进 NewService 的参数表。
+	Prefs  PrefsStore
+	Logger *slog.Logger
 }
 
 // NewService 组装 Service 并给零值兜底，省得每个调用方都写一遍 if nil。
@@ -254,7 +266,60 @@ func (s *Service) CurrentUser(ctx context.Context, bearerToken string) (*Identit
 		}
 		return nil, fmt.Errorf("查询用户身份失败: %w", err)
 	}
-	return &Identity{Username: profile.Username, Role: profile.Role}, nil
+	return &Identity{ID: profile.ID, Username: profile.Username, Role: profile.Role}, nil
+}
+
+// ChangePassword 校验旧口令后写入新口令的哈希（设置页的「改密码」）。
+//
+// 与 register 的一处刻意差别：新口令**不 strip**。register 会 strip 是生产侧的现状
+// （Go 照抄是为了两侧同一份凭据结论相同），而本端点没有需要对齐的 Python 面——
+// 口令是不透明串，静默去掉首尾空格等于替用户改密码。
+//
+// 旧口令错回 ErrWrongPassword（400），**不是 401**：前端把 401 当"会话过期"收尾，
+// 而"旧口令打错了"不该把用户踢出登录态（理由见 service.go 顶部那条注释）。
+func (s *Service) ChangePassword(ctx context.Context, bearerToken, oldPassword, newPassword string) error {
+	identity, err := s.CurrentUser(ctx, bearerToken)
+	if err != nil {
+		return err
+	}
+
+	user, err := s.Store.GetUserByUsername(ctx, identity.Username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrUnauthenticated
+		}
+		return fmt.Errorf("查询用户失败: %w", err)
+	}
+	if family := HashFamily(user.PasswordHash); family != FamilyPBKDF2 {
+		s.Logger.Warn("这行的 password_hash 不是 pbkdf2_sha256 族，Go 验不了旧口令；需走管理侧重置",
+			"username", user.Username, "family", family)
+	}
+	if !VerifyPassword(oldPassword, user.PasswordHash) {
+		s.Logger.Info("改密码失败：当前密码不正确", "username", user.Username)
+		return ErrWrongPassword
+	}
+
+	// 新口令走与 register 同一套规则（长度按码点 + 至少两类字符），开关同为 MinPasswordLength。
+	// ⚠️ 长度按码点，不是字节——理由与 register 里那条注释相同。
+	if s.MinPasswordLength > 0 && utf8.RuneCountInString(newPassword) < s.MinPasswordLength {
+		return PasswordTooShortError{Min: s.MinPasswordLength}
+	}
+	if s.MinPasswordLength > 0 && passwordCategories(newPassword) < 2 {
+		return ErrPasswordTooSimple
+	}
+
+	hash, err := HashPassword(newPassword, s.PBKDF2Rounds)
+	if err != nil {
+		return err
+	}
+	if _, err := s.Store.UpdateUserPasswordByUsername(ctx, db.UpdateUserPasswordByUsernameParams{
+		Username:     user.Username,
+		PasswordHash: hash,
+	}); err != nil {
+		return fmt.Errorf("写入新口令失败: %w", err)
+	}
+	s.Logger.Info("密码已更新", "username", user.Username)
+	return nil
 }
 
 // resolveRole 对齐 core/auth.py:resolve_role。

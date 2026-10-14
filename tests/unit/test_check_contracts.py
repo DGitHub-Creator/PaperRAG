@@ -58,8 +58,8 @@ def test_repo_contracts_are_self_consistent(monkeypatch):
     cc.check_acl(errors)
     cc.check_surface(errors, surface)
     assert errors == []
-    # 13 条前端在用 + 5 条探针（01 §3 与 X3 的口径）
-    assert len(surface) == 18
+    # 16 条前端在用 + 5 条探针（01 §3 与 X3 的口径；2026-10-14 新增改密码与偏好两条前端在用的面，13→16）
+    assert len(surface) == 21
 
 
 def test_dangling_ref_is_caught(contracts):

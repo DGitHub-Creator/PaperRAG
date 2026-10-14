@@ -25,6 +25,11 @@ const (
 	detailInvalidToken        = "无效或过期的认证令牌"
 	detailNotAuthenticated    = "Not authenticated"
 	detailInternalError       = "Internal server error"
+	// detailWrongPassword 没有 Python 对照（改密码是新开的 Go 面），文案与其余 400 一路用英文。
+	detailWrongPassword = "Current password is incorrect"
+	// 偏好的两条 400 同样没有 Python 对照；取值域在契约的 enum 里（openapi.yaml）。
+	detailInvalidTheme     = "theme must be one of: light, dark, system"
+	detailInvalidStartView = "start_view must be a lowercase slug"
 )
 
 // 请求体校验的文案。这几条不是猜的：2026-10-12 用**生产侧的** handler
@@ -156,6 +161,39 @@ func MeHandler(s *Service) http.HandlerFunc {
 	}
 }
 
+// ChangePasswordHandler 处理 POST /api/v1/auth/password（设置页的「改密码」）。
+// 先验令牌再读请求体：令牌缺失时不该因为"body 也没带"而先报 400，
+// 那会让"到底该重新登录还是该改请求"分不清。
+func ChangePasswordHandler(s *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerToken(r.Header.Get("Authorization"))
+		if !ok {
+			writeUnauthorized(w, detailNotAuthenticated)
+			return
+		}
+		fields, problem := decodeJSONObject(r)
+		if problem != "" {
+			httpapi.WriteError(w, http.StatusBadRequest, problem)
+			return
+		}
+		var problems []string
+		oldPassword, _, p := stringField(fields, "old_password", true)
+		problems = appendIf(problems, p)
+		newPassword, _, p := stringField(fields, "new_password", true)
+		problems = appendIf(problems, p)
+		if len(problems) > 0 {
+			httpapi.WriteError(w, http.StatusBadRequest, strings.Join(problems, "; "))
+			return
+		}
+
+		if err := s.ChangePassword(r.Context(), token, oldPassword, newPassword); err != nil {
+			writeChangePasswordError(w, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
 // bearerToken 从 Authorization 头取出令牌。语义对齐 Starlette 的
 // get_authorization_scheme_param：按**第一个**空格切分，方案名大小写不敏感，
 // 且 "Bearer"（后面什么都没有）算方案匹配、令牌为空串——空串随后会在
@@ -200,6 +238,26 @@ func writeServiceError(w http.ResponseWriter, err error, minPasswordLength int) 
 		writeUnauthorized(w, detailInvalidToken)
 	default:
 		// 库连接失败之类：对外一句话，细节只进日志（生产侧 unhandled_error_handler 同款文案）。
+		httpapi.WriteError(w, http.StatusInternalServerError, detailInternalError)
+	}
+}
+
+// writeChangePasswordError 把改密码的失败映射成 HTTP。与 writeServiceError 分开是刻意的：
+// 那张表里的 409/403 属于注册语义，改密码路径永远不会遇到，混在一起会让后来的人
+// 以为改密码可能回 403。
+func writeChangePasswordError(w http.ResponseWriter, err error) {
+	var tooShort PasswordTooShortError
+	switch {
+	case errors.Is(err, ErrWrongPassword):
+		httpapi.WriteError(w, http.StatusBadRequest, detailWrongPassword)
+	case errors.As(err, &tooShort):
+		httpapi.WriteError(w, http.StatusBadRequest,
+			fmt.Sprintf("Password must be at least %d characters", tooShort.Min))
+	case errors.Is(err, ErrPasswordTooSimple):
+		httpapi.WriteError(w, http.StatusBadRequest, detailPasswordTooSimple)
+	case errors.Is(err, ErrUnauthenticated):
+		writeUnauthorized(w, detailInvalidToken)
+	default:
 		httpapi.WriteError(w, http.StatusInternalServerError, detailInternalError)
 	}
 }

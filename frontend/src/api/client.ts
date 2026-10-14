@@ -5,6 +5,7 @@ import { openStream, request, uploadFile } from "./http"
 import { readSse } from "./sse"
 import type {
   AuthResponse,
+  ChangePasswordRequest,
   ChatRequest,
   CurrentUserResponse,
   DocumentListResponse,
@@ -15,7 +16,9 @@ import type {
   SessionDeleteResponse,
   SessionListResponse,
   SessionMessagesResponse,
+  StatusOkResponse,
   StreamEvent,
+  UserPreferences,
 } from "./types"
 
 export function register(input: RegisterRequest): Promise<AuthResponse> {
@@ -28,6 +31,19 @@ export function login(input: LoginRequest): Promise<AuthResponse> {
 
 export function me(): Promise<CurrentUserResponse> {
   return request<CurrentUserResponse>("/auth/me")
+}
+
+/** 改密码：成功只回 {"status":"ok"}，不重新签发 token（旧 token 在 exp 前仍有效） */
+export function changePassword(input: ChangePasswordRequest): Promise<StatusOkResponse> {
+  return request<StatusOkResponse>("/auth/password", { method: "POST", body: input })
+}
+
+export function getPreferences(): Promise<UserPreferences> {
+  return request<UserPreferences>("/me/preferences")
+}
+
+export function putPreferences(input: UserPreferences): Promise<UserPreferences> {
+  return request<UserPreferences>("/me/preferences", { method: "PUT", body: input })
 }
 
 export function listSessions(): Promise<SessionListResponse> {

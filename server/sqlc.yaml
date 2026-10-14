@@ -16,6 +16,7 @@ sql:
     schema:
       - "migrations/000001_baseline.up.sql"
       - "migrations/000002_ai_executions.up.sql"
+      - "migrations/000003_user_preferences.up.sql"
     queries:
       - "sql/queries"
     gen:

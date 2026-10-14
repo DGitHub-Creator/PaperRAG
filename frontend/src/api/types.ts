@@ -34,6 +34,25 @@ export interface CurrentUserResponse {
   role: Role
 }
 
+/** 改密码的请求体；旧口令错回 400（不是 401，见 openapi.yaml 的 changePassword 说明） */
+export interface ChangePasswordRequest {
+  old_password: string
+  new_password: string
+}
+
+/** 无实体可回的操作的统一成功体（当前只有改密码） */
+export interface StatusOkResponse {
+  status: "ok"
+}
+
+export type Theme = "light" | "dark" | "system"
+
+/** 设置页的用户自助偏好；`start_view` 具体路由名归前端 router 表 */
+export interface UserPreferences {
+  theme: Theme
+  start_view: string
+}
+
 export interface ChatRequest {
   message: string
   session_id?: string | null
