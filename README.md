@@ -45,17 +45,21 @@
 | Go 服务骨架（health/ready、错误信封、trace、panic 兜底） | 部分实现 | P0-1：`gofmt`/`vet`/`test` 本机绿（16 项）；**未接真库、未进 compose** |
 | Go 数据访问层（sqlc 生成物入库 + 连接池） | 部分实现 | P0-3 done（mock）：schema 源已从临时参照改指 P0-2 真库基线 `server/migrations/000001_baseline.up.sql`，10 张表全部生成 model；**仍未接进 compose**，池子只在有 `DATABASE_URL` 时启动 |
 | ai-core 内部执行面（`/internal/v1/ai/*` 七条路径） | 部分实现 | P0-7：Python 侧 29 条 HTTP 级用例 + 幂等/取消/超时语义；`ai_executions` 表已有迁移文件 `server/migrations/000002_ai_executions.{up,down}.sql`（17 列，逐条回指 `executions.py`）并登记进 sqlc，但**未在真 PG 上执行过**；容器级链路仍未实现 |
+| 学术结构识别（定理/证明/公式/引文/术语） | 部分实现 | 四个提取器**都接在分块期**（`theorem_detector` / `citation_extractor` / `glossary_extractor` 由 `document_loader` 调用，`citation_extractor` 还被 `rag_utils` 用），但 `backend/vectordb/milvus_writer.py` 写入的字段里没有这些列 → **入库即丢弃**，检索层拿不到 |
 | 学术文档解析（PDF/Word/Excel、清洗、分块） | 部分实现 | 默认 PDF 结构分块只产叶级块，缺层级父块（`document_loader.py:_split_structural`） |
-| 学术结构识别（定理/证明/公式/引文/术语） | 部分实现 | 提取器在分块期生效，但元数据未写入检索层（`milvus_writer.py` 字段映射不含这些列） |
 | Auto-merging（父级分块合并） | 部分实现 | 默认 PDF 路径不产父块 → 合并数恒为 0 |
 | 文档上传与任务进度 | 部分实现 | 任务状态默认存**进程内存**，重启即丢（`USE_REDIS_JOB_MANAGER=true` 可切 Redis；根治属 P3 的 Go Frontier） |
 | Schema 基线核查（`scripts/audit_schema.py`） | 部分实现 | P0-2：三模式已落——`--check-baseline`（文件形态：非破坏 + 幂等 + down 配对）、`--verify-columns`（与快照逐列比类型/varchar 长度/NOT NULL/DEFAULT）、只读 `--live`（37 项判定单测）。`migrations/000001_baseline` 已在真库结构的临时副本上连跑两遍幂等；`000002_ai_executions` 只过了离线形态检查，未在真库执行过。剩余：时间列语义探针（要往库写）与列级比对的实跑（要重导含 `columns` 的快照） |
 | **Go 侧迁移执行器** | **未实现** | `server/migrations/` 只有**文件**，没有任何东西把它应用到库上：PATH 无 `migrate`、`server/go.mod` 无 golang-migrate 依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`。今天读这两份 up 的只有两个离线工具（`audit_schema.py` 与 sqlc）。属 P0-8，先拍 D8（谁执行 / 何时执行 / 失败怎么办） |
 | 入口路由机检（`scripts/check_nginx_routes.py`） | 已实现（判据） | X2/Y4 的判定：R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 对外 location、R4 compose 里 `ai-core` 不发布宿主端口。21 项单测。**今天对真仓库配置如实 exit 1**（R1 命中，`/api/` 还指向 Python）——切 upstream 是 P0-8 的活 |
 | PBKDF2 golden vectors（`scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json`） | 已实现（导出侧，mock 级） | X5 的输入件：10 条向量（6 正 4 负），覆盖标准 vs urlsafe base64、盐长 8/16/32、迭代数 40000/260000/310000 与 UTF-8 口令；期望值由生产 `verify_password` 现算，`--check` 防漂移。**文件不含明文口令，也不含真库 `password_hash`**（`--from-db` 只取形状统计）。Go 侧 `TestVerifyLegacyHash` 未写 → X5 仍 fail（P0-6） |
-| 公式感知检索 | **未实现** | 索引构建函数零调用点，检索分支恒返回空 → P2-2 |
-| 多模态图表检索、ML 布局分析、论文知识图谱 | **未实现** | 模块与单测存在但无调用方；图谱三张表零写入 → P2 |
-| `paper_chunks` 真相层（PG 持正文，Milvus 只存可重建索引） | **未实现** | 现在叶级正文**只在 Milvus**且 `VARCHAR(2000)` 截断 → P2-1 |
+| 公式感知检索 | **未实现（死的是入库侧，不是查询侧）** | 查询链路其实已接进混合检索（`rag_utils.py:730` 调 `_formula_search`），但建索引函数 `_build_formula_index`（`rag_utils.py:644`）**零调用点**，LSH 索引永远是空的 → 恒返回 `[]`。「函数没接」与「接了但喂不到数据」修法不同，后者要补整条数据面 → P2-2 |
+| ML 布局分析（图/表区域识别） | 部分实现 | **已接在入库链路上**（`document_loader.py:622` 调 `analyze_layout` 并给 chunk 打 `has_figure`/`has_table`）。两处折扣：外层是 `try/except Exception: pass`，失败静默；那两个标记没进 Milvus schema，检索层用不到 |
+| 多模态图表检索 | **未实现** | `backend/rag/multimodal.py` 模块与单测都在，**零调用方** → P2 |
+| 论文知识图谱 | **未实现（死表骨架）** | `paper_nodes` / `citation_edges` / `glossary_entries` 全仓只在 `backend/core/models.py` 出现，**零读零写** → `11 §8` 第 12 项（P4 展望，未定归属） |
+| **论文自动抓取与导入**（arXiv / DOI / 研究方向） | **未实现（代码零存在）** | 不是"没接通"是"没有"：`backend/` 全仓 grep `arxiv` / `doi` / `crossref` / `httpx` / `requests` 无命中（唯一 `doi` 是 `academic_cleaner.py:47` 的正文正则），入库目前只有人工上传一条路 → **P2-9**（2026-10-13 立项） |
+| 主题分类与语义书架 | **未实现** | 全仓无聚类/主题分组代码 → **P2-10**（2026-10-13 立项；必须排在 P2-1 chunk 真相层之后，否则是在 `VARCHAR(2000)` 截断副本上给不可信数据打标签） |
+| `paper_chunks` 真相层（PG 持正文，Milvus 只存可重建索引） | **未实现** | 现在叶级正文**只在 Milvus** 且被 `VARCHAR(2000)` 截断（`backend/vectordb/milvus_client.py:240`），PG 里没有对应正文表 → P2-1 |
 | 真实链路测试（chain 层）与浏览器 E2E | **未实现** | `pytest -m chain` 当前收集 0 项（exit=5）→ P0-5 / P0-9 / P1-6 |
 | Go 接管 13 条浏览器接口 | **未实现** | → P1 |
 | 多 Agent 自主探索（ResearchRun / Frontier / 报告生成） | **未实现** | → P3 |
@@ -66,6 +70,10 @@
 > [11-product-vision.md](docs/refactor/11-product-vision.md)（§10 路线、**§8 缺口清单**）。
 > **当前 V1.0 未完成**——V1.0「可信学术 RAG」要求的可信化（chunk 真相层、公式/定理检索、原文定位）尚未做，
 > 工作重心在架构轴 **P0**（骨架 + 契约 + 第一条垂直切片），P0 本身不产出产品能力。
+> **2026-10-13 起分母已含产品轴两项**：`11 §8` 第 2 项的一部分登记成 **P2-9（论文自动抓取）/ P2-10（主题分类与语义书架）**，
+> 所以完成度百分比比之前**更低**（58/394 h ≈ 14.7%）——这是把缺真实能力写进计划的诚实代价，不是进度倒退。
+> 其余 10 项缺口（比较矩阵、Gap Explorer、Research Lab、Writing、Radar、Workspace、工具层、
+> 信息增益驱动规划、双图、产品入口层）**仍在计划外**，等决策 **D5**。
 
 ## 2. 架构
 

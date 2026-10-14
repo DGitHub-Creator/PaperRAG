@@ -168,7 +168,7 @@ Milvus 保持"可重建索引"定位，Go 侧记录 `index_state`，索引失败
 
 > 对照 [11-product-vision.md](11-product-vision.md)。**P0–P3 是工程架构轴，V1.0–V4.0 是产品价值轴，两条轴的编号不得混用**（`11 §7`）。逐格映射的权威表在 `11 §7`，本节只记本路线的缺口与冲突，不复述那张表。
 
-**已覆盖**：`11 §4.1 AI 论文图书馆` 与 `§4.2 Deep Reader` 的**数据前提** → 本文 P2-1（chunk 真相层）+ P2-2（公式检索）· `11 §4.4 Research Mission` 的**执行引擎** → P3 的 ResearchRun/Frontier/Worker · `11 §4.8 Research Writing` 的雏形 → P3 的带引用报告与 `PARTIAL` · `11 §4.5` 双图 → P4 展望（`02 §8`）。P1 的窄链路对应 V2.0 的"一键科研 MVP"入口。
+**已覆盖**：`11 §4.1 AI 论文图书馆` 与 `§4.2 Deep Reader` 的**数据前提** → 本文 P2-1（chunk 真相层）+ P2-2（公式检索）· **`11 §4.1` 的"导入与主题群"本身** → **P2-9（arXiv/DOI 抓取，2026-10-13 立项）**+ **P2-10（主题分类与语义书架，同批）**，登记理由见 `11 §8` 第 2 项与其下的现查证据（这两项不是"没接通"，是代码里**零存在**）· `11 §4.4 Research Mission` 的**执行引擎** → P3 的 ResearchRun/Frontier/Worker · `11 §4.8 Research Writing` 的雏形 → P3 的带引用报告与 `PARTIAL` · `11 §4.5` 双图 → P4 展望（`02 §8`）。P1 的窄链路对应 V2.0 的"一键科研 MVP"入口。
 
 **未覆盖**：`11 §4.3 比较矩阵 / Paper Diff`、`§4.6 Gap Explorer / Hypothesis Board`、`§4.7 Research Lab`、`§4.9 Research Radar / Knowledge Diff`、`§4.10 Research Workspace`，以及五个产品入口作为一等概念、工具与技能层（MCP/skills）——全部指向 `11 §8`。另：`11 §8` 第 11 项所要求的"信息增益驱动规划"P3 也没有（P3 只有预算 + Frontier，无证据充分性/信息增益驱动的任务规划）。
 
