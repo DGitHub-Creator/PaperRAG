@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="columns" title-key="views.compare.title" desc-key="views.compare.desc">
       <button class="btn-secondary" disabled><Icon name="plus" :size="14" />{{ $t("views.compare.add_paper") }}</button>
       <button class="btn-primary" disabled><Icon name="download" :size="14" />{{ $t("views.compare.export") }}</button>

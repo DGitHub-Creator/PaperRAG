@@ -157,8 +157,8 @@
 /* ============ 页面容器 ============ */
 
 .page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
-.page-inner { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
-.page-inner.wide { max-width: 1440px; }
+/* 页宽统一 1280px（2026-10-14）：此前是 1180 / 1440 两档混用，同一站点的内容列宽不一致 */
+.page-inner { max-width: 1280px; margin: 0 auto; padding: 22px 24px 40px; }
 
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .page-header .ph-text h2 { font-size: 19px; display: flex; align-items: center; gap: 9px; }
@@ -190,6 +190,10 @@
 .notice i { margin-top: 2px; color: #b8860b; }
 .notice .notice-title { font-weight: 600; }
 .notice a { color: #8a6100; text-decoration: underline; }
+
+[data-theme="dark"] .notice { background: #2b2415; border-color: #4a3d1e; color: #e0c88a; }
+[data-theme="dark"] .notice i { color: #d0a63f; }
+[data-theme="dark"] .notice a { color: #e0bc65; }
 
 /* ============ 跨页面复用的块 ============ */
 

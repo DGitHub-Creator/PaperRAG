@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="briefcase" title-key="views.workspace.title" desc-key="views.workspace.desc">
       <button class="btn-secondary" disabled><Icon name="plus" :size="14" />{{ $t("views.workspace.new_project") }}</button>
     </PageHeader>

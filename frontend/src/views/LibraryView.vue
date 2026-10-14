@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="book" title-key="views.library.title" desc-key="views.library.desc">
       <button class="btn-secondary" @click="reload"><Icon name="refresh" :size="14" />{{ $t("settings.refresh") }}</button>
       <button class="btn-primary" disabled><Icon name="plus" :size="14" />{{ $t("views.library.add_paper") }}</button>

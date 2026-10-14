@@ -29,18 +29,28 @@ import AuthPanel from "../components/AuthPanel.vue"
 import Icon from "../components/Icon.vue"
 import { useAuth } from "../composables/useAuth"
 import { useAppSession } from "../composables/useAppSession"
+import { usePreferences } from "../composables/usePreferences"
 
 const router = useRouter()
 const route = useRoute()
 const { token } = useAuth()
 const { onSignedIn } = useAppSession()
+const { preferences, load: loadPreferences } = usePreferences()
 
 const points = ["auth.point_retrieval", "auth.point_evidence", "auth.point_workspace"]
 
-function handleAuthenticated(): void {
+async function handleAuthenticated(): Promise<void> {
   onSignedIn(token.value)
+  // 主题与落地页存在账号上，所以登录后先取回来：主题立刻生效，落地页决定去哪个页面
+  await loadPreferences().catch(() => undefined)
   const redirect = typeof route.query.redirect === "string" ? route.query.redirect : ""
-  void router.replace(redirect || { name: "chat" })
+  if (redirect) {
+    void router.replace(redirect)
+    return
+  }
+  const target = preferences.value.start_view
+  // start_view 由后端按 slug 校验形状，认不认识由路由表说了算（认不出就回默认）
+  void router.replace(router.hasRoute(target) ? { name: target } : { name: "chat" })
 }
 </script>
 

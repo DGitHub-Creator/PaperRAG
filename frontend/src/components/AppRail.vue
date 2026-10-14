@@ -38,20 +38,15 @@
 import { computed } from "vue"
 import Icon from "./Icon.vue"
 import { NAV_GROUPS } from "../composables/useNav"
-import type { NavGroup } from "../composables/useNav"
 import { useAuth } from "../composables/useAuth"
 
 defineEmits<{ logout: [] }>()
 
-const { username, role, isAdmin } = useAuth()
+const { username, role } = useAuth()
 
-// 设置页只对管理员出现（As-Is：文档管理是 admin 功能，见 docs/rules/14-feature-modules.md M1）
-const groups = computed<NavGroup[]>(() =>
-  NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.key !== "settings" || isAdmin.value),
-  })).filter((group) => group.items.length > 0),
-)
+// 设置页对所有人可见（2026-10-14）：它已从"管理员专用的文档管理"变成账号/偏好/外观/安全，
+// 管理员额外多看一块「知识库管理」（见 views/SettingsView.vue）。
+const groups = NAV_GROUPS
 
 const initial = computed(() => (username.value.slice(0, 1) || "?").toUpperCase())
 </script>

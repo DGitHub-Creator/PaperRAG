@@ -67,7 +67,7 @@
       "radar": "文献雷达",
       "history": "历史会话",
       "workspace": "工作区",
-      "settings": "文档管理"
+      "settings": "设置"
     },
     "roles": {
       "user": "普通用户",
@@ -80,7 +80,11 @@
   "common": {
     "sample_notice": "示例数据",
     "sample_hint": "：本页界面已就位，数据为前端占位，接口尚未实现。",
-    "module_owner": "归属模块"
+    "module_owner": "归属模块",
+    "confirm_title": "请确认",
+    "confirm_ok": "确定",
+    "cancel": "取消",
+    "dismiss": "关闭提示"
   },
   "chat": {
     "welcome_title": "开始一次有据可查的研究问答",
@@ -117,8 +121,45 @@
     "delete_failed": "删除失败："
   },
   "settings": {
-    "title": "文档管理",
-    "desc": "上传文档进行向量化处理，支持 PDF / Word / Excel 格式",
+    "title": "设置",
+    "desc": "账号、偏好、外观与安全；管理员可在此管理知识库。",
+    "account_title": "账号信息",
+    "account_desc": "当前登录身份与权限。",
+    "account_username": "用户名",
+    "account_role": "角色",
+    "account_admin_hint": "管理员可以上传与删除知识库文档。",
+    "account_user_hint": "普通用户可使用问答、书架与研究工作区；知识库由管理员维护。",
+    "account_logout": "退出登录",
+    "appearance_title": "外观 · 主题",
+    "appearance_desc": "主题保存在账号上，换设备登录同样生效。",
+    "theme_light": "浅色",
+    "theme_dark": "深色",
+    "theme_system": "跟随系统",
+    "theme_light_hint": "始终使用浅色界面",
+    "theme_dark_hint": "始终使用深色界面",
+    "theme_system_hint": "跟随操作系统的显示偏好",
+    "prefs_title": "偏好设置",
+    "prefs_desc": "登录后默认打开的页面。",
+    "prefs_start_view": "默认落地页",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "save_failed": "保存失败：",
+    "prefs_load_failed": "加载偏好失败：",
+    "password_title": "修改密码",
+    "password_desc": "修改后当前登录不会失效，下次登录请使用新密码。",
+    "password_old": "当前密码",
+    "password_new": "新密码",
+    "password_confirm": "确认新密码",
+    "password_submit": "确认修改",
+    "password_submitting": "提交中...",
+    "password_required": "请填写当前密码与新密码",
+    "password_mismatch": "两次输入的新密码不一致",
+    "password_rule_hint": "至少 8 位，且包含小写字母、大写字母、数字中的至少两类。",
+    "password_changed": "密码已修改",
+    "password_failed": "修改失败：",
+    "docs_title": "知识库管理",
+    "docs_desc": "上传与删除知识库文档（管理员）。",
     "upload_title": "上传文档",
     "select_file": "选择文件",
     "start_upload": "开始上传",
@@ -327,7 +368,7 @@
       "budget_hint": "单位：小时。超出预算的运行会被暂停。"
     },
     "settings": {
-      "title": "文档管理"
+      "title": "设置"
     }
   },
   "ws": {

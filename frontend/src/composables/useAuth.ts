@@ -2,7 +2,7 @@
 import { computed, ref } from "vue"
 import * as api from "../api/client"
 import { clearSession, readStoredUser, readToken, writeSession, writeUser } from "../api/token"
-import type { AuthResponse, CurrentUserResponse, Role } from "../api/types"
+import type { AuthResponse, ChangePasswordRequest, CurrentUserResponse, Role } from "../api/types"
 
 const token = ref(readToken())
 const currentUser = ref<CurrentUserResponse | null>(readStoredUser())
@@ -54,5 +54,10 @@ export function useAuth() {
     applySession("", null)
   }
 
-  return { token, currentUser, isAuthenticated, isAdmin, username, role, fetchMe, submit, logout }
+  /** 改密码：不重新签发 token（后端如此设计，旧 token 在 exp 前仍有效），所以这里也不动本地会话 */
+  async function changePassword(input: ChangePasswordRequest): Promise<void> {
+    await api.changePassword(input)
+  }
+
+  return { token, currentUser, isAuthenticated, isAdmin, username, role, fetchMe, submit, changePassword, logout }
 }

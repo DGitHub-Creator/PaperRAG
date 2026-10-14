@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="bulb" title-key="views.gaps.title" desc-key="views.gaps.desc">
       <button class="btn-secondary" disabled><Icon name="refresh" :size="14" />{{ $t("views.gaps.rescan") }}</button>
     </PageHeader>

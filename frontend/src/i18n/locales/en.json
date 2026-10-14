@@ -67,7 +67,7 @@
       "radar": "Literature Radar",
       "history": "Chat History",
       "workspace": "Workspace",
-      "settings": "Document Management"
+      "settings": "Settings"
     },
     "roles": {
       "user": "User",
@@ -80,7 +80,11 @@
   "common": {
     "sample_notice": "Sample data",
     "sample_hint": ": this page is in place, but the data is a frontend placeholder and the API is not implemented yet.",
-    "module_owner": "Module"
+    "module_owner": "Module",
+    "confirm_title": "Please confirm",
+    "confirm_ok": "Confirm",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss"
   },
   "chat": {
     "welcome_title": "Start a research Q&A with traceable sources",
@@ -117,8 +121,45 @@
     "delete_failed": "Failed to delete: "
   },
   "settings": {
-    "title": "Document Management",
-    "desc": "Upload documents for vectorization. Supports PDF / Word / Excel formats.",
+    "title": "Settings",
+    "desc": "Account, preferences, appearance and security; admins manage the knowledge base here.",
+    "account_title": "Account",
+    "account_desc": "Current identity and permissions.",
+    "account_username": "Username",
+    "account_role": "Role",
+    "account_admin_hint": "Admins can upload and delete knowledge base documents.",
+    "account_user_hint": "Users get chat, library and the research workspace; the knowledge base is maintained by admins.",
+    "account_logout": "Logout",
+    "appearance_title": "Appearance · Theme",
+    "appearance_desc": "The theme is stored on your account, so it follows you to other devices.",
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "theme_system": "System",
+    "theme_light_hint": "Always use the light interface",
+    "theme_dark_hint": "Always use the dark interface",
+    "theme_system_hint": "Follow the operating system preference",
+    "prefs_title": "Preferences",
+    "prefs_desc": "The page to open by default after login.",
+    "prefs_start_view": "Default landing page",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "save_failed": "Save failed: ",
+    "prefs_load_failed": "Failed to load preferences: ",
+    "password_title": "Change Password",
+    "password_desc": "Your current session stays valid; use the new password from the next login.",
+    "password_old": "Current password",
+    "password_new": "New password",
+    "password_confirm": "Confirm new password",
+    "password_submit": "Change password",
+    "password_submitting": "Submitting...",
+    "password_required": "Enter your current and new password",
+    "password_mismatch": "The two new passwords do not match",
+    "password_rule_hint": "At least 8 characters, including at least two of lowercase letters, uppercase letters and digits.",
+    "password_changed": "Password changed",
+    "password_failed": "Change failed: ",
+    "docs_title": "Knowledge Base",
+    "docs_desc": "Upload and delete knowledge base documents (admin).",
     "upload_title": "Upload Document",
     "select_file": "Select File",
     "start_upload": "Upload",
@@ -327,7 +368,7 @@
       "budget_hint": "Unit: hours. Runs that exceed the budget are paused."
     },
     "settings": {
-      "title": "Document Management"
+      "title": "Settings"
     }
   },
   "ws": {

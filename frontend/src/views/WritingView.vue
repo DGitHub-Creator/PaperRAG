@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="pen" title-key="views.writing.title" desc-key="views.writing.desc">
       <button class="btn-secondary" disabled><Icon name="download" :size="14" />{{ $t("views.writing.export_latex") }}</button>
       <button class="btn-primary" disabled><Icon name="zap" :size="14" />{{ $t("views.writing.continue") }}</button>

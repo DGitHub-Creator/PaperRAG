@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="flask" title-key="views.lab.title" desc-key="views.lab.desc">
       <button class="btn-primary" disabled><Icon name="plus" :size="14" />{{ $t("views.lab.new_experiment") }}</button>
     </PageHeader>

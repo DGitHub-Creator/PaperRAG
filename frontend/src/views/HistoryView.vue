@@ -80,7 +80,7 @@ async function openSession(id: string): Promise<void> {
 }
 
 async function removeSession(id: string): Promise<void> {
-  if (!confirmDialog(t("history.delete_confirm"))) return
+  if (!(await confirmDialog(t("history.delete_confirm")))) return
   try {
     await remove(id)
   } catch (err: unknown) {

@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="share" title-key="views.graph.title" desc-key="views.graph.desc">
       <button class="btn-secondary" disabled><Icon name="filter" :size="14" />{{ $t("views.graph.filter") }}</button>
     </PageHeader>

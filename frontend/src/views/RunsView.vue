@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide">
+  <div class="page-inner">
     <PageHeader icon="play" title-key="views.runs.title" desc-key="views.runs.desc">
       <button class="btn-primary" disabled><Icon name="play" :size="14" />{{ $t("views.runs.start") }}</button>
     </PageHeader>

@@ -1,5 +1,5 @@
 <template>
-  <div class="page-inner wide reader-page">
+  <div class="page-inner reader-page">
     <PageHeader icon="book-open" title-key="views.reader.title" desc-key="views.reader.desc">
       <button class="btn-secondary" disabled><Icon name="download" :size="14" />{{ $t("views.reader.export") }}</button>
     </PageHeader>

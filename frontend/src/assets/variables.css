@@ -61,6 +61,55 @@
     --transition: .18s ease;
 }
 
+/* ============ 深色主题（2026-10-14） ============
+   只覆盖令牌，不复制组件样式——`[data-theme]` 由 utils/theme.ts 写在 <html> 上，
+   取值三种（light/dark/system）与迁移 CHECK、Go 常量、契约 enum 同源。
+   ⚠️ 这里的选择器特异性高于单类选择器，所以变量顺序不影响生效（app.css / chat.css 的单类规则仍会被盖过）。 */
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* 兼容旧变量名（组件仍在引用） */
+    --bg-color: #0d131c;
+    --secondary-color: #182130;
+    --text-color: #dbe3ed;
+    --text-light: #8b98a9;
+    --white: #161e2b;
+    --bot-msg-bg: #182130;
+    --user-msg-bg: #3a6fd8;
+    --primary-light: #6f9bf7;
+
+    /* 语义色 */
+    --bg-app: #0b1118;
+    --bg-surface: #141c28;
+    --bg-subtle: #1b2534;
+    --bg-hover: #1f2a3a;
+    --border: #253143;
+    --border-strong: #33415a;
+    --text-strong: #e8eef7;
+    --text-muted: #9aa8ba;
+    --text-faint: #6d7d92;
+    --accent: #4c8bf5;
+    --accent-hover: #6ba0f8;
+    --accent-soft: #17253c;
+    --ok: #4caf6d;
+    --ok-soft: #14291d;
+    --warn: #e8913a;
+    --warn-soft: #2c2013;
+    --danger: #e05c5c;
+    --danger-soft: #2c1719;
+    --info: #4a9be6;
+    --info-soft: #142434;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 20px rgba(0, 0, 0, .45);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, .55);
+}
+
+/* 深色下若不改，滚动条与"示例数据"徽标会是刺眼的浅色块 */
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #33415a; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #43536f; }
+[data-theme="dark"] .badge-demo { background: #2f2716; color: #e0bc65; border-color: #4a3d1e; }
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -312,3 +361,24 @@ code, pre, .mono { font-family: var(--font-mono); }
 .spread { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .wrap { flex-wrap: wrap; }
+
+/* 代码高亮（main.ts 引的是 atom-one-light，深色下逐块换成暗底亮字）。
+   只覆盖 .hljs 容器与几个高频 token：整份 dark 主题的 token 表要另引一个 css 文件，
+   代价大于收益——代码块在深色下"底色正确、关键字对比度够"即可，不追求与亮色互为镜像。 */
+[data-theme="dark"] .hljs { background: #10171f; color: #c9d4e2; }
+[data-theme="dark"] .hljs-comment,
+[data-theme="dark"] .hljs-quote { color: #7b8a9c; font-style: italic; }
+[data-theme="dark"] .hljs-keyword,
+[data-theme="dark"] .hljs-selector-tag,
+[data-theme="dark"] .hljs-literal { color: #c792ea; }
+[data-theme="dark"] .hljs-string,
+[data-theme="dark"] .hljs-attr { color: #9ddc8a; }
+[data-theme="dark"] .hljs-number,
+[data-theme="dark"] .hljs-built_in { color: #f0a868; }
+[data-theme="dark"] .hljs-title,
+[data-theme="dark"] .hljs-function .hljs-title { color: #6fb6f2; }
+[data-theme="dark"] .hljs-variable,
+[data-theme="dark"] .hljs-template-variable { color: #e5c07b; }
+[data-theme="dark"] .hljs-meta { color: #7f9bb5; }
+[data-theme="dark"] .hljs-emphasis { font-style: italic; }
+[data-theme="dark"] .hljs-strong { font-weight: 600; }

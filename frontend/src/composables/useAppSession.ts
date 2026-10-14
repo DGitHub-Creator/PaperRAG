@@ -5,19 +5,22 @@ import { useAuth } from "./useAuth"
 import { useChat } from "./useChat"
 import { useSessions } from "./useSessions"
 import { useDocuments } from "./useDocuments"
+import { usePreferences } from "./usePreferences"
 
 export function useAppSession() {
   const auth = useAuth()
   const chat = useChat()
   const sessions = useSessions()
   const documents = useDocuments()
+  const preferences = usePreferences()
 
-  /** 登出：清登录态 + 三个业务状态；跳转由调用方决定（401 与手动退出收尾不同） */
+  /** 登出：清登录态 + 四个业务状态；跳转由调用方决定（401 与手动退出收尾不同） */
   function signOut(): void {
     auth.logout()
     chat.reset()
     sessions.reset()
     documents.reset()
+    preferences.reset()
   }
 
   /** 登录成功（含刷新页面恢复）：开一段新会话并接上 WS */

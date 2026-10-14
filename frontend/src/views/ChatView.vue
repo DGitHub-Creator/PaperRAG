@@ -144,8 +144,8 @@ function useSuggestion(text: string): void {
   handleSend()
 }
 
-function handleClear(): void {
-  if (confirmDialog(t("nav.clear_confirm"))) clearChat()
+async function handleClear(): Promise<void> {
+  if (await confirmDialog(t("nav.clear_confirm"))) clearChat()
 }
 
 function autoResize(e: Event): void {
