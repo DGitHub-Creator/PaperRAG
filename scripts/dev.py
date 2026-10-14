@@ -6,7 +6,9 @@
 
     uv run python scripts/dev.py doctor              # 起栈前自检：docker/.env/端口/uv
     uv run python scripts/dev.py infra               # 只起中间件（源码跑后端的推荐路径，不构建镜像）
-    uv run python scripts/dev.py serve               # 本机源码跑后端（uvicorn --reload）
+    uv run python scripts/dev.py serve               # 本机源码跑 Python 上游（uvicorn --reload）
+    uv run python scripts/dev.py go-serve            # 本机源码跑 go-api（唯一公开入口，反代未迁移面）
+    uv run python scripts/dev.py seed-admin          # 幂等创建管理员（读 .env 的 ADMIN_USERNAME/PASSWORD）
     uv run python scripts/dev.py up                  # compose up -d 并等 healthy（全栈容器，含 backend 镜像）
     uv run python scripts/dev.py ps
     uv run python scripts/dev.py logs -f backend
@@ -59,9 +61,16 @@ HOST_PORTS = {5432: "postgres", 6379: "redis", 19530: "milvus", 8000: "backend"}
 SECRET_PLACEHOLDERS = ("replace-with-strong-random-secret", "dev-only-insecure-jwt-secret")
 
 
-def run(cmd: list[str], *, check: bool = False, capture: bool = False, cwd: Path = ROOT) -> int:
+def run(
+    cmd: list[str],
+    *,
+    check: bool = False,
+    capture: bool = False,
+    cwd: Path = ROOT,
+    env: dict[str, str] | None = None,
+) -> int:
     print(f"$ {' '.join(cmd)}", flush=True)
-    proc = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=capture)
+    proc = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=capture, env=env)
     if capture:
         sys.stdout.write(proc.stdout)
         sys.stderr.write(proc.stderr)
@@ -95,8 +104,35 @@ def _exec_ok(cmd: list[str]) -> bool:
     return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
+def process_env() -> dict[str, str]:
+    """当前环境 + `.env` 的合并，供**不由 Python 自我加载 .env 的子进程**使用。
+
+    Python 侧的配置模块自己调 `load_dotenv()`（`backend/core/config/__init__.py:22`），
+    所以 `serve` 不必注入；但 Go 进程不会读 `.env`，`go run ./cmd/api` 若拿不到
+    DATABASE_URL / JWT_SECRET_KEY 就会在 fail-fast 处直接退出。这里把 `.env` 显式并入
+    subprocess 的环境，规则是**已存在的真实环境变量优先**（同 dotenv 的 override=False）。
+    """
+    env = dict(os.environ)
+    for key, value in read_env_file(ENV_FILE).items():
+        env.setdefault(key, value)
+    # 同一份 .env 要喂两个运行时，而两边的连接串语法不同：Python 的 SQLAlchemy 用
+    # `postgresql+psycopg2://`，Go 的 pgx 只认 `postgres://` / `postgresql://`。
+    # 在**交给 Go 的那一份**上剥掉方言后缀，.env 本身保持 Python 侧的原样。
+    if env.get("DATABASE_URL"):
+        env["DATABASE_URL"] = database_url_for_go(env["DATABASE_URL"])
+    return env
+
+
+def database_url_for_go(url: str) -> str:
+    """剥掉 SQLAlchemy 的方言后缀（`postgresql+psycopg2` → `postgresql`），pgx 才解析得了。"""
+    scheme, sep, rest = url.partition("://")
+    if sep and "+" in scheme:
+        scheme = scheme.split("+", 1)[0]
+    return f"{scheme}{sep}{rest}"
+
+
 def read_env_file(path: Path) -> dict[str, str]:
-    """解析 .env 的 `KEY=VALUE`，忽略注释与空行。只用于自检，不注入环境。"""
+    """解析 .env 的 `KEY=VALUE`，忽略注释与空行。只用于自检与子进程注入。"""
     values: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw.strip()
@@ -233,6 +269,25 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if not args.no_reload:
         cmd.append("--reload")
     return run(cmd)
+
+
+def cmd_go_serve(_: argparse.Namespace) -> int:
+    """在本机源码跑 go-api —— 唯一公开入口（02 §2）。
+
+    前置：中间件已就绪（`dev.py infra`）、Python 上游已在跑（`dev.py serve`）。
+    go-api 接管 health/ready/auth，其余 /api 反代到 PYTHON_UPSTREAM（默认 127.0.0.1:8000）。
+    `.env` 由本函数注入进子进程环境（Go 不自我加载 .env）。
+    """
+    return run(["go", "run", "./cmd/api"], cwd=SERVER_DIR, env=process_env())
+
+
+def cmd_seed_admin(_: argparse.Namespace) -> int:
+    """幂等创建/校正一个管理员账号（Go 侧 `cmd/seed`，直连 PostgreSQL）。
+
+    凭证只从环境变量来（`.env` 里的 ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_ROLE），
+    命令行参数里不留任何口令——它会进 shell 历史与 `ps` 输出。
+    """
+    return run(["go", "run", "./cmd/seed"], cwd=SERVER_DIR, env=process_env())
 
 
 def cmd_down(args: argparse.Namespace) -> int:
@@ -417,6 +472,12 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--no-reload", action="store_true", help="关掉热重载")
     serve.set_defaults(func=cmd_serve)
+
+    go_serve = sub.add_parser("go-serve", help="本机源码跑 go-api（唯一公开入口）；前置：infra + serve")
+    go_serve.set_defaults(func=cmd_go_serve)
+
+    seed_admin = sub.add_parser("seed-admin", help="幂等创建管理员账号（凭证读 ADMIN_* 环境变量）")
+    seed_admin.set_defaults(func=cmd_seed_admin)
 
     down = sub.add_parser("down", help="停止栈")
     down.add_argument("--volumes", action="store_true", help="连数据卷一起删（会清空 PG/Milvus 数据）")

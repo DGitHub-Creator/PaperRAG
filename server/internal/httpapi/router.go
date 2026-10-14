@@ -24,6 +24,11 @@ type Deps struct {
 	Version string
 	Checks  []Check
 	Timeout time.Duration
+	// Upstream 非空时，本包未注册的 /api、/internal、/ws、/metrics 一律转发给它。
+	// 传 nil（go-worker 与单测）即退回"未命中给 JSON 404"，与从前一致。
+	// 用注入而不是在本包内 new 一个 proxy：httpapi 只认 http.Handler，不认识上游是谁，
+	// 上游地址的读取留在 cmd/api（与 auth 路由的挂载位置同一处）。
+	Upstream http.Handler
 }
 
 // NewRouter 组装 go-api 的路由：中间件、404/405 信封、存活与就绪探针。
@@ -48,6 +53,15 @@ func NewRouter(d Deps) *chi.Mux {
 	// 监控脚本打的都是根路径；nginx upstream 切到 Go 时不能让它们凭空变 404。
 	r.Get("/health", HealthHandler(d))
 	r.Get("/ready", ReadyHandler(d))
+
+	// 门面转发：只兜住下面这几个前缀，不做全量 fallback——把任意路径都转给 Python
+	// 会让静态资源与拼错的 URL 也飘到上游，反而掩盖 404。chi 的 trie 按"具体度"匹配，
+	// 静态路由（含调用方在 cmd/api 挂的 auth 三条）始终优先于这里的通配。
+	if d.Upstream != nil {
+		for _, prefix := range []string{"/api/*", "/internal/*", "/ws/*", "/metrics"} {
+			r.Handle(prefix, d.Upstream)
+		}
+	}
 	return r
 }
 

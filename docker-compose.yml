@@ -160,7 +160,10 @@ services:
       - MILVUS_URL=standalone:19530  
       - PORT=3000
     ports:
-      - "8080:3000"
+      # 宿主端口 3001，不是 8080：8080 是 go-api 的默认监听（server/cmd/api/main.go:27），
+      # 且 X1 的判据就是 curl localhost:8080/api/v1/health。attu 只是 Milvus 的控制台，
+      # 让位给唯一公开入口。
+      - "3001:3000"
     depends_on:
       - standalone
     networks:

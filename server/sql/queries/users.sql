@@ -34,3 +34,20 @@ WHERE id = $1;
 SELECT id, username, role, created_at
 FROM users
 WHERE username = $1;
+
+-- name: UpdateUserPasswordByUsername :one
+-- 改密码路径（Go 侧）：写入方给的是**已经哈希过**的串，明文不进这一层。
+-- 路由是 /api/v1/auth/password，先 GetUserByUsername 验旧口令再落到这里。
+UPDATE users
+SET password_hash = $2
+WHERE username = $1
+RETURNING id, username, role;
+
+-- name: UpdateUserRoleByUsername :one
+-- 种子/运维路径专用：把既有用户提升为 admin（或改回）。注册路径只在创建那一刻解析 role，
+-- 之后没有任何"改角色"的业务入口——这条查询的存在是为了让 `cmd/seed` 幂等：
+-- 账号已存在时不必删库重来，改一行 role 即可。
+UPDATE users
+SET role = $2
+WHERE username = $1
+RETURNING id, username, role, created_at;

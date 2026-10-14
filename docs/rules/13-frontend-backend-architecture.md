@@ -24,7 +24,7 @@
                                ▼
    ┌ 中间件（只有这些在容器里，6 个，全 healthy）─────────────────┐
    │ postgres:5432  redis:6379  milvus:19530  etcd:2379            │
-   │ minio→versitygw:9000（S3 语义）  attu:8080（Milvus 控制台）   │
+   │ minio→versitygw:9000（S3 语义）  attu:3001（Milvus 控制台）   │
    └───────────────────────────────────────────────────────────────┘
 
    ┌ 生产形态（docker-compose.prod.yml，仍是全栈容器）────────────┐

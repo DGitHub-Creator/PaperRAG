@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,12 +43,14 @@ func main() {
 	pool, poolErr := newPool(ctx, cfg, logger)
 	checks := databaseChecks(pool, poolErr, cfg)
 	router := httpapi.NewRouter(httpapi.Deps{
-		Logger:  logger,
-		Version: cfg.Version,
-		Checks:  checks,
-		Timeout: cfg.ReadyTimeout,
+		Logger:   logger,
+		Version:  cfg.Version,
+		Checks:   checks,
+		Timeout:  cfg.ReadyTimeout,
+		Upstream: upstreamProxy(cfg, logger),
 	})
 	mountAuthRoutes(router, cfg, pool, poolErr, logger)
+	logger.Info("upstream_configured", "url", cfg.UpstreamURL)
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
@@ -96,6 +99,21 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 	router.Post("/api/v1/auth/register", auth.RegisterHandler(svc))
 	router.Post("/api/v1/auth/login", auth.LoginHandler(svc))
 	router.Get("/api/v1/auth/me", auth.MeHandler(svc))
+}
+
+// upstreamProxy 建到 Python 上游的反向代理（14 §19 铁律 2）。地址非法或为空时返回 nil，
+// 路由器随即退回"未命中给 JSON 404"——**不因为 Python 没起就拒绝启动 go-api**：
+// 认证面本来就不依赖上游，让整条入口陪葬只会把一次配置写错升级成一次停机。
+func upstreamProxy(cfg config.Config, logger *slog.Logger) http.Handler {
+	if cfg.UpstreamURL == "" {
+		return nil
+	}
+	u, err := url.Parse(cfg.UpstreamURL)
+	if err != nil || u.Host == "" {
+		logger.Warn("upstream_url_invalid", "url", cfg.UpstreamURL, "error", err)
+		return nil
+	}
+	return httpapi.NewUpstreamProxy(u, logger)
 }
 
 // newPool 建连接池。失败不退出进程：/ready 会如实报 database 不可用（与 Python 侧

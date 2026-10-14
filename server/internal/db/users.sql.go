@@ -133,3 +133,64 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (InsertU
 	)
 	return i, err
 }
+
+const updateUserPasswordByUsername = `-- name: UpdateUserPasswordByUsername :one
+UPDATE users
+SET password_hash = $2
+WHERE username = $1
+RETURNING id, username, role
+`
+
+type UpdateUserPasswordByUsernameParams struct {
+	Username     string
+	PasswordHash string
+}
+
+type UpdateUserPasswordByUsernameRow struct {
+	ID       int32
+	Username string
+	Role     string
+}
+
+// 改密码路径（Go 侧）：写入方给的是**已经哈希过**的串，明文不进这一层。
+// 路由是 /api/v1/auth/password，先 GetUserByUsername 验旧口令再落到这里。
+func (q *Queries) UpdateUserPasswordByUsername(ctx context.Context, arg UpdateUserPasswordByUsernameParams) (UpdateUserPasswordByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, updateUserPasswordByUsername, arg.Username, arg.PasswordHash)
+	var i UpdateUserPasswordByUsernameRow
+	err := row.Scan(&i.ID, &i.Username, &i.Role)
+	return i, err
+}
+
+const updateUserRoleByUsername = `-- name: UpdateUserRoleByUsername :one
+UPDATE users
+SET role = $2
+WHERE username = $1
+RETURNING id, username, role, created_at
+`
+
+type UpdateUserRoleByUsernameParams struct {
+	Username string
+	Role     string
+}
+
+type UpdateUserRoleByUsernameRow struct {
+	ID        int32
+	Username  string
+	Role      string
+	CreatedAt pgtype.Timestamp
+}
+
+// 种子/运维路径专用：把既有用户提升为 admin（或改回）。注册路径只在创建那一刻解析 role，
+// 之后没有任何"改角色"的业务入口——这条查询的存在是为了让 `cmd/seed` 幂等：
+// 账号已存在时不必删库重来，改一行 role 即可。
+func (q *Queries) UpdateUserRoleByUsername(ctx context.Context, arg UpdateUserRoleByUsernameParams) (UpdateUserRoleByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, updateUserRoleByUsername, arg.Username, arg.Role)
+	var i UpdateUserRoleByUsernameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}

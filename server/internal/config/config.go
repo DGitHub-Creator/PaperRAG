@@ -26,6 +26,11 @@ type Config struct {
 	Version string
 	// ReadyTimeout 是单项依赖探测的超时上限，默认对齐 backend/api/health.py 的 3s。
 	ReadyTimeout time.Duration
+	// UpstreamURL 是尚未迁移到 Go 的路径的 Python 上游（14 §19 铁律 2「门面先于重写」）。
+	// 默认 127.0.0.1:8000：dev 形态下 Go 是唯一入口，sessions/chat/documents/ws
+	// 这些还没搬过来的面先转发给源码跑的 Python，搬一条就少转发一条。
+	// 只在 go-api 有意义——go-worker 不面向浏览器。生产部署必须显式覆盖。
+	UpstreamURL string
 
 	// ── 认证面（P0-6）。默认值与 backend/core/config/auth.py 逐字同构：
 	// 两侧读同一份 .env，同一个键在两个进程里必须得到同一个值，否则切换窗口内
@@ -95,6 +100,7 @@ func Load(service, defaultAddr string) (Config, error) {
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
 		Version:      envString("VERSION", "dev"),
 		ReadyTimeout: envDuration("READY_TIMEOUT", 3*time.Second),
+		UpstreamURL:  envString("PYTHON_UPSTREAM", "http://127.0.0.1:8000"),
 
 		JWTSecretKey:         os.Getenv("JWT_SECRET_KEY"),
 		JWTAlgorithm:         envString("JWT_ALGORITHM", "HS256"),
