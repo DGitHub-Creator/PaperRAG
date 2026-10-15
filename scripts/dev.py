@@ -9,10 +9,11 @@
     uv run python scripts/dev.py serve               # 本机源码跑 Python 上游（uvicorn --reload）
     uv run python scripts/dev.py go-serve            # 本机源码跑 go-api（唯一公开入口，反代未迁移面）
     uv run python scripts/dev.py seed-admin          # 幂等创建管理员（读 .env 的 ADMIN_USERNAME/PASSWORD）
-    uv run python scripts/dev.py up                  # compose up -d 并等 healthy（全栈容器，含 backend 镜像）
+    uv run python scripts/dev.py up postgres redis    # 只起指定的中间件容器并等 healthy
     uv run python scripts/dev.py ps
-    uv run python scripts/dev.py logs -f backend
-    uv run python scripts/dev.py migrate             # 容器内 alembic upgrade head
+    uv run python scripts/dev.py logs -f postgres
+    uv run python scripts/dev.py migrate             # 宿主跑 alembic upgrade head（Python 那条线）
+    uv run python scripts/dev.py migrate-go          # 宿主跑 server/migrations（Go 那条线，D8 定案）
     uv run python scripts/dev.py test -m unit        # 分层跑测试
     uv run python scripts/dev.py test -- -k auth -v  # 透传 pytest 自己的选项
     uv run python scripts/dev.py gen                  # 重生成 Go 数据访问层（sqlc）
@@ -40,11 +41,12 @@ SERVER_DIR = ROOT / "server"
 # `git diff --exit-code` 门禁就会以"别人的改动"为名把 CI 弄红，而且没人看得出原因。
 SQLC_VERSION = "v1.30.0"
 
-# compose 里被 depends_on 或健康检查依赖的服务容器名（与 docker-compose.yml 的 container_name 一致）
-HEALTH_CONTAINERS = ["researchpilot-postgres", "researchpilot-redis", "milvus-standalone", "researchpilot-backend"]
+# compose 里被 depends_on 或健康检查依赖的服务容器名（与 docker-compose.yml 的 container_name 一致）。
+# 2026-10-15 起这里**只有中间件**：dev compose 的 backend 服务已移除（定案「容器只跑中间件」，台账 C29）。
+HEALTH_CONTAINERS = ["researchpilot-postgres", "researchpilot-redis", "milvus-standalone"]
 
 # 服务名 → 容器名。只请求部分服务时要按"这次真正起的"等健康：否则
-# `dev.py up postgres` 会一直等一个根本没被创建的 backend 容器，直到超时失败。
+# `dev.py up postgres` 会一直等一个根本没被创建的容器，直到超时失败。
 SERVICE_CONTAINERS = {
     "postgres": "researchpilot-postgres",
     "redis": "researchpilot-redis",
@@ -52,12 +54,15 @@ SERVICE_CONTAINERS = {
     "minio": "milvus-minio",
     "standalone": "milvus-standalone",
     "attu": "milvus-attu",
-    "backend": "researchpilot-backend",
 }
 
-#: 源码跑后端时需要的中间件（不含 backend —— 它由 `dev.py serve` 在本机跑）
+#: 源码跑后端时需要的中间件（Python 与 Go 都由 `dev.py serve` / `go-serve` 在本机跑）
 INFRA_SERVICES = ["postgres", "redis", "etcd", "minio", "standalone", "attu"]
-HOST_PORTS = {5432: "postgres", 6379: "redis", 19530: "milvus", 8000: "backend"}
+#: compose 会占用的**宿主**端口：被占时 `up` 会失败，所以 doctor 把它们当阻塞前的必查项。
+HOST_PORTS = {5432: "postgres", 6379: "redis", 19530: "milvus"}
+#: 应用层进程自己监听的端口。它们不属于 compose，占用不会让 `up` 失败，但本项目两次
+#: 因为上一轮没停的 stale go-api 占着 :8080 而起服务失败，所以照样报出来当线索（08 §6 后台进程）。
+APP_PORTS = {8000: "Python（dev.py serve）", 8080: "go-api（dev.py go-serve）", 5173: "vite（npm run dev）"}
 SECRET_PLACEHOLDERS = ("replace-with-strong-random-secret", "dev-only-insecure-jwt-secret")
 
 
@@ -200,6 +205,12 @@ def cmd_doctor(_: argparse.Namespace) -> int:
             if not port_free(port):
                 hints.append(f"宿主端口 {port} 已被占用（{service} 映射到它），compose 起不来前先确认是谁在用")
 
+    # 应用层端口不属于 compose，占了不影响 up，但本项目两次因为上一轮没停的 stale go-api
+    # 占着 :8080 而起服务失败——报出来比让人自己 netstat 强（08 §6「后台进程」）。
+    for port, owner in APP_PORTS.items():
+        if not port_free(port):
+            hints.append(f"宿主端口 {port} 已被占用，占用者很可能是没停的 {owner}")
+
     for line in problems:
         print(f"[问题] {line}")
     for line in hints:
@@ -310,8 +321,24 @@ def cmd_logs(args: argparse.Namespace) -> int:
 
 
 def cmd_migrate(args: argparse.Namespace) -> int:
-    """应用启动时已自动 upgrade head；这里给「只改库、不重启服务」的场景留一个显式入口。"""
-    return compose("exec", "-T", args.service, "python", "-m", "alembic", "upgrade", "head")
+    """Python 那条线：宿主跑 `alembic upgrade head`（仓库根 `alembic.ini`）。
+
+    从前它 exec 进 dev compose 的 backend 容器跑，而那个容器已按定案移除（台账 C29）。
+    宿主跑还有一层好处：不再为此构建那个 16.5 GB 的 backend 镜像。
+    Go 侧的表在另一条线（`migrate-go`），两条线各有各的版本表。
+    """
+    return run([sys.executable, "-m", "alembic", "upgrade", "head"], env=process_env())
+
+
+def cmd_migrate_go(args: argparse.Namespace) -> int:
+    """Go 那条线：把 `server/migrations/` 应用到 DATABASE_URL 指的库上（决策 D8 / 台账 C18）。
+
+    D8 定案是「显式运维动作，不进启动路径」，所以它是一条要人敲的命令，
+    而不是 go-api 启动时自动跑的东西——多副本同时启动会抢同一批 DDL。
+    子命令透传：`migrate-go` / `migrate-go version` / `migrate-go down 1`。
+    """
+    cmd = ["go", "run", "./cmd/migrate", "-path", "migrations"] + list(args.migrate_args or ["up"])
+    return run(cmd, cwd=SERVER_DIR, env=process_env())
 
 
 def cmd_test(args: argparse.Namespace) -> int:
@@ -468,7 +495,10 @@ def build_parser() -> argparse.ArgumentParser:
     infra.set_defaults(func=cmd_infra)
 
     serve = sub.add_parser("serve", help="本机源码跑后端（uvicorn）；前置：infra 已就绪")
-    serve.add_argument("--host", default="0.0.0.0")
+    # 只绑回环是 P0-7 卡片里"ai-core 不对外可达"这条要求在**源码形态**下的等价物
+    # （容器形态由 R4「不发布宿主端口」判）。Go 的反代目标就是 127.0.0.1:8000，
+    # 绑 0.0.0.0 不会让任何东西多通一条路，只会把内部面 /internal/v1/ai/* 暴露到局域网。
+    serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--no-reload", action="store_true", help="关掉热重载")
     serve.set_defaults(func=cmd_serve)
@@ -491,9 +521,18 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument("svc", nargs="*", default=[])
     logs.set_defaults(func=cmd_logs)
 
-    migrate = sub.add_parser("migrate", help="在容器内跑 alembic upgrade head")
-    migrate.add_argument("--service", default="backend")
+    migrate = sub.add_parser("migrate", help="宿主跑 alembic upgrade head（Python 侧的表）")
     migrate.set_defaults(func=cmd_migrate)
+
+    migrate_go = sub.add_parser(
+        "migrate-go",
+        help="把 server/migrations/ 应用到库上（Go 侧的表，决策 D8：显式动作、不进启动路径）",
+    )
+    migrate_go.add_argument(
+        "migrate_args", nargs="*", default=[],
+        help="migrate 的子命令：up（默认）/ version / down [N] / force <V>",
+    )
+    migrate_go.set_defaults(func=cmd_migrate_go)
 
     test = sub.add_parser("test", help="本地测试（-m 选层；要传 pytest 自己的选项用 `-- ` 分隔）")
     test.add_argument("-m", "--marker", default=None, help="只跑某一层：unit / integration / chain / e2e / slow")

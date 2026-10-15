@@ -10,7 +10,12 @@ from pathlib import Path
 
 DEV_PATH = Path(__file__).resolve().parents[2] / "scripts" / "dev.py"
 
-SUBCOMMANDS = ("doctor", "up", "down", "ps", "logs", "migrate", "test", "gen")
+#: dev.py 的完整命令面。这份清单的用意不是"数一下有几个"，而是**新增子命令必须同时进这里**——
+#: 否则 `test_documented_subcommands_are_exposed` 会对一个没人读过的命令默默通过。
+SUBCOMMANDS = (
+    "doctor", "up", "infra", "serve", "go-serve", "seed-admin",
+    "down", "ps", "logs", "migrate", "migrate-go", "test", "gen",
+)
 
 
 def _load_dev():
@@ -47,6 +52,49 @@ class TestCommandSurface:
 
         assert invoke(["test", "--", "-k", "auth", "-v"]) == 0
         assert seen["cmd"] == [sys.executable, "-m", "pytest", "-k", "auth", "-v"]
+
+    def test_serve_binds_loopback_by_default(self):
+        """`dev.py serve` 的默认监听地址必须是回环。
+
+        这是 P0-7「ai-core 不对外可达」在**源码形态**下的等价判据（容器形态由
+        `check_nginx_routes.py` 的 R4 判"不发布宿主端口"）。默认值一旦漂回 `0.0.0.0`，
+        内部面 `/internal/v1/ai/*` 就进了局域网，而它只有 `AICORE_INTERNAL_TOKEN` 一道口令。
+        """
+        args = dev.build_parser().parse_args(["serve"])
+        assert args.host == "127.0.0.1", f"serve 默认绑到 {args.host}，内部面会对外可达"
+
+    def test_migrate_runs_alembic_on_the_host_not_in_a_container(self, monkeypatch):
+        """dev compose 里已经没有应用服务（定案 + R5），所以 migrate 不能再 `compose exec`。
+
+        从前它是 `compose exec -T backend python -m alembic upgrade head`，
+        而那个 backend 容器就是台账 C29 移除的对象——不移除它就得为建库构建 16.5 GB 镜像。
+        """
+        seen: dict = {}
+        called: dict = {}
+
+        monkeypatch.setattr(dev, "run", lambda cmd, **kw: seen.update(cmd=cmd, **kw) or 0)
+        monkeypatch.setattr(dev, "compose", lambda *a, **kw: called.__setitem__("a", a) or 0)
+
+        args = dev.build_parser().parse_args(["migrate"])
+        assert args.func(args) == 0
+        assert seen["cmd"] == [sys.executable, "-m", "alembic", "upgrade", "head"]
+        assert not called, "migrate 不该再走 compose"
+
+    def test_migrate_go_defaults_to_up_and_runs_in_server_dir(self, monkeypatch):
+        """D8 定案：Go 侧迁移是**显式命令**。省略子命令时补 `up`，且必须跑在 `server/` 下。"""
+        seen: dict = {}
+
+        monkeypatch.setattr(dev, "run", lambda cmd, **kw: seen.update(cmd=cmd, **kw) or 0)
+
+        args = dev.build_parser().parse_args(["migrate-go"])
+        assert args.func(args) == 0
+        assert seen["cmd"][-3:] == ["-path", "migrations", "up"], seen["cmd"]
+        assert seen["cwd"] == dev.SERVER_DIR
+
+        args = dev.build_parser().parse_args(["migrate-go", "version"])
+        assert args.func(args) == 0
+        assert seen["cmd"][-1] == "version"
+
 
 
 class TestEnvFileParsing:
