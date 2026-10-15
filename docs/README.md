@@ -34,6 +34,14 @@
 **进度真相不进任何层**：`docs/progress.json`（唯一真相）与其生成物 `PROGRESS.md` / `progress.html`
 固定放在 `docs/` 根目录；契约不放 `docs/` 而在 [`contracts/`](../contracts/)。
 
+**日志也不进任何层**：[`docs/WORKLOG.md`](WORKLOG.md) 是**逐轮实录**（某轮做了什么 / 证据等级 / 实跑读数 /
+踩过的坑），同样固定在 `docs/` 根目录、append-only、倒序。它的存在是为了让另外三处**不必再当日志写**：
+`AGENTS.md` 只放愿景 / 规约 / 硬约束，`progress.json` 的 `current` 只放当前读数与下一步，
+任务卡的 `note` 只放卡片定义（输入 / 输出 / 判据 / 依赖）。往那三处追加 dated 内容 = 违反
+[`rules/08`](rules/08-principles-and-conventions.md) §6「文件体积」。
+**轮转**：一个阶段（P0 / P1 / …）收口后，把该阶段的轮次移进 [`archive/`](archive/README.md)，
+`WORKLOG.md` 只留当前阶段——记录型文件不按行数上限管，按轮转管。
+
 ## 2. 规则层 `rules/` —— 常青，必须一直遵守
 
 | 文件 | 管什么 |
@@ -85,8 +93,8 @@
 
 ## 6. 内容权威层级（冲突时按此优先级）
 
-详见 [`AGENTS.md` §2](../AGENTS.md)：`rules/08` 最高 → `progress.json` → 当前阶段任务卡 → 产品轴 / 台账 → 架构实测 → `contracts/` → `reference/`（dated） → `archive/`。
-**一句话**：内容听 `08`，结构听本文，进度听 `progress.json`。
+详见 [`AGENTS.md` §2](../AGENTS.md)：`rules/08` 最高 → `progress.json` → 当前阶段任务卡 → 产品轴 / 台账 → 架构实测 → `contracts/` → `WORKLOG.md`（日志，**不作规约**） → `reference/`（dated） → `archive/`。
+**一句话**：内容听 `08`，结构听本文，进度听 `progress.json`，历史听 `WORKLOG.md`。
 
 ## 7. 阅读顺序
 
@@ -96,6 +104,8 @@
 - **想按功能排期**：`14`（M1…M17 的现状与判据）→ `11 §7` 两轴映射 → `04` 路线
 - **想看清谁做什么、做到哪**：`frontend-backend-division-of-labor`（M1–M17 × 前端/Go/Python 分工 + 进度快照）
 - **看进度**：`../progress.html`（可视化）或 `../PROGRESS.md`（文本）
+- **想知道"这玩意儿当初为什么这么做 / 哪一轮做的 / 当时量到了什么"**：[`WORKLOG.md`](WORKLOG.md)（倒序逐轮实录，
+  末尾附 A 是本机验证边界、附 B 是「已被推翻的旧结论」详版）
 
 ## 8. 写作纪律（原则②③的落地方式）
 
