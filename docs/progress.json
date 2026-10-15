@@ -5,7 +5,7 @@
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "**读数（2026-10-15 现场取，别抄）**：完成度 **30%**（118/394 h）；40 张卡 done 14 / in_progress 0 / pending 26；25 条退出标准 **pass 8**（X1–X8 全绿）、not_run 17（属 P1/P2/P3）。测试分层 unit 527 / integration 57 / **chain 27** / pytest-e2e **0**（Playwright 另有 9 项结构级，`cd frontend && npm run test:e2e`）；全量 `pytest -q` **644 passed**。\n\n**P0 已收口**：四条卡（P0-6 / P0-7 / P0-8 / P0-9）全部 done，X2 于第十七轮转 pass。\n**收口时刻的边界**（详见 `rules/frontend-backend-division-of-labor.md` §0.4 与 `contracts/route-ownership.md`）：前端只经 `api/client.ts` 一份路径字面量；Go = 公开入口 + 8 条原生业务面 + 4 条探针 + 未迁移面的反代门面 + 直连 PG 的三张表；Python = 解析/检索/生成的实现 + `/internal/v1/ai/*` 执行面，另有 17 条 `proxy` 面待搬。\n\n**下一步（P1 开工安排，2026-10-15 用户定案）**：按 **D4：保留 P1 → P2**推进——不前移 P2、不拆卡、不解锁依赖。开工前置有两件：①**过设计门禁**（`plans/04 §4.4`：P2 目标数据模型与 Go/Python 服务边界先审查、结论落 `contracts/`）；②**C33/C34/C35/C36/C37 的归属与验收条件**已在台账 A-2 定稿，逐条带可机检判据，**不允许带着已知缺陷进入下一阶段**。P1 完成后按正式依赖进 P2（一次性建可信存储与证据链，M1/M3/M5/M7 的数据链路合批做，不分别打补丁）。原则序位：**正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度**——产品轴暂时不前进是可接受的。P1 的账已经明确：搬 documents（前置是文档真相进 PG）、搬流式 chat/ws、删 Python 那 12 条可达不调的面、Go 补限流（C33，登录/注册已经丢了）、缓存失效（C35）、`rag_trace` 投影口径（C34）、任务态持久化（C37：`ai_executions` 表已建但零写入方）。\n\n**三条别读成「已完成」**：①X2 是**静态配置级**证据，prod 全栈容器本机没跑过；②e2e 是结构级、不判像素，而且不在 pytest 的 e2e marker 里；③X5 的 `--from-db` 真库形状统计仍不可执行（C20），P1 接管 `users` 前必须先跑。\n\n**⚠️ 本字段只放当前读数与下一步，不放日志。**逐轮实录在 `docs/WORKLOG.md`；规约与硬约束在 `AGENTS.md`；代码问题与处置在 `rules/12` 台账；现状形状在 `rules/13`。往本字段追加 dated 内容 = 违反 `08 §6`。",
+  "current": "**读数（2026-10-15 现场取，别抄）**：完成度 **30%**（118/394 h）；40 张卡 done 14 / in_progress 0 / pending 26；25 条退出标准 **pass 8**（X1–X8 全绿）、not_run 17（属 P1/P2/P3）。测试分层 unit 527 / integration 57 / **chain 27** / pytest-e2e **0**（Playwright 另有 9 项结构级，`cd frontend && npm run test:e2e`）；全量 `pytest -q` **644 passed**。\n\n**P0 已收口**：四条卡（P0-6 / P0-7 / P0-8 / P0-9）全部 done，X2 于第十七轮转 pass。\n**待决只剩 D1 / D2 / D7**（D3、D4、D5、D6、D8 已于 2026-10-15 定案，记录在 `decisions_resolved`）。\n**收口时刻的边界**（详见 `rules/frontend-backend-division-of-labor.md` §0.4 与 `contracts/route-ownership.md`）：前端只经 `api/client.ts` 一份路径字面量；Go = 公开入口 + 8 条原生业务面 + 4 条探针 + 未迁移面的反代门面 + 直连 PG 的三张表；Python = 解析/检索/生成的实现 + `/internal/v1/ai/*` 执行面，另有 17 条 `proxy` 面待搬。\n\n**下一步（P1 开工安排，2026-10-15 用户定案）**：按 **D4：保留 P1 → P2**推进——不前移 P2、不拆卡、不解锁依赖。开工前置有两件：①**过设计门禁**——`contracts/p1-design-review.md` 已建（五维：数据标识 / 服务职责 / 错误语义 / 流式事件契约 / 数据所有权），执行者 `scripts/check_design_review.py` 已接进 CI 的 backend job；它现在是 **proposed**，五个维度的人工确认签完改成 approved 之前，P1-1 / P1-2 / P1-3 / P1-4 / P1-7 任何一张都不得开工（这条不新增退出标准、不改分母、不动依赖——它是**开工前置条件**）。②C33–C37 的归属与验收条件已在台账 A-2 定稿，逐条带可机检判据，**不允许带着已知缺陷进入下一阶段**。P1 完成后按正式依赖进 P2（一次性建可信存储与证据链，M1/M3/M5/M7 的数据链路合批做，不分别打补丁）。原则序位：**正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度**——产品轴暂时不前进是可接受的。P1 的账已经明确：搬 documents（前置是文档真相进 PG）、搬流式 chat/ws、删 Python 那 12 条可达不调的面、Go 补限流（C33，登录/注册已经丢了）、缓存失效（C35）、`rag_trace` 投影口径（C34）、任务态持久化（C37：`ai_executions` 表已建但零写入方）。\n\n**三条别读成「已完成」**：①X2 是**静态配置级**证据，prod 全栈容器本机没跑过；②e2e 是结构级、不判像素，而且不在 pytest 的 e2e marker 里；③X5 的 `--from-db` 真库形状统计仍不可执行（C20），P1 接管 `users` 前必须先跑。\n\n**⚠️ 本字段只放当前读数与下一步，不放日志。**逐轮实录在 `docs/WORKLOG.md`；规约与硬约束在 `AGENTS.md`；代码问题与处置在 `rules/12` 台账；现状形状在 `rules/13`。往本字段追加 dated 内容 = 违反 `08 §6`。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -974,5 +974,59 @@
     "近期不做计费 / 团队协作 / 机构私有部署",
     "不承诺「输入主题一键生成一篇论文」——终局是「输入研究方向，建立能持续积累知识、追踪证据、执行研究任务的科研工作空间」（11 §11）",
     "不把「模型检查通过」表述为「一般情形已证明」；Gap Explorer 只产出候选研究问题，不宣称发现了全新学术贡献（11 §11）"
+  ],
+  "decisions_resolved": [
+    {
+      "id": "D3",
+      "question": "chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？",
+      "decision": "接受。与 D4 合并解释但保留独立记录：P1 只完成 Go/Python 边界、接口契约与任务管理迁移；P2 正式完成 PG 正文真相层、元数据持久化与引用可信化。",
+      "decided_at": "2026-10-15",
+      "related": [
+        "D4"
+      ],
+      "consequence": "P1 期间引用可以不是证据级，但**禁止把未经验证的来源编号描述为已完成语义接地或原文定位**；证据级引用属 P2（Z1/Z3）。不创建临时可信存储、双写系统或未来必然废弃的兼容层。"
+    },
+    {
+      "id": "D4",
+      "question": "V1.0 要求先完成数据可信化，而架构轴把 chunk 真相层与公式索引排在 P2 —— 是否前移？",
+      "decision": "不前移。保留 P0 → P1 → P2 → P3 主线：不拆 P2-1/P2-2 成 P1-9/P1-10，不改 P1/P2 依赖，不提前解锁 P2 卡片，不新增退出标准 Y7（设计审查是**开工前置条件**，不是退出条件）。",
+      "decided_at": "2026-10-15",
+      "related": [
+        "D3",
+        "D5"
+      ],
+      "consequence": "替代前移的机制是 P1 的设计门禁：contracts/p1-design-review.md + scripts/check_design_review.py。原则序位：正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度。"
+    },
+    {
+      "id": "D5",
+      "question": "11 §8 的十项产品能力（F-1…F-11，178 h）是否登记为卡进分母？",
+      "decision": "全部登记 Backlog；**确认版本范围后才纳入正式分母**。当前 30% 只对架构轴成立。",
+      "decided_at": "2026-10-15",
+      "related": [
+        "D4"
+      ],
+      "consequence": "F-7 允许登记、不允许提前执行（真实依赖是 P3-1）；本轮不重复登记工时。"
+    },
+    {
+      "id": "D6",
+      "question": "alembic_version 是否算 Go 拥有的基线对象？库里 5 张未登记归属的表怎么处置？",
+      "decision": "先审计使用情况，再一次性明确数据归属与生命周期；**不在本审计前定归属**。",
+      "decided_at": "2026-10-15",
+      "related": [
+        "D4"
+      ],
+      "consequence": "落点在 P1-7 的调用方审计与 P2-1 建表设计；差集已逐张点名在 contracts/table-acl.md 文末。"
+    },
+    {
+      "id": "D8",
+      "question": "Go 侧迁移由谁执行、什么时候执行、失败怎么办（C18 无执行器）？",
+      "decision": "显式运维动作：`dev.py migrate-go`（server/cmd/migrate + golang-migrate 库），**不进任何服务的启动路径**——多副本同时启动会抢同一批 DDL，公开入口进程不该带 DDL 权限。",
+      "decided_at": "2026-10-15",
+      "related": [
+        "C18",
+        "X6"
+      ],
+      "consequence": "真库连跑两遍 up 均 rc=0、version: 3 clean；失败态用 dirty + force 处置路径写在命令帮助里。"
+    }
   ]
 }
