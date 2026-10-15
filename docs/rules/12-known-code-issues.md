@@ -32,6 +32,21 @@
 | **C29** | **四处遗留物全部处置**：①dev compose 的 `backend` 服务**已删**（容器只跑中间件）；②`dev.py up` 的全栈路径随之消失，`migrate` 改为宿主跑 alembic；③`server/Dockerfile` 不再是「无验收路径引用」的死件——prod compose 的 `go-api` 服务就用它构建；④`check_nginx_routes.py` 的 R4 改为**按形态分判**（prod 判端口），并新增 **R5** 把「dev compose 不得出现应用服务」钉成机检 |
 | **C31** | **服务侧盲区补了一半**：新 `scripts/check_route_ownership.py` 把 `contracts/route-ownership.md` 回查到三个真相源（Go 路由注册 / `backend.app` 路由表 / chain 用例，37 行一致）。仍未覆盖：`/metrics` 三不管、`/api/v1/health|ready` 只有 Go 满足——这两条事实现在**写在归属表里**，但 `check_contracts.py` 本身仍不看服务侧 |
 | **C8** | **`chain` 层 0 → 27 条**（`-m chain` 27 passed）：认证互验、契约对拍、sessions 读删、内部执行面生命周期与真 PDF 解析。**`e2e` 层 0 → 9 条**，但载体是 Playwright（`frontend/e2e/p0-auth.spec.ts`，判据 `cd frontend && npm run test:e2e`），**不在 pytest 的 `-m e2e` 里**——`pytest -m e2e` 仍收 0 项、rc=5；这条口径差异已同步进 `07` 与 `09`，别让「P0-9 有 e2e 了」被读成「pytest 的 e2e 层有用例了」 |
+## A-2. C33–C37 的归属与验收条件（2026-10-15 定案：**带已知缺陷不进下一阶段**）
+
+> 这五条都不是"还没做的功能"，而是**已经漏了或马上会漏的一致性**。按用户 2026-10-15 的拍板，
+> 全部落实到 **P1**，且每条必须有可机检的验收条件——**写完但没判据的，视为没修**。
+> 归属卡名沿用 `progress.json` phases[1] 的 id；验收命令要能单独跑出红/绿。
+
+| # | 归属卡 | 缺陷一句话 | **验收条件（判据）** | 不许怎么做 |
+| --- | --- | --- | --- | --- |
+| **C33** | P1-1（Go 接管读接口）与 P1-2（写接口）各带一格 | Go 无限流层；登录/注册/改密码已被 Go 接管，Python 的 slowapi 限流没跟过来 | ① Go 侧按路由维度的限流中间件落地；② chain 加一条**第 N+1 次请求必须 429** 的用例（`-k rate_limit`），并断言 `X-RateLimit-*` 头在；③ 已接管的 5 条面逐条列入覆盖面清单 | 不许只在 Python 那条没删的面上留限流（门面会掩盖上游坏死，C32 的教训） |
+| **C35** | P1-1 | Go 写 PG 不失效 Python 的 Redis 会话缓存 → 删完仍能从 Python 读到旧消息，窗口 = TTL | ① 定一个**统一失效机制**（谁写谁失效，或读侧带版本号）；② chain 断言"Go 删除后 Python 读不到旧行"——今天这条断言被**刻意不写**以免偶发红，修完必须补上；③ 并发与 Redis 故障两种情形下结论仍一致 | 不许用"跨服务临时通知"这种谁都没拥有的旁路（`08 §10` 明令禁止） |
+| **C34** | P1-1 的前置（`GET /sessions/{id}` 迁移） | `rag_trace` 是 pydantic **投影**而非透传：未知键丢弃、未给键序列化为 null，而契约与前端注释都写着透传 | ① 先拍口径：A=Go 复刻同一投影 / B=契约与前端改成"投影" / C=改成真透传并删投影；② 拍完把结论写进 `contracts/`，chain 按选定口径逐字对拍 | 不许照"透传"的字面去实现 Go——那会让接管后的响应形状与 Python 分歧，且没有门禁会红 |
+| **C36** | P1-2（删除 Python 的 register 面） | register 已由 Go 接管，但两侧从未对拍（chain 的种子直接写 PG） | 二选一：①补一条 register 的逐字对拍（响应形状 + 错误文案 + 邀请码分支）；②在删除卡里把"先取一次行为基线"列为**前置步骤**并在 WORKLOG 记录基线内容 | 不许直接删——删了就永久失去裁判，将来"注册在两个入口表现不同"无从判定 |
+| **C37** | P1-3（上传编排移到 Go，任务态持久化） | `ai_executions` 表已落库，但 `ExecutionStore` 是进程内 dict，**零写入方**；重启即丢全部执行记录 | ① store 落 PG，`(run_id, idempotency_key)` 与 `task_id` 两个幂等轴都建**唯一约束**；② chain 断言进程重启后执行记录仍可查（`-k executions_survive_restart`）；③ `table-acl.md` 的 `ai_executions` 归属由"意图"变成事实 | 不许为"看起来已持久化"再建一张并行表或写双写兼容层（`08 §10`） |
+
+
 ## B. 愿景驱动的代码缺口（V1–V3 依赖）
 
 | # | 问题 | 证据 | 影响 | 建议改法 | 归属 |
