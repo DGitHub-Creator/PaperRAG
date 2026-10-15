@@ -27,6 +27,11 @@ jobs:
       - name: Check API contracts
         run: uv run python scripts/check_contracts.py
 
+      # P1 设计审查的准入门禁：结构与依据可追 + 接管卡开工必须 approved。
+      # 放 CI 而不是只写进文档清单，是因为"记得跑"这件事本身不可依赖。
+      - name: Check P1 design review gate
+        run: uv run python scripts/check_design_review.py
+
       - name: Run tests
         run: uv run pytest -q --tb=short
 

@@ -197,6 +197,7 @@ uv run python scripts/sync_progress.py --check
 uv run python scripts/check_contracts.py
 uv run python scripts/check_frontend.py
 uv run python scripts/check_route_ownership.py  # 面归属 ↔ Go 注册 ↔ Python 路由 ↔ chain 用例
+uv run python scripts/check_design_review.py    # P1 准入门禁：五维度齐 + 依据可追 + 接管卡须 approved
 uv run python scripts/audit_schema.py --check-baseline
 uv run python scripts/export_pbkdf2_golden.py --check
 uv run python scripts/export_jwt_golden.py --check
