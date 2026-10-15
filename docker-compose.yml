@@ -107,51 +107,13 @@ services:
     depends_on:
       - "etcd"
 
-  backend:
-    container_name: researchpilot-backend
-    # 显式命名镜像：compose 默认镜像名取 project 名（由目录名推导），
-    # 与项目名 researchpilot 的口径不一致，这里钉死。
-    image: researchpilot-backend
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # Dockerfile 是多阶段构建，最后一个 stage 是 nginx；不写 target 会构建出 nginx 镜像，
-      # 容器监听 80 而本服务的端口映射与 healthcheck 都是 8000，必然 unhealthy。
-      target: backend
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/langchain_app
-      - REDIS_URL=redis://redis:6379/0
-      - MILVUS_HOST=standalone
-      - MILVUS_PORT=19530
-      - HF_HOME=/app/models
-      # JWT_SECRET_KEY 已无内置默认值，缺失即拒绝启动。此处仅给本地开发栈一个
-      # 可用值；生产用 docker-compose.prod.yml + .env.production，或在此注入真实密钥。
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-only-insecure-jwt-secret}
-      # LLM_API_KEY / LLM_MODEL 在 backend/core/config 的 validate_config() 里是硬要求
-      # （缺失即拒绝启动，实测抛 RuntimeError: Missing required configuration）。
-      # 由本地 .env 经 compose 变量替换注入（.env 不入库）。
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_MODEL=${LLM_MODEL:-}
-      - LLM_BASE_URL=${LLM_BASE_URL:-}
-    volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/models:/app/models
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/data:/app/data
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      start_period: 15s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      standalone:
-        condition: service_healthy
+  # ⚠️ 这里**没有**应用服务（backend / nginx / go-api），是刻意的，不是漏了。
+  # 2026-10-13 定案：dev 形态容器只跑中间件，Go / Python / 前端一律源码跑
+  # （`dev.py serve`、`dev.py go-serve`、`npm run dev`）。理由不是省资源，是那份含 torch 的
+  # backend 镜像要 16.5 GB，改一行代码就得重建，dev 循环会因此停摆。
+  # 由 `check_nginx_routes.py` 的 R5 机检这条定案——往 dev compose 里加回应用服务就会红。
+  # 全栈容器形态只在 `docker-compose.prod.yml`（部署形态，含 go-api 与 nginx），本文件的判据不适用于它。
+  # 台账 C29 记的就是这次移除；`dev.py migrate` 原先 exec 进本容器跑 alembic，现已改为宿主执行。
 
   attu:
     container_name: milvus-attu

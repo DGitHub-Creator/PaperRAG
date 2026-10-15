@@ -123,32 +123,58 @@ server {
         assert resolve("http://pool", ups).startswith("多个(")
 
 
-class TestComposeRule:
-    def test_missing_ai_core_service_is_a_note(self):
-        """服务还不存在（P0-8 的活）不能算违反，否则这条规则在 P0-8 之前永远报假警。"""
-        errors, notes = check_compose({"services": {"postgres": {}}})
+class TestComposeRules:
+    """R4 判 prod 形态、R5 判 dev 形态。两份文件混用一套规则就会有一条永远找不到对象。"""
+
+    def test_prod_published_host_port_is_a_violation(self):
+        errors, _ = check_compose({"services": {"ai-core": {"ports": ["8001:8001"]}}}, dev=False)
+        assert any("R4" in e for e in errors)
+
+    def test_prod_host_network_mode_is_a_violation(self):
+        errors, _ = check_compose({"services": {"ai-core": {"network_mode": "host"}}}, dev=False)
+        assert any("R4" in e for e in errors)
+
+    def test_prod_internal_only_service_passes(self):
+        assert check_compose({"services": {"ai-core": {"expose": ["8001"]}}}, dev=False)[0] == []
+
+    def test_renaming_the_python_service_does_not_escape_r4(self):
+        """`backend` 是 Python 在 compose 里的历史服务名。只认 `ai-core` 的话，
+        改个名字就把端口隔离判空了——所以两个名字都要进规则。"""
+        errors, _ = check_compose({"services": {"backend": {"ports": ["8000:8000"]}}}, dev=False)
+        assert any("R4" in e for e in errors)
+
+    def test_prod_public_entry_publishing_a_port_is_allowed(self):
+        """nginx 的 80 是**入口本身**，不是泄漏。R4 若把它也算红，这条规则就永远不可能满足。"""
+        assert check_compose({"services": {"nginx": {"ports": ["80:80"]}}}, dev=False)[0] == []
+
+    def test_dev_form_with_app_service_is_a_violation(self):
+        """「容器只跑中间件」从前只是 `AGENTS.md §7` 的一句话。往 dev compose 加回
+        `backend` 就等于让那个 16.5 GB 镜像重新变成 dev 的必经路径，必须红。"""
+        errors, _ = check_compose({"services": {"postgres": {}, "backend": {}}}, dev=True)
+        assert any("R5" in e for e in errors)
+
+    def test_dev_form_without_app_services_passes(self):
+        """源码形态下 dev 里本来就没有应用服务——它是**通过**，不是"没东西可判"。"""
+        errors, notes = check_compose({"services": {"postgres": {}, "redis": {}}}, dev=True)
         assert errors == []
-        assert any("还没有" in n for n in notes)
-
-    def test_published_host_port_is_a_violation(self):
-        errors, _ = check_compose({"services": {"ai-core": {"ports": ["8001:8001"]}}})
-        assert any("R4" in e for e in errors)
-
-    def test_host_network_mode_is_a_violation(self):
-        errors, _ = check_compose({"services": {"ai-core": {"network_mode": "host"}}})
-        assert any("R4" in e for e in errors)
-
-    def test_internal_only_service_passes(self):
-        assert check_compose({"services": {"ai-core": {"expose": ["8001"]}}})[0] == []
+        assert any("容器只跑中间件" in n for n in notes)
 
 
-def test_shipped_nginx_config_fails_for_the_recorded_reason():
-    """真仓库现在的配置必须**失败在 R1**（`/api/` 还指向 backend）。
+def test_shipped_configs_pass_after_the_p0_8_switch():
+    """真仓库的配置：nginx 的 `/api/` 已切 go-api，两份 compose 各按形态通过。
 
-    如果哪天它变成 pass，说明 P0-8 已经把 upstream 切到 Go —— 那时这条用例该被
-    改成断言 pass，而不是留着当"脚本永远红"的借口。
+    这条用例 2026-10-15 之前断言的是"必须红在 R1"（`/api/` 还指 backend）。
+    P0-8 把 upstream 切过去之后它改成断言绿——判据换了方向，但要的仍是同一件事：
+    **让配置自己说话，而不是让文档替它说话**。
     """
-    text = (Path(__file__).resolve().parents[2] / "nginx" / "nginx.conf").read_text(encoding="utf-8")
-    errors, notes = check_nginx(text)
-    assert any("违反 R1" in e and "backend" in e for e in errors), (errors, notes)
-    assert not any("R2" in e for e in errors), "今天没有任何路由指向 ai-core，R2 本就该过"
+    root = Path(__file__).resolve().parents[2]
+    errors, notes = check_nginx((root / "nginx" / "nginx.conf").read_text(encoding="utf-8"))
+    assert errors == [], (errors, notes)
+    assert not any("R2" in e for e in errors), "没有任何路由指向 ai-core"
+
+    import yaml
+
+    dev = yaml.safe_load((root / "docker-compose.yml").read_text(encoding="utf-8"))
+    prod = yaml.safe_load((root / "docker-compose.prod.yml").read_text(encoding="utf-8"))
+    assert check_compose(dev, dev=True)[0] == [], "dev compose 里不该有应用服务"
+    assert check_compose(prod, dev=False)[0] == [], "prod 里应用服务不该发布宿主端口"

@@ -8,16 +8,17 @@
   R1  所有 `/api/` 前缀的 location，其 `proxy_pass` 必须解析到 `go-api`
   R2  任何 location 都不得把流量交给 `ai-core`（含经 upstream 间接指向）
   R3  nginx 里不得出现 `/internal` 前缀的 location（内部面对浏览器不可见）
-  R4  compose 里的 `ai-core` 服务不得发布宿主端口（`ports:`）
+  R4  prod compose 里的应用服务不得发布宿主端口（入口只有 nginx）
+  R5  dev compose 里不得出现应用服务（2026-10-13 定案「容器只跑中间件」）
 
 只做静态判定，不发请求：它能在没有 Docker 的机器上告诉你"配置写错了"，
-但**不能**证明运行中的 nginx 行为与配置一致——那半截属于 X1 的 `docker compose up`，
-所以 X2 的 level 仍是 e2e，本脚本 exit 0 只是它的必要条件。
+但**不能**证明运行中的 nginx 行为与配置一致——那半截要真起栈，所以 X2 的 level
+仍是 e2e，本脚本 exit 0 只是它的必要条件。
 
-R4 的口径要说清：`ai-core` 目前还没进 compose（那是 P0-8 的活），脚本把它记为**提示**
-而不是失败——"服务不存在"和"服务存在但开了端口"是两件事，混淆会让 P0-8 之前
-这条规则永远在报同一个假警。R1 今天必然失败（`/api/` 还指向 Python 的 `backend`），
-这正是它该有的输出。
+R4 与 R5 按**形态**分判，这是 P0-8 里容易写错的一处：源码形态下 dev compose 里
+本来就不该有 `ai-core`/`backend`，把它们当"服务不存在"吞成提示，那条规则就永远找不到
+对象（空规则比红规则危险）；而 prod 是全栈容器，应用服务必须存在，只是不许开端口。
+R1 在 2026-10-15 之前一直红（`/api/` 指向 Python 的 `backend`），那是 P0-8 的活，不是脚本缺陷。
 
 用法：
     uv run python scripts/check_nginx_routes.py [路径...]
@@ -33,10 +34,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 NGINX_CONF = ROOT / "nginx" / "nginx.conf"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
+PROD_COMPOSE_FILE = ROOT / "docker-compose.prod.yml"
 
 GO_UPSTREAM = "go-api"
 AI_CORE = "ai-core"
 API_PREFIX = "/api"
+
+#: compose 里属于"应用"的服务名。Python 那条在 compose 里叫 `backend`（历史名，
+#: 目录也不改回去——见 `AGENTS.md §7` 的「不 `git mv backend → ai-core`」），
+#: 但它在 R4 里的角色就是 ai-core，所以两个名字都要认，否则改个服务名就能绕过端口隔离。
+APP_SERVICES = ("backend", "ai-core", "go-api", "go-worker", "nginx")
+
+#: prod 里**唯一**允许发布宿主端口的应用服务。R4 判的是"内部面不对外"，不是"谁都不许监听"：
+#: 把 nginx 也算进去等于要求部署形态里没有任何入口，那是一条永远不可能满足的规则。
+PUBLIC_ENTRY = "nginx"
 
 UPSTREAM_BLOCK_RE = re.compile(r"\bupstream\s+(?P<name>\S+)\s*\{")
 LOCATION_BLOCK_RE = re.compile(r"\blocation\s+(?P<spec>[^{};]+?)\s*\{")
@@ -175,20 +186,48 @@ def check_nginx(text: str) -> tuple[list[str], list[str]]:
     return errors, notes
 
 
-def check_compose(data: Any) -> tuple[list[str], list[str]]:
-    """R4：`ai-core` 不得发布宿主端口。服务还不存在时只给提示。"""
+def check_compose(data: Any, *, dev: bool) -> tuple[list[str], list[str]]:
+    """按**形态**判 compose。dev 与 prod 不是"好配置与坏配置"，是两种都合法的拓扑。
+
+    dev（源码形态）判 R5：容器里**不许出现应用服务**。2026-10-13 的定案「容器只跑中间件」
+      从前只写在 `AGENTS.md §7` 里，谁往 dev compose 加回 `backend` 都不会红——
+      而它一进去，那个 16.5 GB 的镜像就重新变成 dev 的必经路径。
+    prod（部署形态）判 R4：应用服务**不许发布宿主端口**。入口只有 nginx 的 80 一个，
+      Python（服务名沿用 `backend`，角色是 ai-core）与 go-api 都只在 compose 网络里可达。
+
+    分开判而不是判"有没有 ai-core 服务"：源码形态下那个服务**本来就该不存在**，
+    把它当"服务不存在"的提示吞掉，等于让规则永远找不到对象——空规则比红规则危险。
+    """
     errors: list[str] = []
     notes: list[str] = []
     services = (data or {}).get("services") or {}
-    svc = services.get(AI_CORE)
-    if svc is None:
-        notes.append(f"compose 里还没有 `{AI_CORE}` 服务（P0-8 的改动），R4 这次没有东西可判")
+
+    if dev:
+        present = [name for name in APP_SERVICES if name in services]
+        if present:
+            errors.append(
+                f"dev compose 里出现了应用服务 {present}。dev 形态容器只跑中间件"
+                "（Go / Python / 前端源码跑，见 `dev.py serve` 与 `dev.py go-serve`），违反 R5"
+            )
+        else:
+            notes.append("dev 形态：compose 里没有应用服务，符合「容器只跑中间件」的定案")
         return errors, notes
-    ports = svc.get("ports") or []
-    if ports:
-        errors.append(f"`{AI_CORE}` 发布了宿主端口 {ports}，内部面必须只走 compose 网络，违反 R4")
-    if (svc.get("network_mode") or "").startswith("host"):
-        errors.append(f"`{AI_CORE}` 用了 host 网络，端口隔离等于没有，违反 R4")
+
+    for name in APP_SERVICES:
+        if name == PUBLIC_ENTRY:
+            continue
+        svc = services.get(name)
+        if svc is None:
+            continue
+        ports = svc.get("ports") or []
+        if ports:
+            errors.append(
+                f"`{name}` 发布了宿主端口 {ports}。内部面与 Go 都必须只走 compose 网络，违反 R4"
+            )
+        if (svc.get("network_mode") or "").startswith("host"):
+            errors.append(f"`{name}` 用了 host 网络，端口隔离等于没有，违反 R4")
+    if not any(name in services for name in APP_SERVICES):
+        notes.append("prod compose 里没找到任何应用服务，R4 这次没有东西可判")
     return errors, notes
 
 
@@ -197,11 +236,12 @@ def main(argv: list[str] | None = None) -> int:
     if args:
         paths = [Path(a) for a in args]
     else:
-        # X2 与 Y4 共用这一条命令：nginx 决定"谁能被外部访问"，compose 决定"ai-core 有没有开宿主端口"。
+        # X2 与 Y4 共用这一条命令：nginx 决定"谁能被外部访问"，compose 决定"应用服务有没有开宿主端口"。
+        # 两份 compose 都读：R5 的对象在 dev 那份，R4 的对象在 prod 那份，缺一份就有一条规则没归宿。
         # 显式传的路径缺失要报错，默认路径缺失只是没那个文件可查。
-        paths = [p for p in (NGINX_CONF, COMPOSE_FILE) if p.is_file()]
+        paths = [p for p in (NGINX_CONF, COMPOSE_FILE, PROD_COMPOSE_FILE) if p.is_file()]
         if not paths:
-            print("[nginx] 既没有 nginx/nginx.conf 也没有 docker-compose.yml，无从判定")
+            print("[nginx] 既没有 nginx/nginx.conf 也没有任一 compose，无从判定")
             return 1
 
     all_errors: list[str] = []
@@ -214,7 +254,10 @@ def main(argv: list[str] | None = None) -> int:
             import yaml
 
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
-            errors, notes = check_compose(data)
+            # 形态由**文件名**定：dev 那份的合法形状是"没有应用服务"，prod 那份是
+            # "应用服务不开宿主端口"。同一个函数按同一套规则判两份文件，
+            # 结果只会是其中一条规则永远在报找不到对象。
+            errors, notes = check_compose(data, dev=path.name == "docker-compose.yml")
         else:
             errors, notes = check_nginx(path.read_text(encoding="utf-8"))
         all_errors += [f"{path.name}: {e}" for e in errors]

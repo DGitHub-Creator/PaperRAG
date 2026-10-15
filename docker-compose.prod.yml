@@ -136,6 +136,45 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # go-api：唯一公开业务入口（X2）。nginx 只把它当作后端，浏览器面的所有 /api/ 都先到这里。
+  # 它直连 PostgreSQL 读写自己那三张表，未迁移的面再反代给 backend（PYTHON_UPSTREAM）。
+  # ⚠️ 中国大陆构建时 go mod download 走不通官方源，需要 `--build-arg GOPROXY=https://goproxy.cn,direct`
+  #    （Dockerfile 里是 ARG，不在仓库写死，避免换网络环境的机器反而变慢）。
+  go-api:
+    container_name: researchpilot-go-api
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - .env.production
+    environment:
+      # Go 用 pgx，连接串是 postgres:// 方案；Python 那边是 postgresql+psycopg2://。
+      # 同一个库、两种写法是刻意的：dev 形态由 dev.py go-serve 做归一化，这里直接写对。
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/langchain_app?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHON_UPSTREAM=http://backend:8000
+      - PORT=8080
+      - APP_ENV=production
+    # 不发布宿主端口：入口只有 nginx 的 80，探针走容器网络（R4 判的就是这一条）。
+    healthcheck:
+      # 用 /health 而不是 /ready：/ready 会把 PG 与 Redis 都算进结果，
+      # 拿它当门禁等于让"某个依赖抖一下"把整个入口挡在启动之外。
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      interval: 30s
+      start_period: 15s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # service_started 而不是 service_healthy：Go 起来不依赖 Python 健康，
+      # 未迁移的面在 Python 恢复前按 502 信封如实报错，比整站起不来好。
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   nginx:
     container_name: researchpilot-nginx
     build:
@@ -145,6 +184,8 @@ services:
     ports:
       - "80:80"
     depends_on:
+      go-api:
+        condition: service_healthy
       backend:
         condition: service_healthy
     restart: unless-stopped
