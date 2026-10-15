@@ -43,7 +43,7 @@
 
 ## 3. 现在的架构事实（只留结论；来龙去脉见 `WORKLOG.md`）
 
-- **两种运行形态**：dev = **中间件容器 + 三个源码进程**（Go / Python / 前端，见 §6）；
+- **两种运行形态**：dev = **中间件容器 + 三个源码进程**（Go / Python / 前端，见 §6），**dev compose 里没有任何应用服务**（由 `check_nginx_routes.py` 的 R5 守着，台账 C29 已处置）；
   prod = `docker-compose.prod.yml` 的**全栈容器**（部署形态）。"容器只跑中间件"这条定案**只管 dev**。
 - **dev 的入口链**：`vite`（:5173）→ **go-api**（:8080）→ 尚未迁移的路径反代给 `PYTHON_UPSTREAM`
   （默认 `127.0.0.1:8000`）。**搬一条路由就少转发一条**（`14 §19` 铁律 2「门面先于重写」）。
@@ -52,9 +52,11 @@
   `/ready` 的探测键是 `database` + `redis`，键名与 detail 文案与 Python 逐字对齐。
 - **Python 仍是主业务后端**：浏览器面 13 条 + 内部面 7 条（`/internal/v1/ai/*`，**零生产调用方**）
   + 前端不调但仍可达 12 条 → "只被动执行单次 AIExecution"**尚未成立**。
-- **数据面**：`server/migrations/` 3 份迁移、12 张建表；sqlc 10 条查询分布在 3 个文件
+  每条面由 `contracts/route-ownership.md` + `scripts/check_route_ownership.py` 逐一认领（归属 ∈ `go`/`shared`/`proxy`/`internal`）：接管了却没删、新加了没人认领，都会红。
+- **数据面**：`server/migrations/` 3 份迁移**已有执行器**（`dev.py migrate-go`，决策 D8 定案：显式命令、不进启动路径；台账 C18 已处置），dev 库实测 13 张基础表 = 12 张建表 + `schema_migrations`；sqlc 10 条查询分布在 3 个文件
   （`users` / `user_preferences` / `chat_sessions`），也就是 **Go 今天只读写 3 张表**。
-  ⚠️ `contracts/table-acl.md` 声明 24 张，其中 18 张的 `go: W` 是**纸面归属**（库里没有这些表，台账 C30）。
+  ⚠️ `contracts/table-acl.md` 声明 25 张（现场取：`grep -c '^| `' contracts/table-acl.md`），其中 18 张的 `go: W` 是
+  **纸面归属**（库里没有这些表，台账 C30，差集已逐张点名在 ACL 文末）；另有 5 张库里存在但未登记，归属属决策 D6。
 - **文档真相不在 PG**：`/documents` 读文件系统 `UPLOAD_DIR` + `ingested_state.json` + Milvus（chunk 数），
   所以 Go 接管它的硬前置是先建文档真相表；`rag_trace` 是 pydantic **投影**而非透传（台账 C34）。
 - **迁移编号规则**（详见 `plans/05 §2.6`）：`000001` 基线 / `000002` `ai_executions` / `000003`
@@ -112,6 +114,8 @@
 - `scripts/audit_schema.py --live` 与 `probe_timestamps.py` **要显式 export `DATABASE_URL`**（脚本不读 config 默认值）。
 - 中国大陆：`go env -w GOPROXY=https://goproxy.cn,direct`；`docker.io` 被 DNS 污染 → 用镜像源
   （`docker.m.daocloud.io` / `docker.1ms.run` / `quay.io` 直连），**要拉带版本号的 tag，别拉 latest 再改名**。
+- **跑 chain / e2e 证据时 `dev.py serve` 要带 `--no-reload`**：集成用例往 `backend/data/documents/` 写文件会触发热重载、把真栈打断，chain 就红在一片"断言写错了"的表象里（本轮实测：带 reload 时 7 条红，`--no-reload` 时全量 644 passed）。内部执行面的 chain 用例还要 `AICORE_INTERNAL_TOKEN`，服务与用例必须用同一个值。
+- **Playwright 的浏览器包在本机装不全**（镜像与官方 CDN 两次都只落 `chrome.dll`，`chrome.exe` 被丢，现象像杀软拦截新落地可执行文件），所以 e2e 实跑用 `E2E_BROWSER_CHANNEL=chrome` 走系统 Chrome；**不设这个变量就回到 Playwright 自带 chromium**，别把它写进默认值。
 - **跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**，否则 `tmp_path` 用例会以 `PermissionError`
   **假失败**；也**不要**用 `--basetemp` 指到工作区内（会产生谁都删不掉的毒目录）。
 - Docker 数据盘与 WSL distro 本体都在 `D:\DockerData`；改它必须先 `docker desktop stop`（运行中改会被覆写）。
@@ -136,10 +140,11 @@ cd frontend && npm run dev               # vite（只监听 ::1，用 localhost 
 
 - 只起判据需要的最小集合：`dev.py up postgres redis` 比 `infra` 轻得多（见 §7 的进程纪律）。
 - ⚠️ `attu` 的宿主端口是 **3001**（8080 让给 go-api，也是 X1 判据的落点）。
-- `nginx` **还没**切到 Go（X2 的红点，属 P0-8）。
-- ⚠️ `dev.py up`（全栈容器，会为此构建那个 **16.5 GB** 的 backend 镜像）**不是验收路径**；
-  它与 dev compose 的 `backend`/`nginx` 服务、`server/Dockerfile`、`check_nginx_routes.py` 的 R4
-  一起登记为台账 **C29**，处置属 P0-8。
+- `nginx` 的 `/api/` 已切到 `go-api`（X2 于第十七轮转 pass），但 **dev 形态下 nginx 不在请求路径上**：
+  它属部署形态，实跑要起 prod compose（`go-api` 服务用 `server/Dockerfile` 构建）。
+- ⚠️ 台账 **C29**（四处"应用服务容器化"遗留物）已于第十七轮**全部处置**：dev compose 的 `backend` 服务已删、
+  `dev.py up` 现在等价于"起全部中间件"、`dev.py migrate` 改宿主跑 alembic、`server/Dockerfile` 转为被 prod 的
+  `go-api` 服务使用，`check_nginx_routes.py` 的 R4 按形态分判并新增 **R5**（dev 不得出现应用服务）。
 - **全新电脑的完整安装步骤**（依赖版本、五步命令、验收方法、起不来的三处排查）见 [README §3](README.md)。
 
 ## 7. 绝对不能做
@@ -170,6 +175,7 @@ cd frontend && npm run dev               # vite（只监听 ::1，用 localhost 
 - **接管一条路由必须带上它原先的能力**：Python 那条被删掉之后，它的限流（C33）、缓存失效（C35）、
   探测键（X1 那一格）不会自动跟过来。**"Go 覆盖了这条路径"不等于"这条路径的能力没退化"**，
   而这类退化没有任何门禁会红——只能靠接管卡片把它列成验收项。
+  **新接管一条面必须同时改 `contracts/route-ownership.md`**——这条现在有门禁会红了（第十七轮）。
 
 ## 8. 提交纪律
 
@@ -181,6 +187,7 @@ Conventional Commits（`fix(p0):` / `feat(dev):` / `chore(repo):` …）＋**每
 uv run python scripts/sync_progress.py --check
 uv run python scripts/check_contracts.py
 uv run python scripts/check_frontend.py
+uv run python scripts/check_route_ownership.py  # 面归属 ↔ Go 注册 ↔ Python 路由 ↔ chain 用例
 uv run python scripts/audit_schema.py --check-baseline
 uv run python scripts/export_pbkdf2_golden.py --check
 uv run python scripts/export_jwt_golden.py --check

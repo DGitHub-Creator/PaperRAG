@@ -1,8 +1,11 @@
 # 07 — 最小真实 E2E 测试方案
 
 > **本文状态**：性质=实施（测试纪律与用例清单）。`chain` 层已随 **P0-5**（done）建起——`tests/chain/`
-> 现有 **15 项**，全是对 Go 已接管面（认证 / 会话 / 探针）的跨语言对拍（L5）；`e2e` 层**仍是 0 条**
-> （`uv run pytest -m e2e` 返回 exit=5「没收到用例」，不是绿），骨架属 **P0-9**。剩余落地卡片：
+> 现有 **27 项**（现场取：`pytest --collect-only -q -m chain`），全是对 Go 已接管面（认证 / 会话 / 探针 /
+> 内部执行面）的跨语言对拍（L5）。**`e2e` 层的用例不在 pytest 里**：P0-9 的 e2e 载体是 Playwright
+> （`frontend/e2e/p0-auth.spec.ts`，判据 `cd frontend && npm run test:e2e`，9 项），
+> 所以 `uv run pytest -m e2e` 仍收 0 项、exit=5——**这不是"e2e 还没做"，是"e2e 不在这一层"**；
+> 要把浏览器用例并进 pytest 的 e2e marker，得先决定谁拉起谁（现在是 Playwright 自己管 vite，真栈由 `dev.py` 管）。剩余落地卡片：
 > **P0-9**（L4 浏览器 E2E 骨架 + `tests/e2e/`）、**P1-6**（L1–L3 真实链路，含 LLM）、
 > **P2-3/P2-4**（chunk/公式链路用例与 10–15 题固定回归集）。逐轮实录见 [../WORKLOG.md](../WORKLOG.md)，
 > 进度与退出标准以 [../progress.json](../progress.json) 为准。

@@ -18,7 +18,66 @@
 
 ---
 
-## 2026-10-15 · 文档层重构（本轮）
+## 2026-10-15 · 第十七轮 —— P0 收口：X2 转 pass、四条卡 done、分工口径落进机检
+
+**一句话**：把 P0 剩下的四张卡（P0-6/P0-7/P0-8/P0-9）与唯一一条 fail（X2）一起收掉，
+顺带把「前端 / Go / Python 谁做什么」从四段散文变成一个可执行脚本 + 一张归属表。
+
+- **用户拍的四个决定**（动手前对齐，不是事后追认）：X2 的拓扑选 **①Go 进 prod compose**
+  （结论：不是 Go 的特性也不是 nginx 的限制，而是 `check_nginx_routes.py` 的 `resolve()` 把 `go-api`
+  当**主机名**认——真正约束只是"nginx 要能解析出一个叫 go-api 的主机"）；D8 = **dev.py 显式 migrate 命令**
+  （不进启动路径）；P0-7 证据档 = 多加一次真 LLM 成功执行；P0-9 = 装 Playwright 跑结构级 e2e。
+- **X2 与 C29（P0-8）**：`nginx/nginx.conf` 的 `/api/`、`/api/v1/ws/`、`= /health`、`= /ready` 全切
+  `upstream go-api`，保留 `backend` upstream 作为 04 §5 要求的**一行回退**；prod compose 加 `go-api` 服务
+  （用 `server/Dockerfile` 构建、不发布宿主端口）；dev compose 的 `backend` 服务**删除**；
+  `dev.py migrate` 从"容器内 alembic"改为宿主跑；`check_nginx_routes.py` 的 R4 改为**按形态分判**并新增
+  **R5**（dev compose 不得出现应用服务）——那条定案从前只是 `AGENTS.md §7` 的一句话，现在有门禁。
+  判据实测 rc=0，单测 42 项（每条规则一正一篡改）。**X2 的 level 永久 e2e**：本机没起过 prod 全栈
+  （要构建 16.5 GB 的 backend 镜像，而它与仓库在同一块盘上），所以这条 pass 的证据是**静态配置级**。
+- **D8 落地**：新 `server/cmd/migrate`（golang-migrate 库）+ `dev.py migrate-go`。真库连跑两遍 `up` 均 rc=0、
+  `version: 3 clean`，库里 13 张基础表 = 12 张建表 + `schema_migrations`，`ai_executions` **第一次真实存在**。
+  两个连接串坑是照生产侧现状写的：`.env` 里的 `DATABASE_URL` 是 SQLAlchemy 的 `postgresql+psycopg2://`，
+  直接交给驱动报的是看不出根因的 "unknown scheme"，所以命令内归一；没写 `sslmode` 就补 `disable`，
+  否则 lib/pq 默认 `require` 会以 x509 失败。X6 的「版本与设计一致」这一问从此有命令可跑（C18 处置）。
+- **P0-7 的 real 档**：`tests/chain/test_ai_executions.py` 12 项，成功路径是**真解析器读真 PDF**
+  （集成层用的 `b"%PDF-1.4 fake"` 在桩 loader 下够用，落到真 loader 就 PARSE_FAILED，"成功路径"就永远升不到 real）。
+  ⚠️ **推翻我自己给用户的一个前提**：用户批准"再加一次真 LLM 成功执行"，但 P0 注册的两个类型
+  （`PARSE_PAPER`/`INDEX_PAPER`）**都不调 LLM**（实测 `usage.calls=0`），所以那一档在 P0-7 的范围内**够不着**，
+  不是我省略了。LLM 调用随 P1 的 LLM 任务类型落地。
+- **查出的两条新事实**（都进了台账）：**C37** `ai_executions` 表已落库但 `ExecutionStore` 是进程内 dict、
+  **零写入方**——表与实现脱节，和 C30 同形；**C36** `register` 面 Go 已接管但两侧从未对拍（chain 的种子直接写 PG），
+  Python 那条还活着，删除前没有一致性基线。
+- **分工变成机检**：新 `contracts/route-ownership.md`（37 行：方法 × 路径 × 归属 ∈ `go`/`shared`/`proxy`/`internal`
+  × `Python 仍在`）+ `scripts/check_route_ownership.py`，回查三个真相源（Go 源码路由注册、`backend.app` 实际路由表、
+  `tests/chain` 用例名）。它第一次跑就抓到两类东西：①归属为 `go` 却仍被 Python 服务的**五条面**——
+  第十四轮定的"接管即删"实际没删，因为 chain 的逐字对拍需要两侧在场，这是**有意保留**但没人写过；
+  ②我自己在表里写的"对拍保留"有两条其实**没有用例**（`register`），于是脚本要求例外要么指到
+  `tests/chain/<文件>.py::<用例名>`，要么登记成欠账。按路径字面量 grep 判不准（删除面在测试里写成
+  `LIST_PATH + 具体 id`），会误判成没测过——所以登记到**用例名**，这是确定性的。
+  另一处真实缺口顺带修掉：**`dev.py serve` 默认绑 `0.0.0.0`**，而 P0-7 要求源码形态下 ai-core 只绑回环
+  （Go 反代本来就走 `127.0.0.1`，绑 `0.0.0.0` 只是把 `/internal/v1/ai/*` 暴露到局域网）。已改默认值并由单测钉住。
+- **P0-9**：`frontend/e2e/p0-auth.spec.ts` 9 项结构级 + `playwright.config.ts` + `npm run test:e2e` + `docs/plans/p0-demo.md`。
+  三条踩坑值得单独记：①**spec 不能放 `tests/e2e/`**——Node 从仓库根往上找不到 `node_modules`，
+  `import '@playwright/test'` 直接解析失败，工具链在哪棵树 spec 就得在哪；②**Playwright 每条用例一个新 context**，
+  localStorage 的 token 不跨用例，按"注册一次后面复用"写会让后面的用例全停在 `/login`，
+  而失败表象像"选择器错了"（第一版就是这么红的）；③**本机 chromium 包两次都只解出 `chrome.dll`**
+  （镜像与官方 CDN 都一样，现象像杀软拦新落地的可执行文件），所以实跑用 `E2E_BROWSER_CHANNEL=chrome`，
+  不设该变量仍回默认 chromium——这是**本机环境事实**，不写进默认值。
+  另外 `/settings` 上有**两个**"退出登录"（rail 图标只有 title、账号板块是文字按钮），按名字点会撞 strict mode。
+- **chain 红过的 7 条不是仓库缺陷**：`dev.py serve` 带 `--reload` 时，集成用例往 `backend/data/documents/` 写文件
+  会触发热重载打断真栈，新的 chain 文件恰好排在集成层之后。带 reload 全量 7 条红，`--no-reload` 全量 **644 passed**。
+  **证据跑必须 `--no-reload`**，这条写进 `AGENTS.md §5` 与 `p0-environment §2.1`。
+- **读数（现场取）**：全量 644 passed = unit 527 / integration 57 / chain 27 / pytest-e2e 0；Playwright 9 项；
+  `-m chain` 27 collected；`dev.py` 13 个子命令；prod compose 8 个服务、dev compose 6 个（全是中间件）；
+  完成度 30%（118/394 h），X1–X8 全 pass。
+- **门禁**：`sync_progress --check` / `check_contracts` / `check_frontend` / `check_route_ownership` /
+  `audit_schema --check-baseline` / 两份 golden `--check` / `dev.py gen --check` / `gofmt` + `go vet` + `go test ./...` 全绿。
+- **留下的坑与指针**：`/metrics` 仍是三不管（归属表里登记为 `proxy`，Go 未实现）；dev 里 Go 反代 Python 的 WS
+  在页面关闭时报 `ECONNRESET` 噪声（vite 侧打印，不影响用例），P1-4 接管流式时一并看；
+  D6（那 5 张库里存在但未登记归属的表）与 C34/C35 仍待拍/待处置，都属 P1。
+
+## 2026-10-15 · 文档层重构
+
 
 **一句话**：把散在四处的日志收进本文件，`AGENTS.md` 瘦回"愿景 + 规约 + 硬约束"，并按当前进度同步全项目 docs。
 

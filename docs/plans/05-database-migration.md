@@ -2,7 +2,8 @@
 
 > **本文状态**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)；逐轮实录见 [../WORKLOG.md](../WORKLOG.md)、卡片状态见 [../progress.json](../progress.json)。
 > **当前进度**：三份迁移已落——`000001_baseline`（真库 10 表抄录）、`000002_ai_executions`、`000003_user_preferences`，`sqlc.yaml` 的 schema 源已指过来（编号规则见 §2.6）；核查脚本 `scripts/audit_schema.py` 三模式（`--check-baseline` / `--live` / `--verify-columns`，判定单测 37 项）与 §4.1 时间戳验证（`scripts/probe_timestamps.py` → `docs/reference/timestamp-audit.md`）已落。**仍未做**：`000004_fix_drift`、`000005_paper_chunks`（§3）、§4.2 的时间戳**转换**（验证已做、转换未执行）、`scripts/rebuild_chunks.py`。
-> ⚠️ **golang-migrate 从未接线**：`server/migrations/` 今天只有核查器与 sqlc 两个离线读者，没有任何执行器会把它应用到库上（`dev.py migrate` 跑的是容器内 alembic，见台账 C18 / 决策 D8）；因此基线的 real 级幂等证据靠「临时库法」人工实跑，不是某条已接线的命令。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
+> ✅ **执行器已接线（2026-10-15，决策 D8 / 台账 C18）**：`uv run python scripts/dev.py migrate-go`。
+> ⚠️ 历史口径保留如下，别把它读成现状：**golang-migrate 从未接线**：`server/migrations/` 今天只有核查器与 sqlc 两个离线读者，没有任何执行器会把它应用到库上（`dev.py migrate` 跑的是容器内 alembic，见台账 C18 / 决策 D8）；因此基线的 real 级幂等证据靠「临时库法」人工实跑，不是某条已接线的命令。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
 > 对应决策 Q4、Q5。原则：**先核查、后建基线、禁止对存量库重复初始化建表**；Milvus 降级为可重建索引，PostgreSQL 成为文献与分块正文的唯一真相（02 §0 L3）。
 
 ## 1. 收编前置核查（必须在任何写操作之前完成）

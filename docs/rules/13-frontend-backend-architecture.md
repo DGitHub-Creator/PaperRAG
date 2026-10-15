@@ -27,15 +27,18 @@
    │ minio→versitygw:9000（S3 语义）  attu:3001（Milvus 控制台）   │
    └───────────────────────────────────────────────────────────────┘
 
-   ┌ 生产形态（docker-compose.prod.yml，仍是全栈容器）────────────┐
-   │ 浏览器 → nginx → /api/ → upstream backend:8000（ai-core）      │
+   ┌ 生产形态（docker-compose.prod.yml，全栈容器）────────────────┐
+   │ 浏览器 → nginx :80 → /api/ → upstream go-api:8080              │
+   │                              └ 未迁移面 → PYTHON_UPSTREAM=      │
+   │                                http://backend:8000（compose 网络）│
    │         └ 静态 /、/assets/ → frontend/dist                     │
-   │ ⚠️ 这份里同样没有 go-api / go-worker                            │
+   │ ⚠️ 有 go-api（第十七轮，X2 转 pass）；**没有 go-worker**（属 P3）│
    └───────────────────────────────────────────────────────────────┘
 ```
 
 **读法**：dev 形态下 Go **已经**是入口承载物（vite→go-api:8080，Go 把未迁移路径反代给 Python）；
-prod 的 nginx **仍直指 Python**（`upstream backend`），这是 X2 唯一红点（属 P0-8）——别把 dev 的形状当成 prod 的完成态。
+prod 的 nginx 已切到 `upstream go-api`（`nginx/nginx.conf:20-24, 45, 56, 71, 74`，第十七轮），X2 因此转 pass；
+`backend` 这个 upstream **故意保留**，它是 04 §5 要求的那条一行回退路径，不是死配置。
 
 ---
 
@@ -45,13 +48,15 @@ prod 的 nginx **仍直指 Python**（`upstream backend`），这是 X2 唯一�
 | --- | --- | --- |
 | 中间件 | **容器** | `scripts/dev.py infra` 起 postgres / redis / etcd / minio(versitygw) / milvus / attu |
 | Go（go-api / go-worker） | **源码** | `cd server && go run ./cmd/api`（`go-worker` 同形） |
-| Python（ai-core） | **源码** | `uv run python scripts/dev.py serve`（宿主 uvicorn --reload） |
+| Python（ai-core） | **源码** | `uv run python scripts/dev.py serve`（宿主 uvicorn，默认只绑 `127.0.0.1`；跑 chain/e2e 证据要 `--no-reload`） |
 | 前端 | **源码** | `cd frontend && npm run dev`（vite，只监听 `::1`） |
 | 生产 | 全栈容器 | `docker-compose.prod.yml` + `--env-file .env.production`（台账 C27） |
 
 三条连带后果（都已写进 `AGENTS.md` §3/§4 与台账 C29）：
 1. **X1 的判据不再看 `compose ps`**，改为「中间件容器 + 应用源码起进程，`/api/v1/health` 与 `/ready` 各 200」——它因此**不再证明编排层**。
-2. **X2 的 R4**（compose 里 `ai-core` 不发布宿主端口）在 dev 形态下无物可判，等价口径是「只绑 `127.0.0.1`」。
+2. **X2 的 R4 现在按形态分判**：prod 判「应用服务不发布宿主端口」（`nginx` 的 80 是唯一入口，不算违反），
+   dev 由新加的 **R5** 判「compose 里不得出现应用服务」；源码形态下的端口隔离等价物是
+   `dev.py serve --host` 默认 `127.0.0.1`（由 `tests/unit/test_dev_cli.py` 钉住，漂回 `0.0.0.0` 就红）。
 3. 那个含 torch 的 **16.5 GB `backend` 镜像**只在部署才构建，已从 P0 阻塞清单移出（台账 C6 作废）。
 
 ---
@@ -61,17 +66,21 @@ prod 的 nginx **仍直指 Python**（`upstream backend`），这是 X2 唯一�
 | 段 | 开发形态 | 生产形态 | 目标态（02 §2） |
 | --- | --- | --- | --- |
 | 入口 | vite `:5173` | nginx `:80` | nginx → `go-api` |
-| `/api/*` 的去向 | **vite→go-api:8080**；Go 原生 8 条业务面，未迁移前缀反代到 Python:8000 | **`upstream backend { server backend:8000; }`**（`nginx/nginx.conf:20-22, 34`） | `upstream go-api` |
-| 是否经 Go | **是**（vite 的 `/api` 代理指 go-api:8080） | **否**（nginx 仍直指 Python，X2 红点） | 是，唯一公开入口 |
+| `/api/*` 的去向 | **vite→go-api:8080**；Go 原生 8 条业务面，未迁移前缀反代到 Python:8000 | **`upstream go-api { server go-api:8080; }`** → Go 再把未迁移面转给 `backend:8000` | `upstream go-api`（已达） |
+| 是否经 Go | **是**（vite 的 `/api` 代理指 go-api:8080） | **是**（nginx → go-api，Go 是唯一业务入口） | 是，唯一公开入口 |
 | WS | `/api/v1/ws/chat`（vite `ws:true` 转发） | 同路径（`nginx.conf:45` + Upgrade） | 由 Go 终结或透传（P1-4） |
 | `/internal/*` | 前端不可达（nginx 不转发） | 同左 | **必须仍然不可达**（R3） |
 
 ⚠️ **三条容易被忽略的事实**
 - **dev 形态下"Go 是唯一公开入口"这条不变量已有承载物**：vite 的 `/api` 代理指向 go-api:8080（`vite.config.js:12-16`），
-  Go 原生服务 8 条业务面、把未迁移前缀反代给 Python。但 X2 判的是 **prod 的 nginx**——nginx 仍直指 Python（`upstream backend`），
-  所以 X2 只能**静态**判 `nginx/nginx.conf` + compose 文本，`level` 留在 e2e 是诚实的，不是脚本缺陷。
-- 两份 compose **都没有 `go-api` / `go-worker` 服务**（`docker-compose.yml` 与 `docker-compose.prod.yml` 的服务清单实测）。
-- `check_nginx_routes.py` 今天对真仓库配置如实 **exit 1**（R1：`/api/` 还指向 Python），这条红是 P0-8 的活。
+  Go 原生服务 8 条业务面、把未迁移前缀反代给 Python。而 X2 判的是 **prod 的 nginx**，
+  它只能**静态**判配置文件文本——切了 upstream 不等于跑过全栈，`level` 留在 e2e 是诚实的。
+- **prod compose 有 `go-api` 服务**（8 个服务：postgres/redis/etcd/minio/milvus/backend/go-api/nginx），
+  它用 `server/Dockerfile` 构建、不发布宿主端口；`go-worker` 仍不在任何 compose 里（P3 才起调度）。
+  dev compose 只有 6 个中间件服务，**应用服务已移除**（台账 C29 处置，由 R5 守着）。
+- `check_nginx_routes.py` 对真仓库配置 **exit 0**（第十七轮，R1–R5 全过）。
+  ⚠️ 这条 exit 0 只是 X2 的**必要条件**：运行中的 nginx 与配置一致要到 prod 实跑才证，而本机 P0 没起过全栈容器
+  （16.5 GB 镜像 + 与仓库同盘的 I/O 代价），所以 X2 的证据等级是**静态配置级**，别读成"prod 已经跑通"。
 
 ---
 

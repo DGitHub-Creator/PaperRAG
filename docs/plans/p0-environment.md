@@ -78,10 +78,18 @@ P0-1 之后本会多出 `go-api` / `go-worker` / `ai-core` 三个服务并切换
 只有中间件用 Docker，后端与前端跑在宿主上——**不构建 backend 镜像**（含 torch 的 16.5 GB）：
 
 ```bash
-uv run python scripts/dev.py infra    # 只起 postgres/redis/etcd/minio/milvus/attu 并等 healthy
-uv run python scripts/dev.py serve    # 本机 uvicorn --reload
-cd frontend && npm run dev            # vite dev server
+uv run python scripts/dev.py infra         # 只起 postgres/redis/etcd/minio/milvus/attu 并等 healthy
+uv run python scripts/dev.py serve         # 本机 uvicorn（默认只绑 127.0.0.1；--reload 见下方告警）
+uv run python scripts/dev.py go-serve      # go-api :8080，dev 的单一入口（未迁移路径反代给 serve）
+cd frontend && npm run dev                 # vite dev server（/api 代理到 :8080）
 ```
+
+> ⚠️ **跑 chain / e2e 证据要 `dev.py serve --no-reload`**。带 `--reload` 时，集成用例往
+> `backend/data/documents/` 写文件会触发热重载、把真栈打断，chain 用例就以"断言失败"的形态红
+> （2026-10-15 实测：带 reload 全量 7 条红，`--no-reload` 全量 644 passed）。
+> 内部执行面 `/internal/v1/ai/*` 的用例还需要 `AICORE_INTERNAL_TOKEN`，且**服务与用例要用同一个值**：
+> `$env:AICORE_INTERNAL_TOKEN='<本机随机值>'` 之后再 `serve`，否则那一面按设计拒绝一切请求。
+> Go 侧建表走 `uv run python scripts/dev.py migrate-go`（决策 D8：显式动作，不进启动路径）。
 
 `DATABASE_URL` / `REDIS_URL` / `MILVUS_HOST` 的默认值已指向 `127.0.0.1`，无需额外环境变量。
 2026-10-11 本机实测：`infra` 起 6 容器全 healthy（且未构建任何镜像）→ `serve` 后 `/health` 与

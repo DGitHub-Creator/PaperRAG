@@ -51,6 +51,34 @@ uv run python -m pytest -q          # 测试基线（现状现场取，别抄文
 
 ---
 
+### 0.4 P0 收口时刻的边界（2026-10-15，第十七轮）
+
+> 这一节写的是**已经成立**的边界，不是目标态。每条都有机检或实跑撑着；
+> 没有机检的边界迟早漂成一句口号，所以下面每行都点明"谁替我守着"。
+
+| 层 | 今天实际负责的事 | 谁来守 |
+| --- | --- | --- |
+| **前端** | 展示与交互。业务请求只有一个出口（`api/http.ts`）、只有一份路径字面量（`api/client.ts`）、登录态只在一处（`api/token.ts`）；页面 13 条路由 | `check_frontend.py` R1–R11 + `check_contracts.py`（前端实调 ⊆ 契约，双向） |
+| **Go** | 公开入口与门面：`nginx → go-api`，未迁移路径反代给 Python；原生实现 8 条业务面（auth 的 register/login/me/password、偏好 GET/PUT、sessions 列表/删除）+ 4 条探针（`/api/v1/health|ready` 及两条根别名）；直连 PG 读写 `users` / `user_preferences` / `chat_sessions` 三张表 | `check_nginx_routes.py` R1–R3（入口链）、`check_route_ownership.py`（每条面归属与 Go 注册一致）、chain 层 27 条 |
+| **Python** | 业务实现与解析/检索/生成；`/internal/v1/ai/*` 内部执行面（P0 只注册 `PARSE_PAPER` / `INDEX_PAPER`）；documents / chat / ws / cache / stats 这些**还没搬**的面 | `check_route_ownership.py`（Python 暴露的每条面必须被认领归属；内部面必须 `/internal/` 前缀）、`internal_api/registry.py` 的显式未注册即失败 |
+
+**三条要说准的边界，别读成"已经到位"**：
+
+1. **入口链在 dev 与 prod 是两套承载物**。dev：`vite(:5173) → go-api(:8080) → 源码 Python(:8000)`，
+   **nginx 不在请求路径上**（dev compose 里已没有应用服务，R5 守着这条）。
+   prod：`nginx(:80) → go-api → backend`，Go 由 `server/Dockerfile` 构建、作为 compose 服务运行。
+   "容器只跑中间件"这条定案**只管 dev**，写进 prod 会变成自相矛盾。
+2. **`/api/v1/sessions/{id}`、documents、chat/stream、ws 仍是 Python 实现**（归属表里 17 行 `proxy`）。
+   Go 是**门面**不是实现——门面先于重写（`14 §19` 铁律 2），所以"Go 接管了入口"不等于"Go 写了业务"。
+3. **被接管的 Python 路由没有立刻删**：`register` / `login` / `me` / sessions 列表与删除五条仍在服务，
+   因为 chain 的逐字对拍需要两侧在场。这条例外现在写在 `contracts/route-ownership.md` 的
+   `Python 仍在` 列并由脚本判——其中 `register` **没有**对拍用例，登记为台账 **C36**（欠账，P1-2 处置）。
+
+**新增的一条机检（本轮）**：`uv run python scripts/check_route_ownership.py`。
+它把归属表回查到三个真相源（Go 源码的路由注册、`backend.app` 的实际路由表、`tests/chain` 的用例名），
+专门堵两类过去没人看的漂移：**接管了却没删 Python 那条**、**新加了一条没人认领的面**。
+过去 `check_contracts.py` 只比前端↔契约，服务侧完全不在它视野里（台账 C31）。
+
 ## 1. 分工矩阵：功能模块 × 三方归属
 
 依据：模块清单取 [`14-feature-modules.md`](14-feature-modules.md) 的 M1–M17；目标归属取
