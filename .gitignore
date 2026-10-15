@@ -62,6 +62,11 @@ node_modules/
 .tmp-pytest/
 .pytest-cache/
 
+# Playwright 的失败现场：截图与 DOM 快照。**每次跑都重新生成**，
+# 留在工作区里会让人拿上一轮的快照诊断这一轮的失败（P0-9 那次就是这么绕了一圈）。
+frontend/test-results/
+frontend/playwright-report/
+
 # Cloned repos
 citelocal-agent/
 
