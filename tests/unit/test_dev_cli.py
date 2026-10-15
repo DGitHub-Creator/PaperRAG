@@ -95,6 +95,23 @@ class TestCommandSurface:
         assert args.func(args) == 0
         assert seen["cmd"][-1] == "version"
 
+    def test_missing_env_file_does_not_crash_the_command(self, tmp_path, monkeypatch):
+        """没有 `.env` 时命令要给可读结果，不是裸 FileNotFoundError（CI 与全新克隆都是这现场）。
+
+        2026-10-15 的 run 44 后端 job 就是红在这条上：`process_env()` 被当参数调用，
+        而它读的是 `ROOT/.env`——CI 上没这个文件，于是新加的两条 migrate 用例直接抛错。
+        "缺 .env" 的正确报法由 doctor 负责，这里只要求**不 traceback**。
+        """
+        missing = tmp_path / ".env"
+        monkeypatch.setattr(dev, "ENV_FILE", missing)
+        assert dev.read_env_file(missing) == {}
+
+        seen: dict = {}
+        monkeypatch.setattr(dev, "run", lambda cmd, **kw: seen.update(cmd=cmd, **kw) or 0)
+        assert dev.build_parser().parse_args(["migrate"]).func(
+            dev.build_parser().parse_args(["migrate"])) == 0
+        assert seen["cmd"][-1] == "head"
+
 
 
 class TestEnvFileParsing:

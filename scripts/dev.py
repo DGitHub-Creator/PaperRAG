@@ -137,7 +137,17 @@ def database_url_for_go(url: str) -> str:
 
 
 def read_env_file(path: Path) -> dict[str, str]:
-    """解析 .env 的 `KEY=VALUE`，忽略注释与空行。只用于自检与子进程注入。"""
+    """解析 .env 的 `KEY=VALUE`，忽略注释与空行。只用于自检与子进程注入。
+
+    **文件不存在时返回空表，不抛错**。这不是宽容，而是分工：
+    "缺 .env" 由 `doctor` 作为**问题**报出来（`ENV_FILE.exists()` 那一格），
+    而 `process_env()` 被 `serve`/`go-serve`/`migrate`/`seed-admin` 当参数调用——
+    让它 traceback 的话，一台还没 `cp .env.example .env` 的新克隆会得到一句裸的
+    FileNotFoundError，看不出"该做什么"。CI 也正是这种现场——没有 .env，
+    2026-10-15 的 run 44 后端 job 就是这么红的。
+    """
+    if not path.is_file():
+        return {}
     values: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw.strip()
