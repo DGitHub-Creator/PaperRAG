@@ -4,7 +4,7 @@
 > 前端 / Go / Python 各占哪一段」和「这一段现在做到哪」并排放在一张表里**。本文就是这张表。
 >
 > **性质**：§1–§2 的**分工**是常青判断（依据 `02` To-Be 与 `13` As-Is，短期不变）；§3–§6 的**进度**是
-> **dated 快照（2026-10-14）**，唯一真相始终是 [`../progress.json`](../progress.json)，本文只在被复核时更新。
+> **复核时点的概括**，唯一真相始终是 [`../progress.json`](../progress.json)（逐轮实录见 [`../WORKLOG.md`](../WORKLOG.md)），本文不留日志。
 >
 > **三条口径纪律**：
 > 1. **未实现一律标「未实现」**并指向卡片号，不写成既成事实（`08` 原则②）。
@@ -18,15 +18,16 @@
 ### 0.1 运行形态（开发路径，2026-10-13 定案：容器只跑中间件）
 
 ```
-浏览器 ──5173──▶ vite(dev)  ── /api 代理 ──▶  127.0.0.1:8000 (ai-core / Python)
-                                                  ▲
-                                      目标态还要先过 go-api:8080（今天没承载物）
+浏览器 ──5173──▶ vite(dev)  ── /api 代理 ──▶  go-api:8080（Go，唯一公开入口）
+                                                │  原生 8 业务 + 4 探针；
+                                                └─ 未迁移前缀反代 ─▶ 127.0.0.1:8000 (ai-core / Python)
+（prod 形态：nginx 仍 upstream backend 直指 Python:8000、不经 Go —— X2 的红点，属 P0-8）
 ```
 
 | 层 | 载体 | 形态 | 今天的能力 |
 | --- | --- | --- | --- |
-| 前端 | `frontend/`（Vue 3 + Vite + TS） | 源码 | 4 个视图：登录 / 聊天 / 历史 / 设置(文档管理) |
-| Go | `server/cmd/{api,worker}` | 源码 | api：探针 + **3 条认证路由**；worker：**只有探针** |
+| 前端 | `frontend/`（Vue 3 + Vite + TS + vue-router） | 源码 | 60 个源文件；路由 = login + `AppShell` 下 13 个子路由（9 页是 mock，见 `13 §7`）；设置页 5 个板块 |
+| Go | `server/cmd/{api,worker}` | 源码 | api：4 探针 + **8 条业务路由**（auth 4 / preferences 2 / sessions 2），未迁移前缀反代 Python；worker：**只有探针** |
 | Python | `backend/app.py`（ai-core） | 源码 | **25 条对外面 + 7 条内部面 + 全部 RAG/Agent 逻辑** |
 | 中间件 | postgres / redis / etcd / minio(versitygw) / milvus / attu | **容器** | 六容器 |
 
@@ -36,10 +37,11 @@
 
 这条律的硬边界只有一条：**全局调度器只能有一个，归 Go**（`AGENTS.md` §7；Python 不得再起循环）。
 
-### 0.3 进度一句话（快照，2026-10-14）
+### 0.3 进度一句话（读数现场取，逐卡状态见 [`../progress.json`](../progress.json)，逐轮实录见 [`../WORKLOG.md`](../WORKLOG.md)）
 
-**后端工程进度 14.7%（58/394 h）**，且这 58 h **100% 落在 P0 平台底座**——而 P0 按口径**不产出用户可见能力**。
-P1 / P2 / P3 **一张未完成**。真正能跑的只有两条：**Python 的单论文 RAG 问答**（M4/M6）与 **Go 的认证三条路由**（X5 pass）。
+**完成度 18%（72/394 h）**，全部落在 P0 平台底座（P0 按口径不产出用户可见能力）；P1/P2/P3 尚未开工。
+真正在跑的端到端能力是 **Python 的单论文 RAG 问答**（M4/M6）；Go 侧已原生服务 **8 条业务路由**（认证 4 / 偏好 2 / 会话读删 2）+ 4 条探针，
+其余路径反代 Python。P0 退出标准 7/8 pass，唯一红点是 **X2**（prod nginx 仍指 Python，属 P0-8）。
 
 ```powershell
 # 取数（本页所有进度数字都来自这两条）
@@ -98,11 +100,11 @@ uv run python -m pytest -q          # 测试基线（现状现场取，别抄文
 | `knowledge_*` `exploration_*` `evidence_links` `research_claims` `report_*` | ● | ✗ | Python 只交候选 |
 | `ai_executions` | ○ | ● | **Python 独占** |
 
-### 2.2 现状：24 张 ACL 表 vs 11 张实建表（差集）
+### 2.2 现状：25 张 ACL 表 vs 12 张实建表（差集）
 
 | 集合 | 数量 | 说明 |
 | --- | --- | --- |
-| 基线实建（`000001` + `000002`） | **11** | `users` `chat_sessions` `chat_messages` `parent_chunks` `workspaces` `workspace_members` `paper_nodes` `citation_edges` `glossary_entries` `alembic_version` `ai_executions` |
+| 基线实建（`000001` + `000002` + `000003`） | **12** | `users` `chat_sessions` `chat_messages` `parent_chunks` `workspaces` `workspace_members` `paper_nodes` `citation_edges` `glossary_entries` `alembic_version` `ai_executions` `user_preferences` |
 | 只在 ACL 里、SQL 里不存在（**纸面归属**） | **18** | `papers` `paper_versions` `paper_files` `paper_chunks` 与全部 `research_*` `outbox_events` `knowledge_items` `exploration_gaps` `evidence_links` `research_claims` `report_sections` |
 | 只在 SQL 里、ACL 未覆盖 | **5** | `parent_chunks` `paper_nodes` `citation_edges` `glossary_entries` `alembic_version`（归属即决策 **D6**） |
 | 有 model 无读写的**死表** | **4** | `workspaces` `paper_nodes` `citation_edges` `glossary_entries`（`13 §6.4`） |
@@ -124,32 +126,34 @@ Select-String -Path server/migrations/*.up.sql -Pattern 'CREATE TABLE IF NOT EXI
 | 卡片 | 状态 | 等级 | 内容 |
 | --- | --- | --- | --- |
 | A0-1（旧） | done | mock | 修 `apiFetch/BASE` 未导入等故障；`typecheck` 进 CI |
-| **FE-1** | **done** | mock | 结构重构：唯一请求出口 `api/` + 模块单例状态层 + R1–R11 机检 |
+| **FE-1** | **done** | mock | 结构重构：唯一请求出口 `api/` + 模块单例状态层 + R1–R11 机检；范围后扩到引入 vue-router、重建为 login + 13 个可深链接页 + 设置页 5 板块（见 `13 §7`） |
 | P1-5 | pending | e2e | 基址切换 + nginx 收口（业务 API 退出 Python） |
 | P2-7 | pending | e2e | 产品化：Monitor / Paper Reader / 引用回溯视图 |
 
-### 3.2 现状（36 个源文件，28 个被 R1–R11 机检）
+### 3.2 现状（60 个源文件，全部纳入 R1–R11 机检；已引入 vue-router）
+
+路由 = 独立 `login` + `AppShell` 下 13 条懒加载子路由（`router/index.ts`）。真实调接口的只有下面几页，其余 **9 页是 mock**（顶部 `SampleNotice` 徽标 + 归属卡号，逐页清单见 `13 §7`）：
 
 | 视图 | 组件 | 调用端点（实测） |
 | --- | --- | --- |
-| 登录 | `components/AuthPanel.vue` | `POST /auth/register` `/auth/login`、`GET /auth/me` |
-| 聊天 | `components/ChatView.vue` | `POST /chat/stream`（SSE）、`WS /api/v1/ws/chat` |
-| 历史 | `components/HistorySidebar.vue` | `GET /sessions` `GET/DELETE /sessions/{id}` |
-| 设置（文档） | `components/SettingsView.vue` | `GET /documents`、`POST /documents/upload/async`、job 轮询、`DELETE /documents/delete/async/{fn}` |
+| 登录 | `views/LoginView.vue` | `POST /auth/register` `/auth/login`、`GET /auth/me` |
+| 聊天 | `views/ChatView.vue` | `POST /chat/stream`（SSE）、`WS /api/v1/ws/chat` |
+| 历史 | `views/HistoryView.vue` | `GET /sessions` `GET/DELETE /sessions/{id}` |
+| 书架（文献页签） | `views/LibraryView.vue` | `GET /documents`、`POST /documents/upload/async`、job 轮询、`DELETE /documents/delete/async/{fn}`（主题群/抓取页签是 mock） |
+| 设置 | `views/SettingsView.vue`（5 个板块组件） | 改密码 `POST /auth/password`、偏好 `GET|PUT /me/preferences`（Go 原生面）；管理员「知识库管理」板块复用 documents 端点 |
 
-分层：`components → composables → api → (browser)` 单向；`api/` 7 模块是唯一请求出口（`client.ts` 是路径字面量唯一所在地、`http.ts` 是唯 fetch/XHR 出口、`token.ts` 是唯一 token 所有者）。
+分层：`views/components → composables → api → (browser)` 单向；`api/` 7 模块是唯一请求出口（`client.ts` 是路径字面量唯一所在地、`http.ts` 是唯 fetch/XHR 出口、`token.ts` 是唯一 token 所有者）。
 
-### 3.3 三条真实缺口
+### 3.3 真实缺口
 
-1. **无 vue-router**：`main.ts` 只 `use(i18n)`；视图靠 `useNav.ts` 的三值枚举 `NavKey = "newChat" | "history" | "settings"` + `App.vue` 的 `v-if` 手选。
-   → 这是结构性缺口：`11 §3` 的**五个产品入口（Deep Reader / 书架 / 工作区 / 报告 / 设置）没有路由承载物**，
-   所以「加书架 / 矩阵 / 看板」不是画组件，而是**先决定引入 router 还是扩 NavKey**（`10 §7` 的待拍板项 A/B）。
+1. **无 vue-router —— 已解决**：FE-1 引入 vue-router，路由 = `login` + `AppShell` 下 13 个子路由（`router/index.ts`），
+   `main.ts:29` 已 `.use(router)`；`11 §3` 的五个产品入口有了路由承载物（详见 `13 §7`）。
 2. **无 e2e 判据**：`package.json` 只有 `dev/build/preview/typecheck`，**没有 `test:e2e`**；FE-f（浏览器真跑）归 P0-9。
 3. **未接 refresh**：`/auth/refresh` 后端存在但前端没人调，60 分钟到期需重登。
 
 ```powershell
 # 取数
-uv run python scripts/check_frontend.py         # R1–R11，现状 rc=0（28 源文件全过）
+uv run python scripts/check_frontend.py         # R1–R11（60 个源文件全部纳入机检）
 cd frontend; npm run typecheck                  # vue-tsc --noEmit
 ```
 
@@ -161,28 +165,30 @@ cd frontend; npm run typecheck                  # vue-tsc --noEmit
 
 | 进程 | 实际挂载 | 位置 |
 | --- | --- | --- |
-| `cmd/api` | `/api/v1/health` `/ready`、`/health` `/ready` | `internal/httpapi/router.go:45-50` |
-| | `/api/v1/auth/register` `/login` `/me`（**仅此 3 条业务路由**） | `cmd/api/main.go:96-98` |
+| `cmd/api` | 4 探针：`/api/v1/health` `/ready`、`/health` `/ready` | `internal/httpapi/router.go:50-55` |
+| | **8 条业务路由**：`/api/v1/auth/register` `/login` `/me` `/password`、`/api/v1/me/preferences`(GET/PUT)、`/api/v1/sessions`(GET)、`/api/v1/sessions/{id}`(DELETE) | `cmd/api/main.go`（auth 挂 `:110-115`、sessions 挂 `:131-132`） |
+| | 未注册的 `/api/*` `/internal/*` `/ws/*` `/metrics` → 反代到 `PYTHON_UPSTREAM`（默认 `127.0.0.1:8000`） | `internal/httpapi/upstream.go`、`router.go:60-64` |
 | `cmd/worker` | 只有 `/health` `/ready`；**无调度循环** | `cmd/worker/main.go:37-38`，自述 `:52`「调度器属 P3」 |
 
-`internal/` 五个包（25 个 `.go` 文件）：`auth`（PBKDF2 / JWT / 注册登录 me）、`config`（env + `ValidateAuth()` fail-fast）、
-`db`（sqlc 生成物 + pgx 池）、`httpapi`（chi 组装、错误信封、中间件、探针）、`observability`（slog + trace）。
+`internal/` 六个包：`auth`（PBKDF2 / JWT / 注册登录 me / 改密码 / 偏好）、`config`（env + `ValidateAuth()` fail-fast）、
+`db`（sqlc 生成物 + pgx 池）、`httpapi`（chi 组装、错误信封、中间件、探针、反代）、`observability`（slog + trace）、`session`（会话列表读 / 删）。
 
 ### 4.2 数据访问的真实覆盖面
 
-⚠️ **sqlc 只对 `users` 生成了 SQL**——`server/sql/queries/users.sql` 四条（`InsertUser` `GetUserByUsername` `GetUserByID` `GetProfileByUsername`）。
-`internal/db/models.go` 里**其余 10 张表的 struct 只是声明、零查询**（"生成进 model" ≠ "用得着"）。
+⚠️ **sqlc 只对 3 张表生成了 SQL**（10 条命名查询，分布 3 个文件）——`server/sql/queries/users.sql` 六条（`InsertUser` `GetUserByUsername` `GetUserByID` `GetProfileByUsername` `UpdateUserPasswordByUsername` `UpdateUserRoleByUsername`）、`user_preferences.sql` 两条（`GetUserPreferences` `UpsertUserPreferences`）、`chat_sessions.sql` 两条（`ListSessionInfosForUser` `DeleteSessionForUser`）。也就是 **Go 今天只读写 `users` / `user_preferences` / `chat_sessions` 三张表**；
+`internal/db/models.go` 里**其余表的 struct 只是声明、零查询**（"生成进 model" ≠ "用得着"）。
 
 ### 4.3 卡片
 
 | 卡片 | 状态 | 等级 |
 | --- | --- | --- |
-| P0-1 Go 服务骨架 | in_progress | mock（real 缺口：未进 compose、未与 Python 联调） |
+| P0-1 Go 服务骨架 | done | real |
 | P0-3 Go 数据访问层（sqlc） | done | mock |
 | P0-4 契约目录 | done | mock |
-| P0-6 认证垂直切片 | in_progress | mock（X5 **pass**，real 档待 `--from-db`） |
+| P0-5 跨语言契约测试骨架 + chain fixture | done | real |
+| P0-6 认证垂直切片 | in_progress | mock（X4/X5 **pass**，real 档待 `--from-db`） |
 | P0-7 ai-core 内部执行面 | in_progress | mock |
-| P0-8 Go 接线与跨环境实跑 | pending | none |
+| P0-8 Go 接线与跨环境实跑 | in_progress | real（Go 侧已接反代 + 认证/偏好/会话面；剩 nginx upstream 切 Go + C29 遗留物） |
 | P1-0…P1-8（9 张） | pending | none |
 
 ```powershell
@@ -204,7 +210,7 @@ cd server && gofmt -l . && go vet ./... && go test ./...
 | **B. 内部面** `/internal/v1/ai/*` | 7 | `/execute` `/executions` `/executions/{id}` `/result` `/cancel` `/healthz` `/readyz` | ⚠️ **零生产 caller**（派发方 `go-worker` 无循环） |
 | **C. 前端不调但仍可达** | 12 | `/auth/refresh` `/chat` 旧上传 3 条 `/stats/usage` 2 条 `/cache/clear` `/health` `/ready` `/metrics` | P1-7 的审计 + Deprecation 头清单 |
 
-⚠️ 目标态那句「**Python 只被动执行单次 `AIExecution`**」**今天不成立**：A+C 共 **25 条面仍挂在 Python**。
+⚠️ 目标态那句「**Python 只被动执行单次 `AIExecution`**」**今天不成立**：A+C 共 **25 条面仍挂在 Python**。其中 dev 形态下 register/login/me/password、preferences(GET+PUT)、sessions(list+delete) 这 **8 条已由 Go 原生服务**，Python 的同名路由只在 prod（nginx→Python）才被走到；其余由 Go 反代到 Python。
 
 RAG/Agent 主体（`backend/rag/*` 13 文件、`backend/agent/*`、`backend/vectordb/*`、`backend/services/*`）是**在产的唯一端到端能力**（M4/M6）。
 
@@ -218,26 +224,15 @@ Select-String -Path backend/**/*.py -Pattern '@router\.(get|post|delete|put)'
 
 ## 6. 卡片进度记录（全 40 张，按阶段）
 
-快照 2026-10-14。`req/ev` = 要求 / 已有证据等级。
+**逐卡状态与证据等级以 [`../progress.json`](../progress.json) 为唯一真相**——本节只列卡名与阶段归属，不再复制状态快照。
+一句话概括（读数用本节末取数命令现场取）：40 张卡 done 10 / in_progress 3 / pending 27；P0 退出 8 条 pass 7，唯一红点是 X2（prod nginx 仍指 Python）。
 
-### P0 平台底座 —— 14 张 / 118 h / 已完成 58 h
+### P0 平台底座 —— 14 张
 
-| 卡片 | 状态 | req/ev |
-| --- | --- | --- |
-| SPEC-1 spec 重排 + 进度机制 | done | mock/mock |
-| A0-1 前端故障修复 | done | mock/mock |
-| A0-3 鉴权与运行安全修复 | done | mock/mock |
-| FE-1 前端结构重构 | done | mock/mock |
-| P0-0 统一命令入口与可复现环境 | done | real/real |
-| P0-2 Schema 基线与收编 | done | real/real |
-| P0-3 Go 数据访问层 | done | mock/mock |
-| P0-4 契约目录 | done | mock/mock |
-| P0-1 Go 服务骨架 | in_progress | real/mock |
-| P0-6 认证垂直切片 | in_progress | real/mock |
-| P0-7 ai-core 内部执行面 | in_progress | real/mock |
-| P0-5 跨语言契约测试骨架 | pending | real/none |
-| P0-8 Go 接线与跨环境实跑 | pending | real/none |
-| P0-9 P0 端到端演示 | pending | e2e/none |
+`SPEC-1` spec 重排 + 进度机制 · `A0-1` 前端故障修复 · `A0-3` 鉴权与运行安全修复 · `FE-1` 前端结构重构 ·
+`P0-0` 统一命令入口与可复现环境 · `P0-1` Go 服务骨架 · `P0-2` Schema 基线与收编 · `P0-3` Go 数据访问层 ·
+`P0-4` 契约目录 · `P0-5` 跨语言契约测试骨架 + chain fixture · `P0-6` 认证垂直切片 · `P0-7` ai-core 内部执行面 ·
+`P0-8` Go 接线与跨环境实跑 · `P0-9` P0 端到端演示。
 
 ### P1 门面接管 —— 9 张 / 80 h / 已完成 0
 
@@ -266,11 +261,11 @@ uv run python -c "import json;d=json.load(open('docs/progress.json',encoding='ut
 
 | # | 断层 | 现状 | 归属 |
 | --- | --- | --- | --- |
-| 1 | **入口**：Go 是唯一公开入口 | dev vite 直连 Python:8000、prod nginx `upstream backend`——**两条路径都不经 Go** | P0-8（X2 只能静态判 nginx） |
-| 2 | **数据面**：Go 侧 schema 只建 11 张 | 18 张 ACL 表未建，Python 又在写其中几张 → **过渡期双 owner** | P2-1 / P3-1 |
+| 1 | **入口**：Go 是唯一公开入口 | dev **已经过 Go**（vite→go-api:8080，未迁移前缀反代 Python）；prod nginx 仍 `upstream backend` 直指 Python、不经 Go | P0-8（X2 静态判 prod nginx，唯一红点） |
+| 2 | **数据面**：Go 侧 schema 只建 12 张 | 18 张 ACL 表未建，Python 又在写其中几张 → **过渡期双 owner** | P2-1 / P3-1 |
 | 3 | **调度权**：Go 唯一调度 | `go-worker` 只有探针，内部面 7 条**零 caller** | P3-1…P3-3 |
-| 4 | **前端承载**：五个产品入口 | 无 router，`NavKey` 里没有入口概念 | 待拍板（`10 §7` 选项 A/B）+ 提案 F-6 |
-| 5 | **进度分母**：产品轴提案未登记 | `14 §18` 的 F-1…F-11（178 h）进不进分母未定 | 决策 **D5** |
+| 4 | **前端承载**：五个产品入口 | **已解决**——FE-1 引入 vue-router，五个入口有路由承载物（`13 §7`）；`NavKey` 现为路由名联合类型 | F-6 已交付 |
+| 5 | **进度分母**：产品轴提案未登记 | `14 §18` 的 F-1…F-11（178 h，其中 F-6 已随 FE-1 交付）进不进分母未定 | 决策 **D5** |
 
 **已列待决（用户侧）**：D4（V1 可信化 / P2-1+P2-2 是否前移）· D5（F-1…F-11 登记与否）·
 D6（`alembic_version` 归属）· D8（Go 侧迁移由谁执行）· C28（存储拓扑：etcd 换 named volume 等）。

@@ -11,18 +11,18 @@
 ## 0. 一页拓扑
 
 ```
-                     ┌── 开发形态（本机，2026-10-13 定案）────────────────────────┐
-浏览器 ──5173──▶ vite(dev server)                                                 │
-                     │  /api 代理 → 127.0.0.1:8000（vite.config.js:8-14, ws:true）│
-                     └──────────────────┬────────────────────────────────────────┘
-                                        ▼
+                     ┌── 开发形态（本机，2026-10-13 定案）──────────────────────────┐
+浏览器 ──5173──▶ vite(dev server) ── /api 代理(ws:true) ──▶ go-api :8080          │
+                     │              （vite.config.js:12-16；Go 是唯一公开入口）    │
+                     └──────────────────────────────┬─────────────────────────────┘
+                                                    ▼
    ┌ 应用层（一律源码跑，不进容器）────────────────────────────────┐
-   │ go-api   :8080   server/cmd/api        今天只有探针 + 3 条认证路由 │
-   │ go-worker:—      server/cmd/worker     只有探针，调度循环属 P3    │
-   │ ai-core  :8000   backend/app.py        25 条浏览器面 HTTP + 1 WS  │
+   │ go-api   :8080   server/cmd/api   原生 8 业务 + 4 探针；未迁移前缀反代 Python │
+   │ go-worker:—      server/cmd/worker     只有探针，调度循环属 P3                │
+   │ ai-core  :8000   backend/app.py        25 条对外 HTTP + 1 WS（绑 127.0.0.1）  │
    └──────────────────────────┬──────────────────────────────────────┘
                                ▼
-   ┌ 中间件（只有这些在容器里，6 个，全 healthy）─────────────────┐
+   ┌ 中间件（只有这些在容器里，6 个；起时 healthy，C28：Milvus 会半路自挂）──┐
    │ postgres:5432  redis:6379  milvus:19530  etcd:2379            │
    │ minio→versitygw:9000（S3 语义）  attu:3001（Milvus 控制台）   │
    └───────────────────────────────────────────────────────────────┘
@@ -34,8 +34,8 @@
    └───────────────────────────────────────────────────────────────┘
 ```
 
-**读法**：虚线以上的"唯一公开入口 = Go"是**目标**；今天两条路径的流量都直接落在 Python 上。
-这不是实现偷懒，而是 X2/P0-8 尚未开工——但**别把本文的拓扑当成已完成的架构**。
+**读法**：dev 形态下 Go **已经**是入口承载物（vite→go-api:8080，Go 把未迁移路径反代给 Python）；
+prod 的 nginx **仍直指 Python**（`upstream backend`），这是 X2 唯一红点（属 P0-8）——别把 dev 的形状当成 prod 的完成态。
 
 ---
 
@@ -61,13 +61,14 @@
 | 段 | 开发形态 | 生产形态 | 目标态（02 §2） |
 | --- | --- | --- | --- |
 | 入口 | vite `:5173` | nginx `:80` | nginx → `go-api` |
-| `/api/*` 的去向 | **直连 `127.0.0.1:8000`（Python）** | **`upstream backend { server backend:8000; }`**（`nginx/nginx.conf:20-22, 34`） | `upstream go-api` |
-| 是否经 Go | **否** | **否** | 是，唯一公开入口 |
+| `/api/*` 的去向 | **vite→go-api:8080**；Go 原生 8 条业务面，未迁移前缀反代到 Python:8000 | **`upstream backend { server backend:8000; }`**（`nginx/nginx.conf:20-22, 34`） | `upstream go-api` |
+| 是否经 Go | **是**（vite 的 `/api` 代理指 go-api:8080） | **否**（nginx 仍直指 Python，X2 红点） | 是，唯一公开入口 |
 | WS | `/api/v1/ws/chat`（vite `ws:true` 转发） | 同路径（`nginx.conf:45` + Upgrade） | 由 Go 终结或透传（P1-4） |
 | `/internal/*` | 前端不可达（nginx 不转发） | 同左 | **必须仍然不可达**（R3） |
 
 ⚠️ **三条容易被忽略的事实**
-- **dev 形态下"Go 是唯一公开入口"这条不变量在运行时没有承载物**：vite 把 `/api` 直接转给 ai-core:8000。
+- **dev 形态下"Go 是唯一公开入口"这条不变量已有承载物**：vite 的 `/api` 代理指向 go-api:8080（`vite.config.js:12-16`），
+  Go 原生服务 8 条业务面、把未迁移前缀反代给 Python。但 X2 判的是 **prod 的 nginx**——nginx 仍直指 Python（`upstream backend`），
   所以 X2 只能**静态**判 `nginx/nginx.conf` + compose 文本，`level` 留在 e2e 是诚实的，不是脚本缺陷。
 - 两份 compose **都没有 `go-api` / `go-worker` 服务**（`docker-compose.yml` 与 `docker-compose.prod.yml` 的服务清单实测）。
 - `check_nginx_routes.py` 今天对真仓库配置如实 **exit 1**（R1：`/api/` 还指向 Python），这条红是 P0-8 的活。
@@ -78,19 +79,24 @@
 
 | 进程 | 实际挂载 | 位置 |
 | --- | --- | --- |
-| `cmd/api` | `/api/v1/health`、`/api/v1/ready`、`/health`、`/ready` | `internal/httpapi/router.go:45-50` |
-| | `/api/v1/auth/register`、`/login`、`/me` | `cmd/api/main.go`（`mountAuthRoutes`） |
-| | `/api/v1/auth/password`、`/api/v1/me/preferences`（GET/PUT）（2026-10-14 新增，**无 Python 对照**） | `cmd/api/main.go`（`mountAuthRoutes`）；实现 `internal/auth/{service,handler,preferences}.go` |
-| | 未注册的 `/api/*`、`/internal/*`、`/ws/*`、`/metrics` → 反代到 `PYTHON_UPSTREAM` | `internal/httpapi/upstream.go`、`router.go` 的 `Deps.Upstream` |
+| `cmd/api` | **4 条探针**：`/api/v1/health`、`/api/v1/ready`、`/health`、`/ready` | `internal/httpapi/router.go:50-55` |
+| | **8 条业务**：`/api/v1/auth/register`、`/login`、`/me`、`/auth/password`、`/me/preferences`（GET/PUT）、`/sessions`（GET）、`/sessions/{id}`（DELETE） | `cmd/api/main.go`（`mountAuthRoutes` 挂 `:110-115`、`mountSessionRoutes` 挂 `:131-132`）；实现 `internal/auth/{service,handler,preferences}.go`、`internal/session/` |
+| | 其中 `/auth/password`、`/me/preferences`（GET/PUT）**无 Python 对照**（Go 原生新面） | 同上 |
+| | 未注册的 `/api/*`、`/internal/*`、`/ws/*`、`/metrics` → 反代到 `PYTHON_UPSTREAM`（默认 `127.0.0.1:8000`） | `internal/httpapi/upstream.go`、`router.go:60-64`（`Deps.Upstream`） |
 | `cmd/worker` | 只有 `/health`、`/ready`；**无调度循环** | `cmd/worker/main.go:37-38`，自述 `:52`「调度器属 P3，本进程当前只提供探针」 |
 
-`internal/` 五个包（无空目录）：`auth`（PBKDF2 / JWT / 注册登录 me）、`config`（env 装载 + `ValidateAuth()` fail-fast）、
-`db`（sqlc 生成物 + pgx 池）、`httpapi`（chi 组装、错误信封、中间件、探针）、`observability`（slog + trace）。
+⚠️ **Go 的 `/ready` 探测键只有 `database` + `redis`**（`cmd/api/main.go:223` 的 `RedisCheck`），**不含 `milvus`**；
+Python 的 `/ready` 三键齐全（`database`/`redis`/`milvus`，`backend/api/health.py:128-133`），Milvus 挂时回 503。
+两侧探测键集合不相等，是 X1 收口时刻意保留的差（Go 面不依赖 Milvus）。
 
-⚠️ **数据访问层的真实覆盖面**：sqlc 只对 **2 张表**生成了 SQL——`server/sql/queries/users.sql` 六条
-（`InsertUser:4`、`GetUserByUsername:15`、`GetUserByID:21`、`GetProfileByUsername:30`、
-`UpdateUserPasswordByUsername:38`、`UpdateUserRoleByUsername:46`）与 `server/sql/queries/user_preferences.sql` 两条
-（`GetUserPreferences:4`、`UpsertUserPreferences:11`，2026-10-14 随迁移 000003 新增）。
+`internal/` 六个包（无空目录）：`auth`（PBKDF2 / JWT / 注册登录 me / 改密码 / 偏好）、`config`（env 装载 + `ValidateAuth()` fail-fast）、
+`db`（sqlc 生成物 + pgx 池）、`httpapi`（chi 组装、错误信封、中间件、探针、反代）、`observability`（slog + trace）、`session`（会话列表读 / 删）。
+
+⚠️ **数据访问层的真实覆盖面**：sqlc 只对 **3 张表**生成了 SQL（**10 条命名查询**，分布在 3 个文件）——
+`server/sql/queries/users.sql` 六条（`InsertUser:4`、`GetUserByUsername:15`、`GetUserByID:21`、`GetProfileByUsername:30`、
+`UpdateUserPasswordByUsername:38`、`UpdateUserRoleByUsername:46`）、`server/sql/queries/user_preferences.sql` 两条
+（`GetUserPreferences:4`、`UpsertUserPreferences:11`）、`server/sql/queries/chat_sessions.sql` 两条
+（`ListSessionInfosForUser:7`、`DeleteSessionForUser:20`）。也就是 **Go 今天只读写 `users` / `user_preferences` / `chat_sessions` 三张表**；
 `internal/db/models.go` 里其余表的 struct 只是声明，零查询（P0-3 把表字段生成进 model 是"看得见"，不等于"用得着"）。
 
 ```powershell
@@ -133,15 +139,15 @@ Select-String -Path server/internal/db/*.sql.go -Pattern 'FROM |INSERT INTO '
 
 ---
 
-## 5. 契约面一致性（`contracts/openapi.yaml`，18 个 operation）
+## 5. 契约面一致性（`contracts/openapi.yaml`，21 个 operation）
 
 `check_contracts.py` 今天 rc=0，但它校验的是**前端实调集合 ↔ 契约**与 `code` 枚举一致性，**不校验服务侧路由是否与契约一致**，
 所以三条不一致是机检盲区（现查）：
 
 | 契约声明 | Python 实际 | Go 实际 | 后果 |
 | --- | --- | --- | --- |
-| `GET /api/v1/health`（`openapi.yaml:356`）、`GET /api/v1/ready`（`:387`） | **只注册在根路径**（`app.py:149` + `api/health.py:92,121`） | 两条都有（`router.go:45-46`） | 前端若按契约调 `/api/v1/health`，在今天的 dev/prod 路径上都是 404；契约的根路径别名 `healthRootAlias:370` / `readyRootAlias:407` 才是 Python 满足的那两条 |
-| `GET /metrics`（`openapi.yaml:427`） | 有（`app.py:150`） | **未实现** | nginx 无对应 location、前端不调 → 三不管端点 |
+| `GET /api/v1/health`（`openapi.yaml:430`）、`GET /api/v1/ready`（`:461`） | **只注册在根路径**（`app.py:149` + `api/health.py:92,121`） | 两条都有（`router.go:50-51`） | prod（nginx→Python）按契约调 `/api/v1/health` 是 404（Python 只有根 `/health`，即契约的 `healthRootAlias:447` / `readyRootAlias:484`）；dev 经 go-api 则两条都在，不 404 |
+| `GET /metrics`（`openapi.yaml:501`） | 有（`app.py:150`） | **未原生实现**（Go 只把 `/metrics` 反代给 Python，`router.go:61`） | nginx 无对应 location、前端不调 → 三不管端点 |
 | 请求体 schema（如 `RegisterRequest.role`） | `role: str \| None`，实测 `role:"root"` 返 200 | 照实现走 | 契约的 enum 是值域描述、不是入参校验（台账 C21） |
 
 ---
@@ -206,26 +212,28 @@ Milvus 已通过 S3 API 自建 `a-bucket`，对象级 PUT/GET/LIST/DELETE 已单
 
 ## 7. 前端架构（`frontend/`）
 
-⚠️ **没有 vue-router**：`src/main.ts:16-28` 只 `createApp(App).use(i18n)`；没有 `router/`、没有 `views/`。
-视图切换靠枚举 ref——`src/composables/useNav.ts:4-7` 的 `type NavKey = "newChat" | "history" | "settings"`，
-在 `src/App.vue:16-26` 用 `v-if / v-else-if` 手选组件。
+**已引入 vue-router**（`10 §7.1` 的选项 B）：`src/main.ts:29` 是 `createApp(App).use(i18n).use(router)`；
+路由表 `src/router/index.ts` = 独立 `login` 页 + `AppShell` 外壳下 **13 条懒加载子路由**（chat / library / reader /
+compare / gaps / graph / runs / lab / writing / radar / history / workspace / settings）。`src/composables/useNav.ts:5` 的
+`type NavKey` 现在是**路由名的联合类型**（与路由表 `name` 同源），不再持有视图状态——视图状态已交给 vue-router。
+`11 §3` 的五个产品入口因此**有了路由承载物**（`11 §8` 第 1 项"产品入口层作为一等概念"由此解开）。
 
-**这条技术事实有产品后果**：`11 §3` 的五个产品入口（Deep Reader / 书架 / 工作区 / 报告 / 设置）**没有路由承载物**，
-`11 §8` 第 1 项"产品入口层作为一等概念"之所以是缺口，根子在这里。要加入口，先决定引入 router 还是扩 NavKey——
-这是个架构选择，不是体力活。
+**14 个视图文件里 9 个是 mock 页**（顶部有「示例数据」徽标 `SampleNotice` + 归属卡号，数据在 `src/mock/`、只用英文以过 R9）：
 
-| 视图 | 组件 | 状态来源 | 调用端点（实测） |
+| 视图 | 组件（import 行实测） | 状态来源 | 真实 / mock |
 | --- | --- | --- | --- |
-| 登录 | `components/AuthPanel.vue:35` | `composables/useAuth.ts:7-8` | `POST /auth/register`(`:49`)、`POST /auth/login`(`:48`)、`GET /auth/me`(`:40`) |
-| 聊天 | `components/ChatView.vue:78` | `composables/useChat.ts:19-23` | `POST /chat/stream`（SSE，`useChat.ts:126`）、`/api/v1/ws/chat?token=`（`api/ws.ts:6-9`） |
-| 历史 | `components/HistorySidebar.vue` | `composables/useSessions.ts:6` | `GET /sessions`(`:10`)、`GET /sessions/{id}`(`:15`)、`DELETE /sessions/{id}`(`:19`) |
-| 设置（文档管理） | `components/SettingsView.vue:106` | `composables/useDocuments.ts:33-45` | `GET /documents`(`:110`)、`POST /documents/upload/async`(`:160`)、`GET /documents/upload/jobs/{id}`(`:129`)、`DELETE /documents/delete/async/{fn}`(`:215`)、`GET /documents/delete/jobs/{id}`(`:175`) |
+| 登录 | `views/LoginView.vue:30` | `useAuth` / `useAppSession` / `usePreferences` | **真实**：`POST /auth/register`、`POST /auth/login`、`GET /auth/me` |
+| 聊天 | `views/ChatView.vue:96` | `useChat` / `useWebSocket` | **真实**：`POST /chat/stream`（SSE）、`/api/v1/ws/chat?token=` |
+| 历史 | `views/HistoryView.vue:47` | `useSessions` / `useChat` | **真实**：`GET /sessions`、`GET /sessions/{id}`、`DELETE /sessions/{id}` |
+| 书架 | `views/LibraryView.vue:111` | `useDocuments` + `mock/library` | **混合**：文献页签真实（`GET /documents`、异步上传/删除、job 轮询）；主题群与抓取页签是 mock（P2-9/P2-10） |
+| 设置 | `views/SettingsView.vue:31` | `useAuth` / `usePreferences` | **真实**：5 个板块组件（账号 / 主题 / 偏好 / 改密码 + 仅管理员的知识库管理，后者消费 `useDocuments`） |
+| 比较矩阵 / 问题与假设 / 知识双图 / 文献雷达 / 研究实验室 / 深读 / 自主运行 / 报告写作 / 工作区 | `views/{Compare,Gaps,Graph,Radar,Lab,Reader,Runs,Writing,Workspace}View.vue` | `mock/{analysis,library,program}` | **mock**：归属依次 F-1 / F-2 / F-8 / F-4 / F-3 / P2-7·Z3 / P3-1…P3-7 / P3-5·F-5 / F-7 |
 
 分层与约束（由 `scripts/check_frontend.py` 的 R1–R11 机器执行，FE-1 done）：
 `api/` 7 个模块是唯一请求出口——`client.ts`（路径字面量的唯一所在地，全部 `/api/v1` 前缀）、
 `http.ts`（fetch + XHR 出口，`BASE` 在 `:8`）、`sse.ts`、`ws.ts`、`token.ts`（单一 token 所有者）、`events.ts`、`types.ts`；
-状态层无 pinia，用 `composables/` 的模块顶层 ref 做单例。
-⚠️ 前端**未接 refresh 流程**：`/auth/refresh` 后端存在但没人调，60 分钟到期需重登。
+状态层无 pinia，用 `composables/` 的模块顶层 ref 做单例；DOM/对话框外移 `utils/`（`theme.ts` 写 `data-theme`，`dialog.ts` 是唯一接缝）。
+⚠️ 前端**未接 refresh 流程**：`/auth/refresh` 后端存在但没人调（`api/client.ts` 不含该端点），60 分钟到期需重登。
 
 ```powershell
 # 取数
@@ -240,14 +248,14 @@ Select-String -Path frontend/src/api/*.ts,frontend/src/composables/*.ts -Pattern
 
 | 关注面 | 今天的实现 | 目标归属 | 判据 |
 | --- | --- | --- | --- |
-| 认证（PBKDF2 校验 / JWT） | Python 裁判；Go 已实现且被 golden vectors 钉住（`contracts/pbkdf2_golden.json` 10 条、`jwt_golden.json` 9 条） | Go | X4（chain 半侧待 P0-5）、X5 **pass** |
+| 认证（PBKDF2 校验 / JWT） | Python 裁判；Go 已实现且被 golden vectors 钉住（`contracts/pbkdf2_golden.json` 10 条、`jwt_golden.json` 9 条） | Go | X4 **pass**（chain 15 项双向互验）、X5 **pass** |
 | trace_id | Go `observability`；Python 侧透传 | Go 生成 | P1-0 |
 | 错误信封 | Go `httpapi` 已照抄生产侧文案（含 `Internal server error` 小写 s，台账 C23） | Go | Y3（SSE 字节级比对属 P1） |
-| 限流 | Python `RATE_LIMIT` 真生效 | 迁移待定 | — |
+| 限流 | Python `RATE_LIMIT` 真生效（slowapi） | 迁移待定 | ⚠️ **C33**：Go 侧没有任何限流层，接管一条路由就静默丢掉它的限流；登录/注册已丢，接管批次要带上限流 |
 | 流式 | Python SSE（`chat.py:66` 逐 chunk yield，但**整段答案一次性下发**，非 token 级） | Go 门面 | P1-4 + P2-5（Last-Event-ID 续传） |
 | 任务态 | 进程内存（`upload_jobs`，台账 C9） | Go + PG | Z4 |
 | 预算 / usage 记账 | `/stats/usage` 前端不调 | Go | P2-6 |
-| 入口路由 | nginx 单指 Python | nginx → go-api | X2（静态判据，如实 exit 1） |
+| 入口路由 | dev：vite→go-api→Python（Go 已是承载物）；prod：nginx 单指 Python | nginx → go-api | X2（静态判 prod nginx，如实 exit 1） |
 
 ---
 
@@ -259,7 +267,7 @@ Select-String -Path frontend/src/api/*.ts,frontend/src/composables/*.ts -Pattern
 | 公式索引**入库侧** | `backend/rag/rag_utils.py:644 _build_formula_index` | 查询侧已接（`:730`），**建索引函数零调用点** → LSH 恒空 |
 | 学术元数据入检索层 | `backend/vectordb/milvus_writer.py` 写入字段 | 提取器都接在分块期，但**Milvus schema 无对应列** → 入库即丢弃 |
 | 4 张死表 | §6.4 | 有 model 无读写 |
-| 8 条前端不调的端点 | §4-C | 对外可达但无 caller（P1-7 逐条审计 + Deprecation 头） |
+| 12 条前端不调的端点 | §4-C | 对外可达但无 caller（P1-7 逐条审计 + Deprecation 头） |
 | `go-worker` | `cmd/worker/main.go:52` | 只有探针，无调度循环（P3-3） |
 | 18 张 ACL 纸面表 | §6.1 | 归属已写、表未建（P2 / P3 各卡片的建表清单） |
 

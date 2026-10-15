@@ -1,10 +1,11 @@
 # 07 — 最小真实 E2E 测试方案
 
-> **本文状态（2026-10-09 复核）**：性质=实施（测试纪律与用例清单）；**未实现**——落地卡片是
-> **P0-5**（L5 跨语言契约）、**P0-9**（L4 浏览器 E2E 骨架 + `tests/e2e/`）、**P1-6**（L1–L3 真实链路）、
-> **P2-3/P2-4**（chunk/公式链路用例与 10–15 题固定回归集）。当前仓库里 `chain` 与 `e2e` 两层
-> **各 0 条用例**（`uv run pytest -m chain` 返回 exit=5「没收到用例」，不是绿），
-> 进度以 [../progress.json](../progress.json) 为准。
+> **本文状态**：性质=实施（测试纪律与用例清单）。`chain` 层已随 **P0-5**（done）建起——`tests/chain/`
+> 现有 **15 项**，全是对 Go 已接管面（认证 / 会话 / 探针）的跨语言对拍（L5）；`e2e` 层**仍是 0 条**
+> （`uv run pytest -m e2e` 返回 exit=5「没收到用例」，不是绿），骨架属 **P0-9**。剩余落地卡片：
+> **P0-9**（L4 浏览器 E2E 骨架 + `tests/e2e/`）、**P1-6**（L1–L3 真实链路，含 LLM）、
+> **P2-3/P2-4**（chunk/公式链路用例与 10–15 题固定回归集）。逐轮实录见 [../WORKLOG.md](../WORKLOG.md)，
+> 进度与退出标准以 [../progress.json](../progress.json) 为准。
 >
 > 决策 Q8：真实浏览器 E2E、真实 DB/Milvus 集成、跨语言契约、10–15 个固定科研问题回归为**必做**；
 > A/B/C 三组实验、20+ 题 benchmark、消融实验 DEFER 到 **P4 展望**（双图与 Evidence）之后。
@@ -29,12 +30,12 @@
 
 | 层 | marker | 依赖 | 断言对象 | 运行位置 | 落地卡片 |
 | --- | --- | --- | --- | --- | --- |
-| L0 单元 | `unit` | 无（可 mock） | 纯函数、状态机、解析器 | 每次提交 | 已有 458 项（2026-10-12） |
+| L0 单元 | `unit` | 无（可 mock） | 纯函数、状态机、解析器 | 每次提交 | 已有 527 项（读数现场取） |
 | L1 集成-数据 | `integration` | 真实 PG + Redis（compose） | 仓储层读写、缓存一致、任务状态、鉴权 | 每次提交 | 已有 57 项（**mock 级**：无真库）；真实化属 P1-6 |
 | L2 集成-检索 | `integration` | 真实 PG + Redis + Milvus | embedding/BM25/hybrid/rerank/auto-merge/公式索引 | PR + nightly | **未实现**（P1-6 / P2-2） |
-| L3 链路 | `chain` | 上述 + LLM key | 上传→入库→检索→回答→引用可回溯 | nightly（花真钱） | **未实现**（P1-6；`chain` 目录当前不存在） |
+| L3 链路 | `chain` | 上述 + LLM key | 上传→入库→检索→回答→引用可回溯 | nightly（花真钱） | **未实现**（P1-6）；`tests/chain/` 已建，但现有 15 项都是 L5 跨语言对拍，含 LLM 的真实链路仍 0 条 |
 | L4 浏览器 E2E | `e2e` | 全套 + Playwright | 用户可感知的四条主路径 | PR（stub LLM）+ nightly（真 LLM） | **未实现**（P0-9 交付骨架） |
-| L5 契约 | `chain`（跨语言） | Go + Python 同时起 | 跨语言请求/响应/错误码/流帧字节形状 | 每次提交 | **未实现**（P0-5） |
+| L5 契约 | `chain`（跨语言） | Go + Python 同时起 | 跨语言请求/响应/错误码/流帧字节形状 | 每次提交 | **部分实现**（P0-5 done：chain 15 项对拍认证/会话/探针；SSE 字节级帧属 P1-4） |
 
 > L5 不单独注册 `contract` marker：`pyproject.toml` 只有 `unit/integration/chain/e2e/slow` 五个，
 > 多一个 marker 就多一处"分层与目录不一致"的漂移面。跨语言契约测试放 `tests/chain/`，
@@ -101,21 +102,22 @@
   本身不设阈值门禁（决策 Q8）。
 - 检索否定题是防幻觉的早期信号：`verify.py` 只查编号不查语义（[00-audit](../reference/00-audit.md) §2.1），这类题能立刻暴露。
 
-## 7. 契约测试（L5，**P0-5 交付，当前未实现**）
+## 7. 契约测试（L5，**P0-5 已交付 chain 骨架；SSE 字节级帧与 ai-execution 的 Go 侧仍缺**）
 
 [`contracts/`](../../contracts/) 目录为唯一契约源，Go 与 Python 各自生成/校验。
-静态部分已经有门禁（`scripts/check_contracts.py`，X3 本机 pass）；**下面这五行都要两个真服务同时起**：
+静态部分已经有门禁（`scripts/check_contracts.py`，X3 本机 pass）；跨语言对拍已由 P0-5 的 `tests/chain/` 落地
+（`-m chain` 15 项：`-k go_auth` 4 / `-k contract` 5 / `-k go_read` 6，都是两个真服务同时起）：
 
 | 内容 | 形式 | 现状 |
 | --- | --- | --- |
-| 浏览器 API | OpenAPI 3.1；对比 Go 与 Python 对同一请求的**状态码 + 响应体 JSON 结构 + 关键头**（错误信封已统一为 `{"detail": ...}`，K1/K4） | 未实现（P0-5） |
-| 流式帧 | 逐帧比对：`data:` 前缀、事件 `type` 顺序、`[DONE]` / `{"type":"done"}` 差异（[01](../reference/01-current-architecture.md) §4）——录制-回放（同一 prompt、同 stub LLM）产出字节序列 diff | 未实现（P0-5） |
-| AI 执行契约 | [`ai-execution.schema.json`](../../contracts/ai-execution.schema.json)；Python 侧 Pydantic 严格校验已落（P0-7，29 条 HTTP 级用例），Go 侧 struct 与逐码测试未实现 | **半实现**：Python 侧 mock 级已有；Go 侧属 P0-5 |
+| 浏览器 API | OpenAPI 3.1；对比 Go 与 Python 对同一请求的**状态码 + 响应体 JSON 结构 + 关键头**（错误信封已统一为 `{"detail": ...}`，K1/K4） | **部分实现**（P0-5 done：`-k contract` 5 项 + `-k go_read` 6 项对拍 Go 已接管的认证/会话/探针；documents/流式待 P1 接管再补） |
+| 流式帧 | 逐帧比对：`data:` 前缀、事件 `type` 顺序、`[DONE]` / `{"type":"done"}` 差异（[01](../reference/01-current-architecture.md) §4）——录制-回放（同一 prompt、同 stub LLM）产出字节序列 diff | **未实现**（P1-4：SSE 字节级帧随 Go 接管流式才有对拍对象，Y3） |
+| AI 执行契约 | [`ai-execution.schema.json`](../../contracts/ai-execution.schema.json)；Python 侧 Pydantic 严格校验已落（P0-7，29 条 HTTP 级用例），Go 侧 struct 与逐码测试未实现 | **半实现**：Python 侧 mock 级已有；Go 侧仍缺——内部执行面是 Python 独占，派发方（`go-worker`）无调度循环，属 P3 |
 | 密码哈希 | golden vectors：Python 生成若干 `pbkdf2_sha256$...` 串，Go 必须逐条验证通过（**导出物不含密码与盐明文**） | **两侧都已实现（2026-10-12，X5 转 pass）**：导出侧 `scripts/export_pbkdf2_golden.py` → `contracts/pbkdf2_golden.json` 10 条（6 正 4 负），期望值由生产 `verify_password` 现算；"不含密码与盐明文"落成"不含明文口令、也不含真库摘要"（口令由 `vector_id` 按 `password_rule` 重建，真库只在 `--from-db` 下给形状统计）。Go 侧 `internal/auth/password.go` + `TestVerifyLegacyHash` 逐条对上（标准库 `crypto/pbkdf2`，零新依赖），实跑 rc=0；反向（Go 写 → Python 验）也实跑取过证。**仍未覆盖的一半**：`--from-db` 的真库形状统计（含"是否残留 bcrypt 族"）因原真库随 Docker 数据卷消失而无法执行（台账 C20），Go 侧不实现 bcrypt、只显式拒绝并打 `family=bcrypt` 的 WARN |
-| JWT | golden tokens：Python 签发 → Go 校验（含 `type` 语义、过期、错误 secret） | **令牌半侧已实现（2026-10-12）**：`scripts/export_jwt_golden.py` → `contracts/jwt_golden.json` 9 条（正 3 / 负 6），`expect_accept` 由生产函数 `get_user_from_bearer_token` 现算（桩 db 跑真函数），点名的三件事各有向量，另补缺 `sub`、用户已不在库里、签名被改、历史令牌不带 `type`。Go 侧 `TestParseGoldenTokens` 逐条对上，并按 `rejected_by` 分层认领（令牌层 / 回库层）。配 `tests/unit/test_export_jwt_golden.py` 32 项。<br>⚠️ 两处与 pbkdf2 那份**结构不同**，读文件时要留意：①`--check` 是**语义**校验不是字节比对（token 带 `exp`，不能逐字重建；正向向量有效期钉 10 年作补偿，见文件 `reproducibility` 字段）；②两侧结论**相反**的轴记在 `divergences` 段而不是塞进 vectors（缺 exp：Python 收、Go 拒；alg 白名单：Go 写死 HS256），否则"逐条一致"这个判据会自相矛盾。<br>**仍缺的是"Go 签发 → Python 校验"的进程级互跑**（X4 的 chain 半侧）：今天只有 claims 形状逐字段对齐 + 密码哈希那一向的实跑取证，`pytest -m chain -k go_auth` 收 0 项、rc=5，要等 P0-5 的容器 fixture |
+| JWT | golden tokens：Python 签发 → Go 校验（含 `type` 语义、过期、错误 secret） | **令牌半侧已实现（2026-10-12）**：`scripts/export_jwt_golden.py` → `contracts/jwt_golden.json` 9 条（正 3 / 负 6），`expect_accept` 由生产函数 `get_user_from_bearer_token` 现算（桩 db 跑真函数），点名的三件事各有向量，另补缺 `sub`、用户已不在库里、签名被改、历史令牌不带 `type`。Go 侧 `TestParseGoldenTokens` 逐条对上，并按 `rejected_by` 分层认领（令牌层 / 回库层）。配 `tests/unit/test_export_jwt_golden.py` 32 项。<br>⚠️ 两处与 pbkdf2 那份**结构不同**，读文件时要留意：①`--check` 是**语义**校验不是字节比对（token 带 `exp`，不能逐字重建；正向向量有效期钉 10 年作补偿，见文件 `reproducibility` 字段）；②两侧结论**相反**的轴记在 `divergences` 段而不是塞进 vectors（缺 exp：Python 收、Go 拒；alg 白名单：Go 写死 HS256），否则"逐条一致"这个判据会自相矛盾。<br>**"Go 签发 → Python 校验"的进程级互跑已由 P0-5 的 chain fixture 补齐**（X4 已转 pass）：`pytest -m chain -k go_auth` 现收 **4 项全绿**，两个方向（Go 签发→Python 验、Python 签发→Go 验）各有用例，另覆盖伪造 secret 两侧都 401、role 一律回库取对拍 |
 
-契约测试跑在真实两个服务上（compose profile `contract`），不允许用 testdouble 代替任一端。
-**该 profile 尚未加进 `docker-compose.yml`**（属 P0-5 的输出行）。
+契约测试跑在真实两个服务上，不允许用 testdouble 代替任一端。
+**实跑形态**（P0-5 起）：`dev.py infra` 的 6 个中间件容器 + `dev.py serve`（ai-core，绑 127.0.0.1:8000）+ `dev.py go-serve`（go-api，:8080）；`tests/chain/_runtime.py` 决定 preflight 起不来时该红还是该跳。原设想的「compose profile `contract`」已随 2026-10-13 定案取消（容器只跑中间件、应用层源码跑）。
 
 ## 8. 工程落地
 
@@ -126,12 +128,12 @@
 | 数据隔离 | L1–L3 每模块独立 database（`template1` clone）或 `TRUNCATE` + 事务回滚；L2 每模块独立 Milvus collection（前缀 + pytest xdist id），**teardown 必须删干净** | 未实现；现网 `drop_collection` 零调用点，说明该能力从未被验证过 |
 | 密钥 | 仅 nightly 需要：GitHub Actions secrets；PR 上 L4 走 stub LLM，零成本 | 未实现 |
 | CI 分工 | 每次提交：`unit` + `integration` + 契约静态门禁；PR 合并前：加真实 PG/Redis 的 `integration`；nightly：`chain` + `e2e`(real) + 科研问题集记录 | **部分**：`.github/workflows/ci.yml` 现有 backend/go/frontend/progress/docker 五个 job，全部是 mock 级；nightly 工作流未实现 |
-| 时间预算 | L1 单模块 ≤30s，全量 `unit+integration` ≤6min（超则拆分并行）；nightly ≤25min | 本机全量 **515 项约 40s**（2026-10-12 复测；此前记的 449 项是 2026-10-11 的读数） |
+| 时间预算 | L1 单模块 ≤30s，全量 `unit+integration` ≤6min（超则拆分并行）；nightly ≤25min | 本机全量现 **599 项**（unit 527 / integration 57 / chain 15）；读数现场取，别抄文档 |
 | 可复用性约束 | 所有对 URL/端点的引用集中在 `contracts/` 与 `tests/e2e/fixtures.ts`；测试里**不出现** Python 专有概念，只断言对外形状 | 前端侧已由 FE-1 的 R6（DTO 只在 `api/types.ts`）保证一半 |
 
 ## 9. 与里程碑卡片的关系
 
-- **P0-5** 交付 L5 契约测试（含 compose `contract` profile）；**P0-9** 交付 L4 骨架与 T1/T6 的浏览器级断言。
+- **P0-5**（done）交付 L5 chain 契约测试（`tests/chain/`，15 项跨语言对拍）；**P0-9** 交付 L4 骨架与 T1/T6 的浏览器级断言。
 - **P1-6** 交付 L1–L3 的真实化（真 PG/Redis/Milvus + 样例语料 + `baseline-results.md`）。
 - **P2-3/P2-4** 交付 chunk/公式链路用例与固定问题集。
 - 判定表是 [09](09-milestone-p0.md) §0 的 X1–X8（旧 `06 §0` 的 E1–E10 已随 `06` 归档）。

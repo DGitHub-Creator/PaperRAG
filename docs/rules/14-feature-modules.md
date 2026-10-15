@@ -67,7 +67,7 @@
 
 - **现状（未实现）**：叶级正文**只存在 Milvus**，字段 `text` 是 `VARCHAR(2000)`（`backend/vectordb/milvus_client.py:240`）
   → 超长块被截断且**无处回放**。PG 里没有对应正文表：`table-acl.md` 声明了 `papers` / `paper_versions` /
-  `paper_files` / `paper_chunks`，但**这 4 张表在 `server/migrations/` 里根本不存在**（ACL 24 张 vs 实建 11 张，差 18 张，见 `13` §6.1）。
+  `paper_files` / `paper_chunks`，但**这 4 张表在 `server/migrations/` 里根本不存在**（ACL 25 张 vs 实建 12 张，差 18 张，见 `13` §6.1）。
 - **目标行为**：PG 持不截断的正文与结构树，Milvus 只存可重建的向量与稀疏索引；删集合后可用一篇论文重放重建。
 - **判据**：`uv run python scripts/rebuild_chunks.py --verify-only`（P2-1 的 verify）；
   Z1「chunk 正文进 PG 且无截断」；每条检索结果能取到 `content_hash` 与完整正文长度。
@@ -139,7 +139,7 @@
 
 ## M9 主题分类与语义书架 ⚠️ 零存在
 
-- **现状**：全仓无聚类 / 主题分组代码。前端也没有承载它的视图（无 router，见 `13` §7）。
+- **现状**：全仓无聚类 / 主题分组代码（后端零存在）。前端书架已有「主题群」页签，但是 **mock 页**（`views/LibraryView.vue` 顶部 `SampleNotice` 标注归属 P2-9/P2-10，数据在 `mock/library`，见 `13` §7），没接任何聚类能力。
 - **目标行为**：对知识库自动产出主题群（例：「共识安全证明」「同步模型」「UC 理想功能」），
   支持按主题检索，且每个主题群能列出所属论文与依据。
 - **判据**：`uv run python -m pytest -q -m integration -k topic_cluster`（≥20 篇 → ≥2 个群，且检索结果带 `topic` 标签）；Z6 覆盖。
@@ -216,28 +216,18 @@
 
 ## M17 平台底座（认证 / 契约 / 任务态 / 记账 / 门禁）
 
-- **现状（进行中，属架构轴 P0）**：认证 Python 为裁判、Go 已实现并被 golden vectors 钉住（X5 pass）；
-  契约目录与静态门禁 done（X3 pass）；`/internal/v1/ai/*` 七条内部面**已建好但零 caller**；
-  预算与 usage 记账的 `/stats/usage` 前端不调；任务态在进程内存（C9）。
-  **2026-10-14 新增两条 Go 原生自助面**（`POST /api/v1/auth/password`、`GET|PUT /api/v1/me/preferences`）：
-  它们**没有 Python 对照**，是新开的 Go 面——所以判据是"Go 自己的不变量"（旧口令错回 400 不 401、
-  新口令与 register 同规则、`user_preferences` 的 created_at/updated_at 由写方给 UTC），
-  不属于 X4 的跨语言兼容范围。数据面随之多一张实建表 `user_preferences`（迁移 `000003`）。
-- **2026-10-14 前端侧补齐（同一条自助面被消费）**：设置页从「文档管理」单页**重做成用户设置四板块**
-  （账号信息 / 外观·主题 / 偏好设置 / 修改密码），管理员在页尾**多一块「知识库管理」**（原文档上传与列表
-  **逐字保留**，因为 `backend/api/documents.py` 每个端点都是 `Depends(require_admin)`，**不能**挪给普通用户）。
-  偏好设置只落两个字段：`theme`（light/dark/system，system 用 `matchMedia` 解析一次，**不监听变化**）与
-  `start_view`（**登录后**跳转目标；**刷新不跳**，避免 F5 把人从当前页拽走）；`start_view` 由 Go 只校验**形状**，
-  「认不认识」交给前端 `router.hasRoute`——别让 Go 硬编码前端路由表。站点级 `alert`/`confirm` **全站退役**，
-  换成 `useToast`/`useConfirm`（状态）+ `ToastHost`/`ConfirmHost`（DOM），`utils/dialog.ts` 仍是唯一接缝；
-  另引入 `[data-theme="dark"]` 令牌块与**页宽统一 1280px**（删掉 `.page-inner.wide`）。
-  ⚠️ **这条面上线的证据只到 mock/real 混合**：「知识库管理」块本轮**只验到错误路径**（Go 把 `/api/*` 反代到
-  未启动的 Python → 红 toast「上游服务不可用」），**上传/删除的成功路径本轮没有重跑**——那是 P0-9 的 X7
-  （浏览器级 e2e）该管的。
+- **现状（进行中，属架构轴 P0）**：认证 Python 为裁判、Go 已实现并被 golden vectors 钉住（X4/X5 pass）；
+  契约目录与静态门禁 done（X3 pass，21 个操作）；`/internal/v1/ai/*` 七条内部面**已建好但零 caller**；
+  预算与 usage 记账的 `/stats/usage` 前端不调；任务态在进程内存（C9）。Go 另开了**无 Python 对照的原生自助面**
+  （`POST /api/v1/auth/password`、`GET|PUT /api/v1/me/preferences`）与**已接管的会话读删**（`GET /api/v1/sessions`、
+  `DELETE /api/v1/sessions/{id}`）——判据是 Go 自己的不变量（旧口令错回 400 不 401、偏好缺行回默认值、时间列由写方给 UTC），
+  不属 X4 的跨语言兼容范围；数据面随之多一张实建表 `user_preferences`（迁移 `000003`）。前端设置页已重做成
+  **5 个板块**（账号 / 主题 / 偏好 / 改密码 + 仅管理员的知识库管理），站内 `alert`/`confirm` 换成 toast/confirm，
+  暗色主题与 1280px 页宽已落——形状详见 `13 §7` 与 `10`，逐轮实录与证据等级见 `../WORKLOG.md`。
 - **目标行为**：Go 是唯一公开入口与唯一调度方；任务态与记账落 PG；12 条未调用接口逐条有审计与 Deprecation 头。
 - **判据**：X1/X2/X4/X6/X7/X8 + Y1/Y4/Y5 + Z4。
 - **归属**：P0-1 / P0-5 / P0-6 / P0-7 / P0-8 + P1-0…P1-8 + P2-6。
-- **风险**：**底座不产出用户可见能力**——这是 15% 完成度里最容易让人误判"产品快好了"的部分（`AGENTS.md` §3 已注明 P0 不产能力）。
+- **风险**：**底座不产出用户可见能力**——这是 18% 完成度里最容易让人误判"产品快好了"的部分（`AGENTS.md` §3 已注明 P0 不产能力）。
 
 ---
 
@@ -250,7 +240,7 @@
 | F-3 Research Lab | M12 | 24 | P3-3 | `lab_run` |
 | F-4 Research Radar / Knowledge Diff | M14 | 14 | P3-1 | `radar_diff` |
 | F-5 Research Writing 完整化 | M13 | 12 | P3-5 | `writing_grounding` |
-| F-6 产品入口层（路由一等概念） | `13` §7 | 8 | — | `nav_entries` |
+| F-6 产品入口层（路由一等概念，**已由 FE-1 引入 vue-router 交付**，见 `13 §7`） | `13` §7 | 8 | — | `nav_entries` |
 | F-7 Research Workspace | M8 | 18 | P3-1, F-6 | `workspace` |
 | F-8 双图 + Evidence Registry | M16 | 24 | P2-2, P3-3 | `graph_traceability` |
 | F-9 版本关系 + Zotero/BibTeX | M2 | 10 | P2-9 | `bibmeta` |
@@ -259,10 +249,10 @@
 | **合计** | | **178 h** | | |
 
 **登记后的算术（一次算清，避免事后争辩）**：总工时 394 → **572 h**，卡片 40 → **51 张**，
-完成度 58/394（14.7%）→ **58/572 ≈ 10.1%**。这是把"产品轴缺口"写进计划的**诚实代价**，
-与 `11 §8` 的提醒一致；不登记则 14.7% 这个数**只对架构轴成立**，对外汇报会高估产品完成度。
-建议的登记节奏：**先只登记 F-6 + F-7**（前端入口与工作区是 V1→V2 的必经路，且工时小、可验证），
-其余 9 项随 V 版本临近再进分母。
+完成度 72/394（18%）→ **72/572 ≈ 12.6%**（这是把 11 项全算上的名义值；F-6 已随 FE-1 交付，实际新增约 170 h）。
+这是把"产品轴缺口"写进计划的**诚实代价**，与 `11 §8` 的提醒一致；不登记则 18% 这个数**只对架构轴成立**，
+对外汇报会高估产品完成度。建议的登记节奏：**先只登记 F-7**（工作区是 V1→V2 的必经路，且工时小、可验证；
+F-6 产品入口层已由 FE-1 引入 vue-router 交付，无需再登记），其余 9 项随 V 版本临近再进分母。
 
 ## 19. 跨模块的三条顺序铁律
 

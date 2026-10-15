@@ -1,6 +1,8 @@
 # 05 — PostgreSQL Schema 收编与 Chunk 数据重建
 
-> **本文状态（2026-10-12 复核）**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。**七步只走完前两步**：①核查脚本 `scripts/audit_schema.py` 已落且已扩到三种模式（离线 `--check-baseline`、只读 `--live`、离线列级 `--verify-columns`；判定单测 37 项）；②基线迁移已落——`server/migrations/000001_baseline.{up,down}.sql`（真库 10 表抄录）＋ `000002_ai_executions.{up,down}.sql`，`sqlc.yaml` 的 schema 源也已指过来。**仍未做的四件**：`000003_fix_drift`、`paper_chunks`（§3）、时间戳转换（§4）、`rebuild_chunks.py`。⚠️ 一处口径更正：**"本机无 Docker"这句话不成立**——Docker 已装可用（`AGENTS.md` §5），只是 **golang-migrate 从未接线**，`server/migrations/` 今天只有核查器与 sqlc 在读、没有任何执行器会把它应用到库上（`dev.py migrate` 跑的是容器内 alembic，见台账 C18）；因此基线的 real 级证据靠的是「临时库法」人工实跑，不是某条命令。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
+> **本文状态**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)；逐轮实录见 [../WORKLOG.md](../WORKLOG.md)、卡片状态见 [../progress.json](../progress.json)。
+> **当前进度**：三份迁移已落——`000001_baseline`（真库 10 表抄录）、`000002_ai_executions`、`000003_user_preferences`，`sqlc.yaml` 的 schema 源已指过来（编号规则见 §2.6）；核查脚本 `scripts/audit_schema.py` 三模式（`--check-baseline` / `--live` / `--verify-columns`，判定单测 37 项）与 §4.1 时间戳验证（`scripts/probe_timestamps.py` → `docs/reference/timestamp-audit.md`）已落。**仍未做**：`000004_fix_drift`、`000005_paper_chunks`（§3）、§4.2 的时间戳**转换**（验证已做、转换未执行）、`scripts/rebuild_chunks.py`。
+> ⚠️ **golang-migrate 从未接线**：`server/migrations/` 今天只有核查器与 sqlc 两个离线读者，没有任何执行器会把它应用到库上（`dev.py migrate` 跑的是容器内 alembic，见台账 C18 / 决策 D8）；因此基线的 real 级幂等证据靠「临时库法」人工实跑，不是某条已接线的命令。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
 > 对应决策 Q4、Q5。原则：**先核查、后建基线、禁止对存量库重复初始化建表**；Milvus 降级为可重建索引，PostgreSQL 成为文献与分块正文的唯一真相（02 §0 L3）。
 
 ## 1. 收编前置核查（必须在任何写操作之前完成）
@@ -173,6 +175,8 @@ chunk_id  = "{paper_version_id}:{level}:{ordinal:06d}"
 现状：所有列为 `timestamp without time zone`；写入混用 naive `datetime.utcnow()`（`conversation_storage.py:85`、`models.py` 各默认值）与 aware `datetime.now(UTC)`（`parent_chunk_store.py:95`）。aware 值经 psycopg2 落到 `timestamp` 列时，**PG 会按会话 `TimeZone` 转换后再丢弃偏移** → 存量数值的真实语义取决于历史会话时区与 `log_timezone`，**不能假定为 UTC**。
 
 ### 4.1 验证（只读，**P0-2**）
+
+> **已执行**：`scripts/probe_timestamps.py` → `docs/reference/timestamp-audit.md`（11 个 naive 时间列逐个判定）。探针法实测证实了 §4 的断言——会话时区 `Asia/Shanghai` 下 aware `datetime.now(UTC)` 写进 naive 列会落成 **+8 小时偏移**；分布法与交叉法**没有存量数据可判**（原真库已消失、重建库是空的），报告如实记 `no_data`。
 
 ```sql
 SHOW timezone;  SHOW log_timezone;  -- 以及 server_version
