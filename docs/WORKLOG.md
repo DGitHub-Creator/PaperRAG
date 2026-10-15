@@ -42,6 +42,23 @@
   ②**D3 与 D4 是同一条冲突的另一半**（"chunk 可信化移到 P2 且接受 P1 引用为非证据级"）——用户这次没点名 D3，
   但它已被 D4 定案隐含回答，仍挂在待决里会误导后来人，需要确认是否一并闭掉。
 
+
+- **补记：CI run 44 红了，根因不在文档而在 `dev.py`**（同一天的第十八轮里发现，值得单独记，
+  因为它的形态是"本地全绿、CI 失败"）：
+  - 现象：`#43 c34bc3b` 绿 → `#44 335fa03`（P0 收口）红，后端 job 只挂在 `Run tests` 一步。
+  - 根因：**`read_env_file()` 没有存在性检查**，直接 `path.read_text()`。CI 上没有 `.env`，
+    而我新加的两条 `dev.py` 用例走 `cmd_migrate`/`cmd_migrate_go` → `process_env()` 被当参数调用 →
+    `FileNotFoundError`。**这台机器永远有 `.env`，所以本地 644 passed 与 CI 失败并不矛盾。**
+  - 修法落在函数而不是落在测试：缺文件返回空表。**分工要说清**——"缺 .env" 该由 `doctor` 作为
+    问题报出来，`process_env()` 只负责不 traceback。这条缺陷的影响面比测试大：
+    一台还没 `cp .env.example .env` 的新克隆跑 `go-serve`/`seed-admin` 也只会拿到一句裸 FileNotFoundError。
+  - 取证方式值得复用：**把 `.env` 临时改名再跑全量**（跑完立刻放回并复验键数），
+    这比读代码猜"CI 上大概少了什么"可靠。模拟现场实测 **607 passed / 27 skipped**（chain 层按
+    `_runtime.preflight_action` 的设计在没被显式选中时 skip），与 CI 条件一致。
+  - 另加一条回归用例钉住它（`test_missing_env_file_does_not_crash_the_command`）。
+
+---
+
 ## 2026-10-15 · 第十七轮 —— P0 收口：X2 转 pass、四条卡 done、分工口径落进机检
 
 **一句话**：把 P0 剩下的四张卡（P0-6/P0-7/P0-8/P0-9）与唯一一条 fail（X2）一起收掉，
