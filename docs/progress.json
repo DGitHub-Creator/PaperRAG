@@ -5,7 +5,7 @@
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "**读数（2026-10-15 现场取，别抄）**：完成度 **30%**（118/394 h）；40 张卡 done 14 / in_progress 0 / pending 26；25 条退出标准 **pass 8**（X1–X8 全绿）、not_run 17（属 P1/P2/P3）。测试分层 unit 527 / integration 57 / **chain 27** / pytest-e2e **0**（Playwright 另有 9 项结构级，`cd frontend && npm run test:e2e`）；全量 `pytest -q` **644 passed**。\n\n**P0 已收口**：四条卡（P0-6 / P0-7 / P0-8 / P0-9）全部 done，X2 于第十七轮转 pass。\n**收口时刻的边界**（详见 `rules/frontend-backend-division-of-labor.md` §0.4 与 `contracts/route-ownership.md`）：前端只经 `api/client.ts` 一份路径字面量；Go = 公开入口 + 8 条原生业务面 + 4 条探针 + 未迁移面的反代门面 + 直连 PG 的三张表；Python = 解析/检索/生成的实现 + `/internal/v1/ai/*` 执行面，另有 17 条 `proxy` 面待搬。\n\n**下一步（等用户批）**：P0 收口后才允许把 P1 的卡标 in_progress（`08 §2` 阶段顺序律由 `sync_progress.py --check` 强制）。P1 的账已经明确：搬 documents（前置是文档真相进 PG）、搬流式 chat/ws、删 Python 那 12 条可达不调的面、Go 补限流（C33，登录/注册已经丢了）、缓存失效（C35）、`rag_trace` 投影口径（C34）、任务态持久化（C37：`ai_executions` 表已建但零写入方）。\n\n**三条别读成「已完成」**：①X2 是**静态配置级**证据，prod 全栈容器本机没跑过；②e2e 是结构级、不判像素，而且不在 pytest 的 e2e marker 里；③X5 的 `--from-db` 真库形状统计仍不可执行（C20），P1 接管 `users` 前必须先跑。\n\n**⚠️ 本字段只放当前读数与下一步，不放日志。**逐轮实录在 `docs/WORKLOG.md`；规约与硬约束在 `AGENTS.md`；代码问题与处置在 `rules/12` 台账；现状形状在 `rules/13`。往本字段追加 dated 内容 = 违反 `08 §6`。",
+  "current": "**读数（2026-10-15 现场取，别抄）**：完成度 **30%**（118/394 h）；40 张卡 done 14 / in_progress 0 / pending 26；25 条退出标准 **pass 8**（X1–X8 全绿）、not_run 17（属 P1/P2/P3）。测试分层 unit 527 / integration 57 / **chain 27** / pytest-e2e **0**（Playwright 另有 9 项结构级，`cd frontend && npm run test:e2e`）；全量 `pytest -q` **644 passed**。\n\n**P0 已收口**：四条卡（P0-6 / P0-7 / P0-8 / P0-9）全部 done，X2 于第十七轮转 pass。\n**收口时刻的边界**（详见 `rules/frontend-backend-division-of-labor.md` §0.4 与 `contracts/route-ownership.md`）：前端只经 `api/client.ts` 一份路径字面量；Go = 公开入口 + 8 条原生业务面 + 4 条探针 + 未迁移面的反代门面 + 直连 PG 的三张表；Python = 解析/检索/生成的实现 + `/internal/v1/ai/*` 执行面，另有 17 条 `proxy` 面待搬。\n\n**下一步（P1 开工安排，2026-10-15 用户定案）**：按 **D4：保留 P1 → P2**推进——不前移 P2、不拆卡、不解锁依赖。开工前置有两件：①**过设计门禁**（`plans/04 §4.4`：P2 目标数据模型与 Go/Python 服务边界先审查、结论落 `contracts/`）；②**C33/C34/C35/C36/C37 的归属与验收条件**已在台账 A-2 定稿，逐条带可机检判据，**不允许带着已知缺陷进入下一阶段**。P1 完成后按正式依赖进 P2（一次性建可信存储与证据链，M1/M3/M5/M7 的数据链路合批做，不分别打补丁）。原则序位：**正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度**——产品轴暂时不前进是可接受的。P1 的账已经明确：搬 documents（前置是文档真相进 PG）、搬流式 chat/ws、删 Python 那 12 条可达不调的面、Go 补限流（C33，登录/注册已经丢了）、缓存失效（C35）、`rag_trace` 投影口径（C34）、任务态持久化（C37：`ai_executions` 表已建但零写入方）。\n\n**三条别读成「已完成」**：①X2 是**静态配置级**证据，prod 全栈容器本机没跑过；②e2e 是结构级、不判像素，而且不在 pytest 的 e2e marker 里；③X5 的 `--from-db` 真库形状统计仍不可执行（C20），P1 接管 `users` 前必须先跑。\n\n**⚠️ 本字段只放当前读数与下一步，不放日志。**逐轮实录在 `docs/WORKLOG.md`；规约与硬约束在 `AGENTS.md`；代码问题与处置在 `rules/12` 台账；现状形状在 `rules/13`。往本字段追加 dated 内容 = 违反 `08 §6`。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -338,7 +338,8 @@
       "not_doing": [
         "不做 Frontier 与多轮规划（P3）",
         "不做 chunk 可信化（P2）",
-        "不宣称引用为证据链（P1 引用为非证据级）"
+        "不宣称引用为证据链（P1 引用为非证据级）",
+        "不为兼容提前实现 P2 的存储方案，也不建临时表/兼容层/双写（2026-10-15 定案 D4，见 08 §10 与 04 §4.4）"
       ],
       "tasks": [
         {
@@ -950,24 +951,6 @@
       "question": "chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？",
       "recommendation": "接受；证据级引用属 P2 的 Z1/Z3",
       "blocking": "P1 演示口径与 README 表述"
-    },
-    {
-      "id": "D4",
-      "question": "产品轴 V1.0（可信学术 RAG）要求先完成数据可信化，而架构轴把 chunk 真相层与公式索引排在 P2 —— 是否把 P2-1/P2-2 前移到 P0/P1 之间？",
-      "recommendation": "接受最小前移：P0-2 真库基线已完成，接着只做 chunk 正文进 PG（P2-1）与公式索引接线（P2-2）两项，其余仍按架构轴走；不整段搬 P2",
-      "blocking": "V1.0 的完成时点；11 §7 的顺序冲突"
-    },
-    {
-      "id": "D5",
-      "question": "docs/rules/11-product-vision.md §8 的十项产品能力（论文图书馆、Deep Reader、比较矩阵、Gap Explorer、Research Lab、Research Writing、Research Radar、Research Workspace、工具层、信息增益驱动规划）是否登记为任务卡或新阶段？",
-      "recommendation": "先只登记 V1 相关的四项（论文图书馆最小版、Deep Reader 结构解析、比较矩阵、原文定位），其余留到 V2 开工前再拍。注意：登记会把完成度分母从 372h 显著抬高（当前 11% 会下降），这是诚实的代价，不要用「以后再说」回避",
-      "blocking": "产品轴剩余 10 项是否进入 progress.json 的分母（§8 第 2 项已部分执行：2026-10-13 登记 P2-9 抓取 + P2-10 语义书架）"
-    },
-    {
-      "id": "D6",
-      "question": "P0-2 的基线语义：alembic_version 是否算 Go 拥有的基线对象（当前 000001_baseline 含它）？存量库上是否允许 migrate down（等价弃库）、是否强制 pg_dump 前置？",
-      "recommendation": "保留 alembic_version 在基线里但注明「非 Go 拥有」；down 只允许作用于空库或已备份库，并把强制备份前置写进 05 的 down 纪律",
-      "blocking": "P0-2 收尾；05 的 down 语义"
     },
     {
       "id": "D7",
