@@ -14,7 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.internal_api.executions import store
+from backend.internal_api.executions import ExecutionStore
+
+store = ExecutionStore()
 from backend.internal_api.registry import REGISTRY
 from backend.internal_api.schemas import ExecuteRequest
 
@@ -54,6 +56,7 @@ def base(task_id: str = "t-1", task_type: str = "PARSE_PAPER", filename: str = "
 def _configured_token(monkeypatch):
     """每个用例独立的令牌与独立的 store：store 是模块单例，不重置会串味。"""
     monkeypatch.setattr("backend.core.config.AICORE_INTERNAL_TOKEN", TOKEN, raising=False)
+    monkeypatch.setattr("backend.internal_api.router.store", store)
     store.reset()
     yield
     store.reset()
@@ -253,8 +256,8 @@ def test_filename_cannot_escape_upload_dir(client, auth, loader_calls, uploads, 
     outside = tmp_path / "other.pdf"
     outside.write_bytes(b"%PDF-1.4 outside")
     resp = client.post(EXECUTE, json=base(filename="../other.pdf"), headers=auth)
-    assert resp.status_code == 422
-    assert "other.pdf" in resp.json()["detail"]
+    assert resp.status_code == 400
+    assert resp.json()["errors"][0]["code"] == "INVALID_PAYLOAD"
     assert loader_calls == [], "目录外的文件一次都不该被打开"
 
 
@@ -281,7 +284,7 @@ def test_index_paper_reports_index_unavailable(client, auth, uploads, monkeypatc
             raise RuntimeError("milvus down")
 
     monkeypatch.setattr("backend.internal_api.registry.get_document_loader", lambda: _Loader())
-    monkeypatch.setattr("backend.internal_api.registry.get_milvus_writer", lambda: _BoomWriter())
+    monkeypatch.setattr("backend.internal_api.registry.index_document", lambda *args, **kwargs: _BoomWriter().write_documents([]))
     resp = client.post(EXECUTE, json=base(task_type="INDEX_PAPER"), headers=auth)
     assert resp.status_code == 503
     assert resp.json()["errors"][0]["code"] == "INDEX_UNAVAILABLE"

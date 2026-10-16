@@ -1,10 +1,10 @@
 """Chat HTTP routes."""
 
 import json
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from backend.core.auth import get_current_user
 from backend.core.logging_config import get_logger
@@ -28,28 +28,18 @@ async def chat_endpoint(
     # `request`/`response` 归 slowapi 注入，请求体因此叫 `body`（形状有机检，见 auth.py 那条注释）
     try:
         session_id = body.session_id or "default_session"
-        resp = chat_with_agent(body.message, current_user.username, session_id)
+        resp = await run_in_threadpool(chat_with_agent, body.message, current_user.username, session_id)
         if isinstance(resp, dict):
             return ChatResponse(**resp)
         return ChatResponse(response=resp)
     except Exception as e:
-        message = str(e)
-        match = re.search(r"Error code:\s*(\d{3})", message)
-        if match:
-            code = int(match.group(1))
-            if code == 429:
-                raise HTTPException(
-                    status_code=429,
-                    detail=(
-                        "Upstream model service is rate-limited or out of quota (429).\n"
-                        f"Original error: {message}"
-                    ),
-                )
-            if code in (401, 403):
-                raise HTTPException(status_code=code, detail=message)
-            raise HTTPException(status_code=code, detail=message)
+        code = getattr(e, "status_code", None)
+        if code == 429:
+            raise HTTPException(status_code=429, detail="上游模型服务限流或配额不足") from e
+        if code in (401, 403):
+            raise HTTPException(status_code=502, detail="上游模型服务认证失败") from e
         logger.exception("Synchronous chat failed: user=%s", current_user.username)
-        raise HTTPException(status_code=500, detail=message)
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/chat/stream")
@@ -69,9 +59,9 @@ async def chat_stream_endpoint(
                 body.message, current_user.username, session_id
             ):
                 yield chunk
-        except Exception as e:
+        except Exception:
             logger.exception("Streaming chat failed: user=%s", current_user.username)
-            error_data = {"type": "error", "content": str(e)}
+            error_data = {"type": "error", "content": "Internal server error"}
             yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

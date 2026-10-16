@@ -1,0 +1,1278 @@
+{
+  "source": "live-postgres",
+  "tables": [
+    "ai_executions",
+    "alembic_version",
+    "chat_messages",
+    "chat_sessions",
+    "citation_edges",
+    "glossary_entries",
+    "paper_nodes",
+    "parent_chunks",
+    "schema_migrations",
+    "user_preferences",
+    "users",
+    "workspace_members",
+    "workspaces"
+  ],
+  "alembic": "head:add_paper_knowledge_graph",
+  "session_timezone": "Etc/UTC",
+  "log_timezone": "Etc/UTC",
+  "server_version": "15.19 (Debian 15.19-1.pgdg13+2)",
+  "columns": [
+    {
+      "table_name": "ai_executions",
+      "column_name": "execution_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 64
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "task_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 64
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "task_type",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 32
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "idempotency_key",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "status",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'queued'::character varying",
+      "character_maximum_length": 16
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "deadline",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "run_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 64
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "trace_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 64
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "lease_token",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 64
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "result",
+      "data_type": "json",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "result_ref",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": 1024
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "proposed_tasks",
+      "data_type": "json",
+      "is_nullable": "NO",
+      "column_default": "'[]'::json",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "evidence_candidates",
+      "data_type": "json",
+      "is_nullable": "NO",
+      "column_default": "'[]'::json",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "usage",
+      "data_type": "json",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "ai_executions",
+      "column_name": "errors",
+      "data_type": "json",
+      "is_nullable": "NO",
+      "column_default": "'[]'::json",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "alembic_version",
+      "column_name": "version_num",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 32
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('chat_messages_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "session_ref_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "message_type",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "content",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "timestamp",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_messages",
+      "column_name": "rag_trace",
+      "data_type": "json",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('chat_sessions_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "user_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "session_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 120
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "metadata_json",
+      "data_type": "json",
+      "is_nullable": "NO",
+      "column_default": "'{}'::json",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "chat_sessions",
+      "column_name": "workspace_id",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('citation_edges_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "source_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "target_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "context",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": "''::text",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "citation_edges",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('glossary_entries_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "paper_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "term",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 200
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "definition",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 1000
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "glossary_entries",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('paper_nodes_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "filename",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "title",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 500
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "year",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "authors",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 1000
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "abstract",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": "''::text",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "citation_count",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "paper_nodes",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "text",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "filename",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "file_type",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 50
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "file_path",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 1024
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "page_number",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "parent_chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "root_chunk_id",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "''::character varying",
+      "character_maximum_length": 512
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_level",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "chunk_idx",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "parent_chunks",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "schema_migrations",
+      "column_name": "version",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "schema_migrations",
+      "column_name": "dirty",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "user_preferences",
+      "column_name": "user_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "user_preferences",
+      "column_name": "theme",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'system'::character varying",
+      "character_maximum_length": 16
+    },
+    {
+      "table_name": "user_preferences",
+      "column_name": "start_view",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'chat'::character varying",
+      "character_maximum_length": 32
+    },
+    {
+      "table_name": "user_preferences",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "user_preferences",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "users",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('users_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "users",
+      "column_name": "username",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 100
+    },
+    {
+      "table_name": "users",
+      "column_name": "password_hash",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 255
+    },
+    {
+      "table_name": "users",
+      "column_name": "role",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'user'::character varying",
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "users",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('workspace_members_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "workspace_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "user_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "role",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'member'::character varying",
+      "character_maximum_length": 20
+    },
+    {
+      "table_name": "workspace_members",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": "nextval('workspaces_id_seq'::regclass)",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "name",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": 100
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "owner_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    },
+    {
+      "table_name": "workspaces",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "character_maximum_length": null
+    }
+  ],
+  "indexes": [
+    {
+      "tablename": "ai_executions",
+      "indexname": "ai_executions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX ai_executions_pkey ON public.ai_executions USING btree (execution_id)"
+    },
+    {
+      "tablename": "ai_executions",
+      "indexname": "uq_ai_executions_run_idempotency",
+      "indexdef": "CREATE UNIQUE INDEX uq_ai_executions_run_idempotency ON public.ai_executions USING btree (run_id, idempotency_key)"
+    },
+    {
+      "tablename": "ai_executions",
+      "indexname": "uq_ai_executions_task_id",
+      "indexdef": "CREATE UNIQUE INDEX uq_ai_executions_task_id ON public.ai_executions USING btree (task_id)"
+    },
+    {
+      "tablename": "alembic_version",
+      "indexname": "alembic_version_pkc",
+      "indexdef": "CREATE UNIQUE INDEX alembic_version_pkc ON public.alembic_version USING btree (version_num)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "chat_messages_pkey",
+      "indexdef": "CREATE UNIQUE INDEX chat_messages_pkey ON public.chat_messages USING btree (id)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "ix_chat_messages_id",
+      "indexdef": "CREATE INDEX ix_chat_messages_id ON public.chat_messages USING btree (id)"
+    },
+    {
+      "tablename": "chat_messages",
+      "indexname": "ix_chat_messages_session_ref_id",
+      "indexdef": "CREATE INDEX ix_chat_messages_session_ref_id ON public.chat_messages USING btree (session_ref_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "chat_sessions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX chat_sessions_pkey ON public.chat_sessions USING btree (id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_id ON public.chat_sessions USING btree (id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_session_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_session_id ON public.chat_sessions USING btree (session_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_user_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_user_id ON public.chat_sessions USING btree (user_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "ix_chat_sessions_workspace_id",
+      "indexdef": "CREATE INDEX ix_chat_sessions_workspace_id ON public.chat_sessions USING btree (workspace_id)"
+    },
+    {
+      "tablename": "chat_sessions",
+      "indexname": "uq_user_session",
+      "indexdef": "CREATE UNIQUE INDEX uq_user_session ON public.chat_sessions USING btree (user_id, session_id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "citation_edges_pkey",
+      "indexdef": "CREATE UNIQUE INDEX citation_edges_pkey ON public.citation_edges USING btree (id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_id ON public.citation_edges USING btree (id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_source_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_source_id ON public.citation_edges USING btree (source_id)"
+    },
+    {
+      "tablename": "citation_edges",
+      "indexname": "ix_citation_edges_target_id",
+      "indexdef": "CREATE INDEX ix_citation_edges_target_id ON public.citation_edges USING btree (target_id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "glossary_entries_pkey",
+      "indexdef": "CREATE UNIQUE INDEX glossary_entries_pkey ON public.glossary_entries USING btree (id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "ix_glossary_entries_id",
+      "indexdef": "CREATE INDEX ix_glossary_entries_id ON public.glossary_entries USING btree (id)"
+    },
+    {
+      "tablename": "glossary_entries",
+      "indexname": "ix_glossary_entries_paper_id",
+      "indexdef": "CREATE INDEX ix_glossary_entries_paper_id ON public.glossary_entries USING btree (paper_id)"
+    },
+    {
+      "tablename": "paper_nodes",
+      "indexname": "ix_paper_nodes_filename",
+      "indexdef": "CREATE UNIQUE INDEX ix_paper_nodes_filename ON public.paper_nodes USING btree (filename)"
+    },
+    {
+      "tablename": "paper_nodes",
+      "indexname": "paper_nodes_pkey",
+      "indexdef": "CREATE UNIQUE INDEX paper_nodes_pkey ON public.paper_nodes USING btree (id)"
+    },
+    {
+      "tablename": "parent_chunks",
+      "indexname": "ix_parent_chunks_filename",
+      "indexdef": "CREATE INDEX ix_parent_chunks_filename ON public.parent_chunks USING btree (filename)"
+    },
+    {
+      "tablename": "parent_chunks",
+      "indexname": "parent_chunks_pkey",
+      "indexdef": "CREATE UNIQUE INDEX parent_chunks_pkey ON public.parent_chunks USING btree (chunk_id)"
+    },
+    {
+      "tablename": "schema_migrations",
+      "indexname": "schema_migrations_pkey",
+      "indexdef": "CREATE UNIQUE INDEX schema_migrations_pkey ON public.schema_migrations USING btree (version)"
+    },
+    {
+      "tablename": "user_preferences",
+      "indexname": "user_preferences_pkey",
+      "indexdef": "CREATE UNIQUE INDEX user_preferences_pkey ON public.user_preferences USING btree (user_id)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "ix_users_id",
+      "indexdef": "CREATE INDEX ix_users_id ON public.users USING btree (id)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "ix_users_username",
+      "indexdef": "CREATE UNIQUE INDEX ix_users_username ON public.users USING btree (username)"
+    },
+    {
+      "tablename": "users",
+      "indexname": "users_pkey",
+      "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_id ON public.workspace_members USING btree (id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_user_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_user_id ON public.workspace_members USING btree (user_id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "ix_workspace_members_workspace_id",
+      "indexdef": "CREATE INDEX ix_workspace_members_workspace_id ON public.workspace_members USING btree (workspace_id)"
+    },
+    {
+      "tablename": "workspace_members",
+      "indexname": "workspace_members_pkey",
+      "indexdef": "CREATE UNIQUE INDEX workspace_members_pkey ON public.workspace_members USING btree (id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "ix_workspaces_id",
+      "indexdef": "CREATE INDEX ix_workspaces_id ON public.workspaces USING btree (id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "ix_workspaces_owner_id",
+      "indexdef": "CREATE INDEX ix_workspaces_owner_id ON public.workspaces USING btree (owner_id)"
+    },
+    {
+      "tablename": "workspaces",
+      "indexname": "workspaces_pkey",
+      "indexdef": "CREATE UNIQUE INDEX workspaces_pkey ON public.workspaces USING btree (id)"
+    }
+  ],
+  "constraints": [
+    {
+      "table_name": "ai_executions",
+      "conname": "ai_executions_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "ai_executions",
+      "conname": "ck_ai_executions_result_exclusive",
+      "contype": "c"
+    },
+    {
+      "table_name": "ai_executions",
+      "conname": "ck_ai_executions_status",
+      "contype": "c"
+    },
+    {
+      "table_name": "ai_executions",
+      "conname": "uq_ai_executions_run_idempotency",
+      "contype": "u"
+    },
+    {
+      "table_name": "ai_executions",
+      "conname": "uq_ai_executions_task_id",
+      "contype": "u"
+    },
+    {
+      "table_name": "alembic_version",
+      "conname": "alembic_version_pkc",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_messages",
+      "conname": "chat_messages_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_messages",
+      "conname": "chat_messages_session_ref_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "chat_sessions_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "chat_sessions_user_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "fk_chat_sessions_workspace_id",
+      "contype": "f"
+    },
+    {
+      "table_name": "chat_sessions",
+      "conname": "uq_user_session",
+      "contype": "u"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_source_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "citation_edges",
+      "conname": "citation_edges_target_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "glossary_entries",
+      "conname": "glossary_entries_paper_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "glossary_entries",
+      "conname": "glossary_entries_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "paper_nodes",
+      "conname": "paper_nodes_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "parent_chunks",
+      "conname": "parent_chunks_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "schema_migrations",
+      "conname": "schema_migrations_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "user_preferences",
+      "conname": "ck_user_preferences_theme",
+      "contype": "c"
+    },
+    {
+      "table_name": "user_preferences",
+      "conname": "user_preferences_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "user_preferences",
+      "conname": "user_preferences_user_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "users",
+      "conname": "users_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_pkey",
+      "contype": "p"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_user_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspace_members",
+      "conname": "workspace_members_workspace_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspaces",
+      "conname": "workspaces_owner_id_fkey",
+      "contype": "f"
+    },
+    {
+      "table_name": "workspaces",
+      "conname": "workspaces_pkey",
+      "contype": "p"
+    }
+  ],
+  "column_diff": [
+    {
+      "table": "ai_executions",
+      "column": "created_at",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "deadline",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "errors",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "evidence_candidates",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "execution_id",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "idempotency_key",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "lease_token",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "proposed_tasks",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "result",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "result_ref",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "run_id",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "status",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "task_id",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "task_type",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "trace_id",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "updated_at",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "ai_executions",
+      "column": "usage",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "alembic_version",
+      "column": "version_num",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "schema_migrations",
+      "column": "dirty",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "schema_migrations",
+      "column": "version",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "user_preferences",
+      "column": "created_at",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "user_preferences",
+      "column": "start_view",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "user_preferences",
+      "column": "theme",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "user_preferences",
+      "column": "updated_at",
+      "kind": "only_in_db"
+    },
+    {
+      "table": "user_preferences",
+      "column": "user_id",
+      "kind": "only_in_db"
+    }
+  ],
+  "required_inputs": [
+    {
+      "table": "ai_executions",
+      "column": "execution_id"
+    },
+    {
+      "table": "ai_executions",
+      "column": "task_id"
+    },
+    {
+      "table": "ai_executions",
+      "column": "task_type"
+    },
+    {
+      "table": "ai_executions",
+      "column": "idempotency_key"
+    },
+    {
+      "table": "ai_executions",
+      "column": "deadline"
+    },
+    {
+      "table": "ai_executions",
+      "column": "created_at"
+    },
+    {
+      "table": "ai_executions",
+      "column": "updated_at"
+    },
+    {
+      "table": "alembic_version",
+      "column": "version_num"
+    },
+    {
+      "table": "chat_messages",
+      "column": "session_ref_id"
+    },
+    {
+      "table": "chat_messages",
+      "column": "message_type"
+    },
+    {
+      "table": "chat_messages",
+      "column": "content"
+    },
+    {
+      "table": "chat_sessions",
+      "column": "user_id"
+    },
+    {
+      "table": "chat_sessions",
+      "column": "session_id"
+    },
+    {
+      "table": "citation_edges",
+      "column": "source_id"
+    },
+    {
+      "table": "citation_edges",
+      "column": "target_id"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "paper_id"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "term"
+    },
+    {
+      "table": "glossary_entries",
+      "column": "definition"
+    },
+    {
+      "table": "paper_nodes",
+      "column": "filename"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "chunk_id"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "text"
+    },
+    {
+      "table": "parent_chunks",
+      "column": "filename"
+    },
+    {
+      "table": "schema_migrations",
+      "column": "version"
+    },
+    {
+      "table": "schema_migrations",
+      "column": "dirty"
+    },
+    {
+      "table": "user_preferences",
+      "column": "user_id"
+    },
+    {
+      "table": "user_preferences",
+      "column": "created_at"
+    },
+    {
+      "table": "user_preferences",
+      "column": "updated_at"
+    },
+    {
+      "table": "users",
+      "column": "username"
+    },
+    {
+      "table": "users",
+      "column": "password_hash"
+    },
+    {
+      "table": "workspace_members",
+      "column": "workspace_id"
+    },
+    {
+      "table": "workspace_members",
+      "column": "user_id"
+    },
+    {
+      "table": "workspaces",
+      "column": "name"
+    },
+    {
+      "table": "workspaces",
+      "column": "owner_id"
+    }
+  ]
+}

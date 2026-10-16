@@ -25,9 +25,10 @@ const revision = ref(0)
 let abortController: AbortController | null = null
 // WS 模式下流式回复落在哪条消息上（SSE 模式用闭包里的索引）
 let wsTargetIndex = -1
+let generation = 0
 
 function newSessionId(): string {
-  return `session_${Date.now()}`
+  return `session_${crypto.randomUUID()}`
 }
 
 function blankReply(): ChatMessage {
@@ -53,6 +54,7 @@ function applyEvent(event: StreamEvent, index: number): void {
       msg.unsupported = event.unsupported || []
       break
     case "error":
+      isLoading.value = false
       msg.isThinking = false
       msg.text += `\n[${t("chat.error_prefix")}${event.content}]`
       break
@@ -66,18 +68,21 @@ function applyEvent(event: StreamEvent, index: number): void {
 
 export function useChat() {
   function newChat(): void {
+    cancelActive()
     messages.value = []
     sessionId.value = newSessionId()
     revision.value += 1
   }
 
   function clearChat(): void {
+    cancelActive()
     messages.value = []
     revision.value += 1
   }
 
   /** 历史会话记录 → 消息列表（契约里 rag_trace 是对象，不是数组） */
   function loadHistory(records: MessageInfo[]): void {
+    cancelActive()
     messages.value = records.map((record) => ({
       text: record.content,
       isUser: record.type === "human",
@@ -91,17 +96,27 @@ export function useChat() {
   }
 
   function selectSession(id: string): void {
+    cancelActive()
     sessionId.value = id
   }
 
+  function cancelActive(): void {
+    generation += 1
+    abortController?.abort()
+    abortController = null
+    useWebSocket().disconnect()
+    wsTargetIndex = -1
+    isLoading.value = false
+  }
+
   function stop(): void {
-    if (abortController) {
-      abortController.abort()
-      return
+    const msg = messages.value[wsTargetIndex >= 0 ? wsTargetIndex : messages.value.length - 1]
+    cancelActive()
+    if (msg && !msg.isUser) {
+      msg.isThinking = false
+      msg.text = msg.text || t("chat.aborted")
     }
-    // As-Is 语义：WS 模式下"停止"就是断链（下一条消息会退回 SSE）。改动留给 P1-4 流式接管。
-    const ws = useWebSocket()
-    if (ws.isConnected.value) ws.disconnect()
+    revision.value += 1
   }
 
   async function send(text: string): Promise<void> {
@@ -116,15 +131,16 @@ export function useChat() {
     const ws = useWebSocket()
     if (ws.isConnected.value) {
       wsTargetIndex = index
-      ws.send({ message: content, session_id: sessionId.value })
-      return
+      if (ws.send({ message: content, session_id: sessionId.value })) return
     }
 
+    const currentGeneration = ++generation
     const controller = new AbortController()
     abortController = controller
     try {
-      await api.chatStream({ message: content, session_id: sessionId.value }, controller.signal, (event) => applyEvent(event, index))
+      await api.chatStream({ message: content, session_id: sessionId.value }, controller.signal, (event) => { if (generation === currentGeneration) applyEvent(event, index) })
     } catch (err: unknown) {
+      if (generation !== currentGeneration) return
       const msg = messages.value[index]
       if (msg) {
         msg.isThinking = false
@@ -133,9 +149,11 @@ export function useChat() {
         revision.value += 1
       }
     } finally {
-      isLoading.value = false
-      abortController = null
-      revision.value += 1
+      if (generation === currentGeneration) {
+        isLoading.value = false
+        abortController = null
+        revision.value += 1
+      }
     }
   }
 
@@ -151,10 +169,7 @@ export function useChat() {
   }
 
   function reset(): void {
-    disconnectWs()
-    if (abortController) abortController.abort()
-    abortController = null
-    wsTargetIndex = -1
+    cancelActive()
     messages.value = []
     isLoading.value = false
     sessionId.value = newSessionId()

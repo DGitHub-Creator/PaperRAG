@@ -28,3 +28,6 @@ USE_REDIS_JOB_MANAGER = os.getenv(
     "USE_REDIS_JOB_MANAGER",
     "true" if APP_ENV in {"prod", "production"} else "false",
 ).lower() == "true"
+
+MILVUS_OPERATION_TIMEOUT = float(os.getenv("MILVUS_OPERATION_TIMEOUT", "30"))
+DOCUMENT_LOCK_TIMEOUT_SECONDS = int(os.getenv("DOCUMENT_LOCK_TIMEOUT_SECONDS", "30"))

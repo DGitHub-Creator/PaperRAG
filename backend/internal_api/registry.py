@@ -10,7 +10,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from backend.core.config import UPLOAD_DIR
-from backend.core.dependencies import get_document_loader, get_milvus_writer
+from backend.core.dependencies import get_document_loader
+from backend.core.logging_config import get_logger
+from backend.services.document_jobs import index_document
+
+logger = get_logger(__name__)
 from backend.internal_api.schemas import ExecuteRequest, Usage
 
 
@@ -44,21 +48,30 @@ def _resolve_filename(payload: dict | None) -> str:
     """
     if not payload or not isinstance(payload.get("filename"), str) or not payload["filename"].strip():
         raise TaskError("INVALID_PAYLOAD", "payload.filename 必填（PARSE_PAPER/INDEX_PAPER 以文件名为引用）")
-    return Path(payload["filename"]).name
+    name = payload["filename"]
+    if Path(name).name != name or any(char in name for char in ("/", "\\", ":", "\x00")):
+        raise TaskError("INVALID_PAYLOAD", "filename 不得包含路径段")
+    return name
 
 
 def _load(path: Path, filename: str) -> list[dict]:
     loader = get_document_loader()
     try:
-        return loader.load_document(str(path), filename)
+        documents = loader.load_document(str(path), filename)
+        if not documents:
+            raise ValueError("未提取到文档内容")
+        return documents
     except Exception as exc:  # 解析失败统一归 PARSE_FAILED：同一份文件重试必然同样失败
-        raise TaskError("PARSE_FAILED", f"文档解析失败：{exc}") from exc
+        logger.exception("内部文档解析失败: filename=%s", filename)
+        raise TaskError("PARSE_FAILED", "文档解析失败") from exc
 
 
 def parse_paper(req: ExecuteRequest) -> Outcome:
     filename = _resolve_filename(req.payload)
     path = UPLOAD_DIR / filename
-    if not path.exists():
+    if not path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+        raise TaskError("INVALID_PAYLOAD", "filename 不得引用上传目录外的文件")
+    if not path.is_file():
         raise TaskError("PARSE_FAILED", f"待解析文件不存在：{filename}")
     documents = _load(path, filename)
     return Outcome(result={"filename": filename, "chunk_count": len(documents), "parsed": True})
@@ -67,16 +80,19 @@ def parse_paper(req: ExecuteRequest) -> Outcome:
 def index_paper(req: ExecuteRequest) -> Outcome:
     filename = _resolve_filename(req.payload)
     path = UPLOAD_DIR / filename
-    if not path.exists():
+    if not path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+        raise TaskError("INVALID_PAYLOAD", "filename 不得引用上传目录外的文件")
+    if not path.is_file():
         raise TaskError("PARSE_FAILED", f"待索引文件不存在：{filename}")
-    documents = _load(path, filename)
-
-    writer = get_milvus_writer()
     try:
-        written = writer.write_documents(documents)
-    except Exception as exc:  # Milvus 不可达/缺 collection 是可重试的依赖故障，不是数据故障
-        raise TaskError("INDEX_UNAVAILABLE", f"向量库写入失败：{exc}") from exc
-    return Outcome(result={"filename": filename, "indexed_chunks": written, "indexed": True})
+        counts = index_document(str(path), filename)
+    except ValueError as exc:
+        raise TaskError("PARSE_FAILED", "文档内容无法索引") from exc
+    except Exception as exc:
+        logger.exception("内部文档索引失败: filename=%s", filename)
+        raise TaskError("INDEX_UNAVAILABLE", "文档索引依赖暂不可用") from exc
+    return Outcome(result={"filename": filename, "indexed_chunks": counts["leaf_count"], "indexed": True})
+
 
 
 REGISTRY: dict[str, TaskSpec] = {

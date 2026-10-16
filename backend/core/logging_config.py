@@ -15,11 +15,13 @@ import json
 import logging
 import os
 import sys
+from contextvars import ContextVar
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # ── 日志格式 ──────────────────────────────────────────────────────
 CONSOLE_FORMAT = (
-    "[%(asctime)s] [%(levelname)-7s] %(name)s [%(filename)s:%(lineno)d] - %(message)s"
+    "[%(asctime)s] [%(levelname)-7s] %(name)s [%(filename)s:%(lineno)d] [trace_id=%(trace_id)s] - %(message)s"
 )
 FILE_FORMAT = CONSOLE_FORMAT  # 文件与控制台使用相同格式
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -27,12 +29,22 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # ── 日志目录 ──────────────────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
 LOG_FILE = LOG_DIR / "app.log"
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
 
 # ── JSON 模式 ────────────────────────────────────────────────────
 JSON_LOG_ENABLED = os.getenv("JSON_LOG", "false").lower() == "true"
 
 # ── 全局初始化标记 ────────────────────────────────────────────────
 _initialized = False
+request_trace_id: ContextVar[str] = ContextVar("request_trace_id", default="-")
+
+
+class _TraceFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "trace_id"):
+            record.trace_id = request_trace_id.get()
+        return True
 
 
 class JsonFormatter(logging.Formatter):
@@ -52,8 +64,7 @@ class JsonFormatter(logging.Formatter):
             "lineno": record.lineno,
             "message": record.getMessage(),
         }
-        if hasattr(record, "trace_id"):
-            log_entry["trace_id"] = record.trace_id
+        log_entry["trace_id"] = getattr(record, "trace_id", request_trace_id.get())
         if record.exc_info and record.exc_info[0]:
             log_entry["exception"] = self.formatException(record.exc_info)
         return json.dumps(log_entry, ensure_ascii=False)
@@ -70,38 +81,22 @@ def setup_root_logger() -> None:
     global _initialized
     if _initialized:
         return
-    _initialized = True
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
-
-    if JSON_LOG_ENABLED:
-        json_fmt = JsonFormatter()
-        # 控制台 handler（INFO 级别，JSON 格式）
-        console = logging.StreamHandler(sys.stdout)
-        console.setLevel(logging.INFO)
-        console.setFormatter(json_fmt)
-        root.addHandler(console)
-
-        # 文件 handler（DEBUG 级别，JSON 格式）
-        fh = logging.FileHandler(str(LOG_FILE), encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(json_fmt)
-        root.addHandler(fh)
-    else:
-        text_fmt = logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT)
-        # 控制台 handler（INFO 级别）
-        console = logging.StreamHandler(sys.stdout)
-        console.setLevel(logging.INFO)
-        console.setFormatter(text_fmt)
-        root.addHandler(console)
-
-        # 文件 handler（DEBUG 级别）
-        fh = logging.FileHandler(str(LOG_FILE), encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(text_fmt)
-        root.addHandler(fh)
+    formatter = JsonFormatter() if JSON_LOG_ENABLED else logging.Formatter(CONSOLE_FORMAT, DATE_FORMAT)
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(logging.INFO)
+    file_handler = RotatingFileHandler(
+        LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+    )
+    file_handler.setLevel(logging.DEBUG)
+    for handler in (console, file_handler):
+        handler.setFormatter(formatter)
+        handler.addFilter(_TraceFilter())
+        root.addHandler(handler)
+    _initialized = True
 
 
 def get_logger(name: str) -> logging.Logger:

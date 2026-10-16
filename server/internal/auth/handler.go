@@ -275,8 +275,7 @@ func toAuthResponse(r *AuthResult) AuthResponse {
 // decodeJSONObject 读请求体并解析成 JSON 对象。返回的字符串是"已经拼好的 detail"，
 // 空串表示没问题。四种失败各自对应生产侧的一种文案（见上面那张实测表）。
 //
-// 不设请求体大小上限，与生产侧一致：边界由前置代理负责（nginx 的 client_max_body_size），
-// 在这里另设一个数字只会让"多大的请求会被拒"在两侧不一样。
+// Go 在 dev 中直接作为公开入口，不能依赖 nginx 才限制认证请求体；上传不走此解析器。
 func decodeJSONObject(r *http.Request) (map[string]json.RawMessage, string) {
 	// Content-Type 取媒体类型（去掉 "; charset=…"），大小写不敏感。
 	mediaType := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
@@ -284,7 +283,11 @@ func decodeJSONObject(r *http.Request) (map[string]json.RawMessage, string) {
 		return nil, msgBodyNotAnObject
 	}
 
-	raw, err := io.ReadAll(r.Body)
+	const maxAuthBodyBytes = 1024 * 1024
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxAuthBodyBytes+1))
+	if len(raw) > maxAuthBodyBytes {
+		return nil, "请求体超过 1 MiB 限制"
+	}
 	if err != nil {
 		return nil, msgJSONDecode
 	}

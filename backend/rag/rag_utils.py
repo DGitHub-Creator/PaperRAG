@@ -239,7 +239,7 @@ def _rerank_documents(
             scores = model.predict(pairs, show_progress_bar=False)
             # 按分数降序排列
             scored = sorted(
-                zip(docs_with_rank, scores), key=lambda x: x[1], reverse=True
+                zip(docs_with_rank, scores, strict=True), key=lambda x: x[1], reverse=True
             )
             reranked = []
             for doc, score in scored[:top_k]:

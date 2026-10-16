@@ -1,5 +1,8 @@
 # 09 — P0 任务清单：架构骨架与契约（文件级）
 
+> 文档性质：实施计划/运行参考。文中早期实跑与现状数字是 dated 记录，不自动代表当前工作区。
+> 当前实现见 [13](../reference/13-frontend-backend-architecture.md)，状态见 [progress.json](../progress.json)，启动见 [README](../../README.md)。
+
 > **性质**：待你确认的实施计划。按 `08` §1 原则③，本文件获得确认后才动代码。
 > **目标**：搭起目标架构的骨架与契约，并跑通**第一条垂直切片**（浏览器 → Go 注册/登录/me）。
 > **不写业务功能迁移**（那是 P1），**不碰 chunk 可信化**（那是 P2）。
@@ -9,7 +12,7 @@
 > ⚠️ **本文件只放卡片定义（输入 / 输出 / 依赖 / 验收 / 等级 / 规模），不放日志。**
 > 卡片与退出标准的**状态与证据**以 [`../progress.json`](../progress.json) 为准（机检 `sync_progress.py --check`）；
 > "哪一轮做了什么、实跑读数、踩了什么坑"在 [`../WORKLOG.md`](../WORKLOG.md)；
-> 代码层问题与处置在 [`../rules/12-known-code-issues.md`](../rules/12-known-code-issues.md) 台账。
+> 代码层问题与处置在 [`12-known-code-issues.md`](12-known-code-issues.md) 台账。
 
 ## 0. 退出标准（全部可机检）
 
@@ -23,8 +26,8 @@
 | X1 | 骨架能起来 | `uv run python scripts/dev.py infra` 起中间件，宿主**源码**起 `ai-core`（`dev.py serve`）与 `go-api`（`dev.py go-serve`），再 `curl http://localhost:8080/api/v1/health` 与 `/api/v1/ready` | 两条均 200，且 `/ready` 的 **PG 与 Redis** 依赖探活通过（两个键都要在、都要 ok）。<br>⚠️ 判据于 2026-10-13 从「`compose ps` 里三个应用服务 healthy」改写为上面这条（容器只跑中间件）；**改写后 X1 不再证明编排层**，它证明的是"进程在真机源码形态下能起来并互相打通"。编排证据只剩 `docker-compose.prod.yml` 那一份，属部署阶段（台账 C29） | real |
 | X2 | Go 是唯一公开入口 | `uv run python scripts/check_nginx_routes.py`（默认读三份：`nginx/nginx.conf`、`docker-compose.yml`（判 R5）、`docker-compose.prod.yml`（判 R4）） | 所有 `/api/` upstream 指向 `go-api`；无指向 `ai-core` 的 location；`ai-core` 不对外可达。规则拆解：R1 `/api/` 必须指 `go-api`、R2 任何 location 不得指向 `ai-core`（含藏在 upstream 里）、R3 不得有 `/internal` 前缀的对外 location、R4 端口隔离。<br>⚠️ **两处口径随 2026-10-13 定案改写**：①R4 在**源码形态**下的等价判据是「`ai-core` 只绑 `127.0.0.1`、不对外监听」，prod compose 那份仍按端口判——脚本要对两份文件分别按各自形态判，否则 R4 会变成一条**永远找不到对象的空规则**（空规则比红规则危险）；②"运行中的 nginx 与配置一致"在 dev 路径上**没有承载物**（本机不跑 nginx 容器），运行时一致性只能等部署阶段验，所以 level 留在 **e2e** 是诚实的，别当成"P0-8 一跑就升 real" | e2e |
 | X3 | 契约已锁定且有测试 | `uv run python scripts/check_contracts.py` | 退出 0：OpenAPI 覆盖 13 条在用接口 + 探针 + Go 自助面（**操作数现场取**：`grep -c operationId: contracts/openapi.yaml`）；`ai-execution.schema.json` 的 `code` 枚举与 `error-codes.md` 逐字一致；`table-acl.md` 无未标过渡期的双写；前端实调集合与契约**双向**吻合。<br>⚠️ 它**不校验服务侧**：契约声明的 `/api/v1/health`、`/api/v1/ready` 只有 Go 满足（Python 的 health 路由不带该前缀），`/metrics` 三不管——这类盲区记台账 C31，**别把 rc=0 读成"契约与实现一致"** | mock |
-| X4 | 认证垂直切片可用且跨语言互验 token | **以 `progress.json` 的 X4 为准**：`uv run python scripts/export_jwt_golden.py --check && cd server && go test ./internal/auth/... && uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验、Go 签发的能被 Python 校验（golden vectors 双向 **+ chain 级进程互跑**）。<br>⚠️ 三段是 `&&` 不是 `+`；开头那段 `--check` 是加固——Go 的测试读的就是这份 golden 文件，文件漂了而测试还绿等于什么都没证明。**收 0 项时 pytest 返回 rc=5，不是 0，不能算绿** | real |
-| X5 | Go 能验旧密码哈希（接管 `users` 的前置） | **以 `progress.json` 的 X5 为准**：`uv run python scripts/export_pbkdf2_golden.py && cd server && go test ./internal/auth/... -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users`。向量口径：**不含明文口令、也不含真库 `password_hash`**——口令由 `vector_id` 按文件里的 `password_rule` 重建，真库只在 `--from-db` 下贡献形状统计。<br>⚠️ 命令里**必须带包路径** `./internal/auth/...`：`server/` 根目录没有 Go 文件，少写它就 `no Go files` → **rc 恒为 1，与测试是否存在无关**，即"这条判据永远不可能变绿"（台账 C22）。<br>⚠️ **`real` 那一档仍开着**：`--from-db` 的真库形状统计（迭代数/盐长分布、**是否残留 bcrypt 族**）因原真库随数据卷消失而无法执行（C20）。Go 不实现 bcrypt（无对象可验，引依赖就是死代码），处置是显式拒绝 + `family=bcrypt` 的 WARN 日志；**P1 接管 `users` 前必须先跑一次 `--from-db`** | mock→real |
+| X4 | 认证垂直切片可用且跨语言互验 token | **以 `progress.json` 的 X4 为准**：`uv run python scripts/export_jwt_golden.py --check && go -C server test ./internal/auth/... && uv run pytest -m chain -k go_auth` | Go 单测绿；对同一份 `users` 行，Python 签发的 token 能被 Go 校验、Go 签发的能被 Python 校验（golden vectors 双向 **+ chain 级进程互跑**）。<br>⚠️ 三段是 `&&` 不是 `+`；开头那段 `--check` 是加固——Go 的测试读的就是这份 golden 文件，文件漂了而测试还绿等于什么都没证明。**收 0 项时 pytest 返回 rc=5，不是 0，不能算绿** | real |
+| X5 | Go 能验旧密码哈希（接管 `users` 的前置） | **以 `progress.json` 的 X5 为准**：`uv run python scripts/export_pbkdf2_golden.py && go -C server test ./internal/auth/... -run TestVerifyLegacyHash` | golden 向量全部通过后才允许 Go 接管 `users`。向量口径：**不含明文口令、也不含真库 `password_hash`**——口令由 `vector_id` 按文件里的 `password_rule` 重建，真库只在 `--from-db` 下贡献形状统计。<br>⚠️ 命令里**必须带包路径** `./internal/auth/...`：`server/` 根目录没有 Go 文件，少写它就 `no Go files` → **rc 恒为 1，与测试是否存在无关**，即"这条判据永远不可能变绿"（台账 C22）。<br>⚠️ **`real` 那一档仍开着**：`--from-db` 的真库形状统计（迭代数/盐长分布、**是否残留 bcrypt 族**）因原真库随数据卷消失而无法执行（C20）。Go 不实现 bcrypt（无对象可验，引依赖就是死代码），处置是显式拒绝 + `family=bcrypt` 的 WARN 日志；**P1 接管 `users` 前必须先跑一次 `--from-db`** | mock→real |
 | X6 | Go 不重复建表，基线迁移非破坏且幂等 | **以 `progress.json` 的 X6 为准**：`uv run python scripts/audit_schema.py --check-baseline`；幂等那条用「临时库法」人工实跑（`pg_dump --schema-only \| psql -d <临时库>` 复制真库结构，再把 `000001_baseline.up.sql` 连跑两遍，两次都应 exit 0 且表数不变） | 基线迁移为**非破坏性**（无 DROP）；空库与存量形态上重复执行结果一致；`schema_migrations` 版本与设计一致（**待执行器**）。<br>⚠️ 三条口径：①`--check-baseline` 只校验**文件形态**，内容比对是另一条命令 `--verify-columns`（快照缺 `columns` 时如实 exit 2，这个行为要保留）；②~~`cd server && migrate -path migrations …`~~ **这一半今天跑不了**——golang-migrate 从未接线（PATH 无 `migrate`、`go.mod` 无该依赖、`dev.py migrate` 实为容器内 `alembic upgrade head`），残余缺口记台账 C18 / 决策 D8，落 P0-8；③**「存量库幂等」的原对象已永久失去**（C20），只能用"alembic 建出的库"这一存量形态近似，**不等于**当年那个 `create_all`+alembic 混合库 | real |
 | X7 | 测试分层可用（marker 已注册且目录即分层） | `uv run python scripts/dev.py test -m unit`；`… test -m integration`；`… test -- tests/unit/test_pytest_layering.py` | 三层全绿且无 `PytestUnknownMarkWarning`。**各层条数现场取**（`--collect-only -m <层>` 数 `::`），本行不写数字。chain 层自 P0-5 起有用例（`tests/chain/`），e2e 层由 P0-9 提供 | mock |
 | X8 | 进度产物与真相源一致 | `uv run python scripts/sync_progress.py --check` | 退出 0，`docs/PROGRESS.md` 与 `docs/progress.html` 与 `progress.json` 一致 | mock |
@@ -41,7 +44,7 @@
 | 验收 | X7；按 `p0-environment.md` §2 从空仓库到 `/health` 200 全程可复制执行，且 §3 表格填完 |
 | 等级 | real（启动序列必须**实跑**，不是照抄文档） |
 | 规模/风险 | S–M / 需要 Docker Desktop；Windows 上 bind mount 权限与换行是第一坑，故 `.gitattributes` 必进本卡 |
-| 当前状态 | 见 `progress.json` 的 P0-0。历史与实跑记录见 `WORKLOG.md` |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-1 Go 服务骨架
 
@@ -53,7 +56,7 @@
 | 验收 | X1；`cd server && gofmt -l . && go vet ./... && go test ./...` 绿 |
 | 等级 | mock（单测）+ real（**宿主源码起 `go-api`** 后 `/ready` 200）——2026-10-13 定案：容器只跑中间件，real 那一档不以 compose 为承载物（C29） |
 | 规模/风险 | M / `/ready` 的探测键集合必须与 Python 侧语义一致，别让前端或监控脚本发现语义漂移。**已知的不对称**：Go 探 `database`+`redis`，Python 还探 `milvus` |
-| 当前状态 | 见 `progress.json` 的 P0-1。⚠️ 边界：`go-worker` 只验到"进程能起 + 暴露探针"（`cmd/worker/main.go` 自陈 `worker_idle`），调度器属 P3 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-2 Schema 基线与非破坏性收编（吸收旧 A0-2 的只读核查）
 
@@ -65,7 +68,7 @@
 | 验收 | X6；报告能回答：现库存不存在 `alembic_version`？实际表集合？每表时间列判定？基线迁移在**新空库**与**存量库**上都能幂等执行 |
 | 等级 | real |
 | 规模/风险 | M / **风险高在存量库**：`create_all` 建出的库无版本行，`335aeb7e` 后 Python 侧已拒绝启动，必须在本卡给出人工补基准版本的操作步骤。**基线文件不在没有真库时生成**（`05 §1` 末与 §2.2：由核查出的实际结构生成，不由 ORM 生成——用 ORM 声明冒充会把已知漂移洗掉） |
-| 当前状态 | 见 `progress.json` 的 P0-2。⚠️ 两条永久边界：分布法/交叉法**无存量数据可判**（如实报 `no_data`，不是"等以后有数据"）；"存量库幂等"的原对象已消失（C20） |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-3 Go 数据访问层
 
@@ -77,7 +80,7 @@
 | 验收 | `uv run python scripts/dev.py gen --check`（生成物无漂移）+ `cd server && go test ./internal/db/...` |
 | 等级 | mock |
 | 规模/风险 | S / 生成物**入库**（K2：CI 不装 sqlc 也能构建），以 `--check` 式 diff 保一致性；sqlc 版本钉 v1.30.0，不匹配就拒绝生成。⚠️ **能力边界要记住**：sqlc 不把列默认值编码进 Go 类型，所以 `gen --check` 只能抓类型/可空性/列与表的存在性；DEFAULT 与 varchar 长度的机检是 `audit_schema.py --verify-columns` |
-| 当前状态 | 见 `progress.json` 的 P0-3。`dev.py gen` 现有三条生成前置检查（schema 源是含 `.down.sql` 的目录 → 拒绝；`migrations/*.up.sql` 未登记 → 拒绝；生成物有孤儿 `X.sql.go` → 拒绝），各有负向用例 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-4 契约目录（含 429 信封定案）
 
@@ -89,7 +92,7 @@
 | 验收 | X3；并**在本卡内定案** 429 用 `{"detail": ...}` 还是保持现实现（影响 `useChat.ts`/`AuthPanel`），结论写进 `openapi.yaml` 与本文件 §3 |
 | 等级 | mock |
 | 规模/风险 | M / 契约先于实现锁定，否则 P1 会变成"边写边改架构"（违反原则③） |
-| 当前状态 | 见 `progress.json` 的 P0-4。⚠️ 已知盲区：`check_contracts.py` **不校验服务侧**，所以 C21（请求 schema 与 pydantic 模型不一致）、C31（契约声明的路由只有一侧实现）、C34（`rag_trace` 是投影而非透传）它都抓不到 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-5 跨语言契约测试骨架 + chain 级真实容器 fixture
 
@@ -101,7 +104,7 @@
 | 验收 | `uv run pytest -m chain -k contract` 绿。**"不伪装通过"要落成可证伪的三档**：①显式 `-m chain` 时基础设施不可达必须**红**（否则"全绿"可以是"一个都没跑"），被全量收集路过才 skip；②种子**直接写 PG**，不用被测面铺数据（否则接口坏了会以"铺数据失败"的形态报错）；③静态门禁带 `checked >= N` 兜"检查自己失效"。用例必须断言**结构与字段**，不断言业务文本 |
 | 等级 | real |
 | 规模/风险 | M / 判据选择器要与 `progress.json` 里的命令**逐字对得上**（`-k go_auth` / `-k contract` / `-k go_read` / `-k ai_executions`），否则"收 0 项 rc=5"会长期冒充"还没做" |
-| 当前状态 | 见 `progress.json` 的 P0-5。卡片原句里的"未实现端点白名单跳过"**没用到**——只对两侧都已实现的端点做对拍；等 P1 逐条接管时若需要再按那句补 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-6 认证垂直切片（P0 的唯一业务切片）
 
@@ -113,7 +116,7 @@
 | 验收 | X4、X5；`cd frontend && npm run typecheck` 仍 0 error（Go 侧响应形状与前端一致） |
 | 等级 | real（Python↔Go 互验 token 必须真实跑） |
 | 规模/风险 | L / 最高风险是 PBKDF2 编码差异（标准 vs urlsafe b64、盐长度、迭代数）。**Go 接管 `users` 的前置条件就是 X5 全绿**，未过则切片停在"只签发不接管"状态。⚠️ 复刻现状时**照抄不顺手改好**（register 会 strip 而 login 不 strip、密码长度按**码点**、`role` 不做枚举校验、用户不存在与密码错同一个 401、重名 409 先于邀请码 403、detail 文案含中英混用），每条都要有用例钉住，且 detail 一律**由生产 handler 现跑取数** |
-| 当前状态 | 见 `progress.json` 的 P0-6。范围已从"认证"扩到"账号自助"（改密码 + 偏好，迁移 `000003`）——⚠️ 那两条**没有 Python 对照**，X4 的跨语言口径不覆盖它们，判据是 Go 自己的不变量。跨语言分歧记在 `jwt_golden.json` 的 `divergences` 段（不是塞进 vectors）；**残余风险**：Go 不实现 bcrypt 族，P1 接管 `users` 前必须先跑 `--from-db` 看 families |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-7 ai-core 内部执行面
 
@@ -125,7 +128,7 @@
 | 验收 | `uv run pytest -m chain -k ai_executions`：提交→轮询→领取结果，重复 `task_id` 不重跑模型（幂等），`cancel` 后过期结果被丢弃；`GET /internal/v1/ai/healthz` 无 token 时 401 |
 | 等级 | real |
 | 规模/风险 | L / `PARSE_PAPER` 若走真实 LLM/embedding 需密钥；无密钥时以固定小 PDF + 本地 embedding 的降级路径验结构，并在 `progress.json` 标 `needs_secret: true` 与未验段落。⚠️ 内部面**不被 `check_contracts.py` 看见**，它唯一的门禁是三条机检：`x-endpoints` 的 7 条与真实注册路径一一对应、注册类型集合等于 `x-p0-registered-task-types`、`/internal/` 不出现在 `openapi.yaml` |
-| 当前状态 | 见 `progress.json` 的 P0-7。**剩余**：源码形态下"只绑 `127.0.0.1`"的判据接线（属 P0-8）与 chain 级 `-k ai_executions`。⚠️ `ai_executions` 表**至今没在任何长期库上建过**（只在临时库验过幂等），dev 库距表齐还差它；`BUDGET_EXCEEDED` 只存在于码表与契约，拦截随 P1 的 LLM 任务类型落地 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-8 Go 服务接线与跨环境实跑（源码形态，不新增应用容器）
 
@@ -137,7 +140,7 @@
 | 验收 | X1、X2；**在 Windows + Docker Desktop 上实跑**并把结果记进 `progress.json`（Linux CI 复跑同一序列作为交叉证据）。⚠️ X1/X2 的判据已随定案改写，本卡按改写后的判据收 |
 | 等级 | real |
 | 规模/风险 | M / 切换 upstream 是 P0 里唯一会影响现网可用性的动作：保留"一条配置回退到 Python"的回滚路径（`04` §5），且必须在切换前后各跑一次 X2 与前端手测 |
-| 当前状态 | 见 `progress.json` 的 P0-8。**已完成**：Go 侧启动接线（反代 + 认证面 + 偏好面 + sessions 的读与删）、X1。**剩余**：nginx upstream 切 Go（X2 唯一的红点）+ C29 四处遗留物处置。<br>⚠️ **开工前必须先拍 D8**（台账 C18）：`server/migrations/` 有文件、**没有执行器**，所以"Go 迁移由谁执行、什么时候执行、失败怎么办"要先定，X6 那句"`schema_migrations` 版本与设计一致"才有判据可依。<br>⚠️ **切 nginx 有一个范围问题要先说清**：nginx 属**部署形态**，切过去就得给 `docker-compose.prod.yml` 补 `go-api` 服务；"容器只跑中间件"的定案明文**只管 dev**（prod 那份仍是全栈容器），所以这不与定案冲突，但 `AGENTS.md §7` 那句"不把应用服务容器化"的范围要写清——它是 **dev 纪律**，不是部署禁令 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ### P0-9 P0 端到端演示与退出复核
 
@@ -149,7 +152,7 @@
 | 验收 | X2、X8 + `cd frontend && npm run test:e2e` 在 Go 后端全绿；`uv run pytest -q` 全量保持绿（**读数现场取**，本行不写数字） |
 | 等级 | e2e |
 | 规模/风险 | M / ⚠️ 两条要先探明：①本机能否装 Playwright 浏览器（无网/镜像受限就**如实记 `not_run`**，别用 mock 冒充）；②无头浏览器视口是 **0×0、截图不可用**（实测 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`），若 Playwright 走同一引擎则像素级判据拿不到，只能算**结构级 e2e**，要如实写进证据等级 |
-| 当前状态 | 见 `progress.json` 的 P0-9 |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 **FE-1（2026-10-09 指令插入，不在原 P0 序列里）**：前端结构重构。它不改后端也不改契约，所以不进依赖图。
 
@@ -161,7 +164,7 @@
 | 验收 | `10` §4 的 FE-a…FE-e：`npm run typecheck`、`npm run build`、`check_frontend.py`、`check_contracts.py`、`sync_progress.py --check` 全部退出 0 |
 | 等级 | mock。浏览器级 FE-f 属 P0-9 的 X7；**不拿静态检查冒充端到端** |
 | 规模/风险 | L / 中：一次性替换请求边界与状态层，风险全在运行时等价性，只能由 P0-9 收口 |
-| 当前状态 | 见 `progress.json` 的 FE-1。⚠️ 13 页里 **9 页是 mock**（带「示例数据」徽标 + 归属卡号），真实接口只有 4 处；**别把 mock 页当成已实现** |
+| 当前状态 | 对应卡片状态以 [progress.json](../progress.json) 为准；历史过程见 [WORKLOG](../WORKLOG.md)。 |
 
 ## 2. 依赖顺序与里程碑
 

@@ -4,20 +4,19 @@
 
 class TestBudgetTracker:
     def test_reset_budget(self):
-        from backend.core.budget import reset_budget, _call_count_var, _estimated_tokens_var
-        _call_count_var.set(10)
-        _estimated_tokens_var.set(5000)
+        from backend.core.budget import reset_budget, record_llm_call, get_budget_status
+        record_llm_call(5000)
         reset_budget()
-        assert _call_count_var.get() == 0
-        assert _estimated_tokens_var.get() == 0
+        assert get_budget_status()["call_count"] == 0
+        assert get_budget_status()["estimated_tokens"] == 0
 
     def test_record_llm_call(self):
-        from backend.core.budget import reset_budget, record_llm_call, _call_count_var, _estimated_tokens_var
+        from backend.core.budget import reset_budget, record_llm_call, get_budget_status
         reset_budget()
         record_llm_call(estimated_tokens=200)
         record_llm_call(estimated_tokens=300)
-        assert _call_count_var.get() == 2
-        assert _estimated_tokens_var.get() == 500
+        assert get_budget_status()["call_count"] == 2
+        assert get_budget_status()["estimated_tokens"] == 500
 
     def test_budget_ok_within_limit(self):
         from backend.core.budget import reset_budget, record_llm_call, budget_ok

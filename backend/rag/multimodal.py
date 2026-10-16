@@ -251,7 +251,7 @@ class MultimodalRetriever:
         embeddings = self._embedding.embed_image(image_bytes_list)
 
         data = []
-        for fig, emb in zip(figures, embeddings):
+        for fig, emb in zip(figures, embeddings, strict=True):
             data.append({
                 "image_embedding": emb,
                 "filename": filename,

@@ -6,13 +6,16 @@
 """
 
 import logging
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -37,7 +40,7 @@ from backend.core.exceptions import (
     request_validation_error_handler,
     unhandled_error_handler,
 )
-from backend.core.logging_config import setup_root_logger
+from backend.core.logging_config import request_trace_id, setup_root_logger
 from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
 from backend.core.rate_limit import default_limits, key_source, limiter, storage_backend
 from backend.core.stats import record_request
@@ -64,7 +67,17 @@ def create_app() -> FastAPI:
     Returns:
         配置完成的 FastAPI 实例。
     """
-    app = FastAPI(title="ResearchPilot - 自主科研平台")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        ensure_runtime_directories()
+        validate_config()
+        validate_runtime_security()
+        await run_in_threadpool(init_db)
+        init_metrics()
+        logger.info("数据库初始化完成")
+        yield
+
+    app = FastAPI(title="ResearchPilot - 自主科研平台", lifespan=lifespan)
 
     # ── 错误信封（决策 K1/K4：全仓只留 {"detail": "..."} 一种形状）──
     # 422 的数组 detail 由 pydantic 决定形状，Go 复刻不起，故降级为 400 + 字符串。
@@ -92,19 +105,6 @@ def create_app() -> FastAPI:
     # ── 统一异常处理 ─────────────────────────────────────────────
     app.add_exception_handler(ResearchPilotError, research_pilot_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
-
-    # ── 启动事件: 数据库初始化 ──────────────────────────────────
-    @app.on_event("startup")
-    async def _startup_init_db():
-        """应用启动时执行数据库迁移与配置校验。"""
-        # .env 已在 backend.core.config 导入期载入，此处无需重复加载
-        logger.info("正在初始化数据库...")
-        ensure_runtime_directories()
-        validate_config()
-        validate_runtime_security()
-        init_db()
-        init_metrics()
-        logger.info("数据库初始化完成")
 
     # ── CORS 中间件（生产环境通过 ALLOWED_ORIGINS 环境变量限制）─
     origins = ALLOWED_ORIGINS
@@ -143,6 +143,18 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def _metrics_middleware(request: Request, call_next):
         return await metrics_middleware(request, call_next)
+
+    @app.middleware("http")
+    async def _trace_middleware(request: Request, call_next):
+        trace_id = request.headers.get("X-Trace-Id") or uuid4().hex
+        token = request_trace_id.set(trace_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Trace-Id"] = trace_id
+            return response
+        finally:
+            # 归还当前请求的上下文，线程池/下游任务继承独立副本。
+            request_trace_id.reset(token)
 
     # ── 注册路由 ────────────────────────────────────────────────
     # 健康检查和指标端点（根路径，不加前缀）

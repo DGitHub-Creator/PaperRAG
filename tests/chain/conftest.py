@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -166,7 +167,7 @@ def _flush_chat_cache(username: str) -> None:
 
         cache.delete_pattern(f"chat_*:{username}*")
     except Exception:  # noqa: BLE001
-        pass
+        warnings.warn("会话缓存清理失败，链路验证可能读到旧数据", RuntimeWarning, stacklevel=2)
 
 
 def _login(client: httpx.Client, url: str, seed: dict) -> str:

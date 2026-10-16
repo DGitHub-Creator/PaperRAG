@@ -1,5 +1,8 @@
 # P0 演示脚本（P0-9 输出）
 
+> 文档性质：实施计划/运行参考。文中早期实跑与现状数字是 dated 记录，不自动代表当前工作区。
+> 当前实现见 [13](../reference/13-frontend-backend-architecture.md)，状态见 [progress.json](../progress.json)，启动见 [README](../../README.md)。
+
 > 30 秒能把 P0 的成果**跑给人看**的那条路径，以及每一步"看到了什么才算数"。
 > 这不是测试清单（判据在 `progress.json` 的 X1–X8），是**演示**：一条链走通、看得见反馈。
 

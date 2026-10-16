@@ -637,7 +637,7 @@ class DocumentLoader:
                     chunk["has_figure"] = page in figure_pages
                     chunk["has_table"] = page in table_pages
         except Exception:
-            pass
+            logger.warning("可选操作失败: _load_pdf", exc_info=True)
 
         return chunks
 
@@ -685,7 +685,7 @@ class DocumentLoader:
             full_text = "\n\n".join(d.page_content for d in raw_docs)
             return self._split_standard(full_text, filename, doc_type, file_path)
         except Exception as e:
-            raise Exception(f"处理文档失败: {str(e)}")
+            raise Exception(f"处理文档失败: {str(e)}") from e
 
     def load_documents_from_folder(self, folder_path: str) -> list[dict]:
         """从文件夹批量加载所有支持的文档并分片。

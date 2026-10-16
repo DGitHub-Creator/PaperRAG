@@ -33,6 +33,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "server" / "migrations"
 DEFAULT_OUT = ROOT / "docs" / "reference" / "schema-baseline.json"
 
+sys.path.insert(0, str(ROOT))
+from scripts.schema_compare import diff_columns as diff_columns, orm_column_specs
+
 # ── 离线：基线迁移文件的非破坏性检查 ──────────────────────────────
 
 # up 里出现这些词就是在动存量数据/结构，基线迁移必须只做"登记"。
@@ -95,33 +98,22 @@ def check_baseline(migrations_dir: Path) -> list[str]:
         for i, stmt in enumerate(_statements(text), 1):
             for pat in DESTRUCTIVE_IN_UP:
                 if pat.search(stmt):
-                    errors.append(
-                        f"{up.name} 第 {i} 句含破坏性操作 `{pat.pattern}`：基线只登记现有结构"
-                    )
+                    errors.append(f"{up.name} 第 {i} 句含破坏性操作 `{pat.pattern}`：基线只登记现有结构")
             if CREATE_RE.search(stmt) and not IF_NOT_EXISTS_RE.search(stmt):
                 kind = CREATE_RE.search(stmt).group(1)
-                errors.append(
-                    f"{up.name} 第 {i} 句的 CREATE {kind} 没有 IF NOT EXISTS：存量库上重复执行会报错"
-                )
+                errors.append(f"{up.name} 第 {i} 句的 CREATE {kind} 没有 IF NOT EXISTS：存量库上重复执行会报错")
         if down is None:
             errors.append(f"{ver}: 缺 {ver}{DOWN_SUFFIX}（migrate 要求成对）")
         elif DROP_IF_EXISTS_IN_DOWN_RE.search(_strip_comments(down.read_text(encoding="utf-8"))):
-            errors.append(
-                f"{down.name}: 语句里出现 `DROP TABLE IF EXISTS`。05 §2 的幂等纪律禁止用它把"
-                "'库里本来就没这张表' 当成回退成功——要写就写无 IF EXISTS 的真实回退"
-            )
+            errors.append(f"{down.name}: 语句里出现 `DROP TABLE IF EXISTS`。05 §2 的幂等纪律禁止用它把'库里本来就没这张表' 当成回退成功——要写就写无 IF EXISTS 的真实回退")
     return errors
 
 
 # ── 离线：基线 DDL 与真库快照的逐列比对（12-known-code-issues C1）──────
 
-CREATE_TABLE_HEAD_RE = re.compile(
-    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(?P<name>[A-Za-z_][\w]*)\"?\s*\(", re.I
-)
+CREATE_TABLE_HEAD_RE = re.compile(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(?P<name>[A-Za-z_][\w]*)\"?\s*\(", re.I)
 # 表级约束行不是列，抽列时要整行跳过
-TABLE_CONSTRAINT_START_RE = re.compile(
-    r"^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|EXCLUDE)\b", re.I
-)
+TABLE_CONSTRAINT_START_RE = re.compile(r"^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|EXCLUDE)\b", re.I)
 _TYPE_LEN_RE = re.compile(r"\(([^)]*)\)")
 
 # DDL 侧写法 → information_schema 的 SQL 标准名；第二项是 SERIAL 这类"DDL 不写 DEFAULT
@@ -223,9 +215,7 @@ def _column_spec(rest: str) -> dict[str, Any]:
         "type": info_type,
         "length": length,
         "nullable": not bool(re.search(r"\bnot\s+null\b", tail)),
-        "has_default": bool(re.search(r"\bdefault\b", tail))
-        or "generated" in tail
-        or "identity" in tail,
+        "has_default": bool(re.search(r"\bdefault\b", tail)) or "generated" in tail or "identity" in tail,
         "serial": implicit_default,
     }
 
@@ -270,6 +260,12 @@ def verify_columns(migrations_dir: Path, snapshot: dict[str, Any]) -> tuple[list
             ddl.setdefault(table, {}).update(cols)
 
     snap_tables = set(snapshot.get("tables", []))
+    if "schema_migrations" in snap_tables:
+        # golang-migrate 自己管理的版本表，不应复制进业务迁移，但仍核对列形状。
+        ddl["schema_migrations"] = parse_ddl_columns(
+            "CREATE TABLE schema_migrations (version BIGINT NOT NULL, dirty BOOLEAN NOT NULL);"
+        )["schema_migrations"]
+        notes.append("schema_migrations: 由 golang-migrate 管理，按工具版本表形状核对")
     for table in sorted(snap_tables):
         ddl_cols, db_cols = ddl.get(table, {}), live.get(table, {})
         if not ddl_cols:
@@ -291,17 +287,13 @@ def verify_columns(migrations_dir: Path, snapshot: dict[str, Any]) -> tuple[list
             elif want_len is None and got_len is not None:
                 errors.append(f"{table}.{col}: 真库限长 {got_len}，但基线 DDL 没写长度")
             if spec["nullable"] != (row["is_nullable"] == "YES"):
-                errors.append(
-                    f"{table}.{col}: NOT NULL 不一致 DDL="
-                    f"{'NULL' if spec['nullable'] else 'NOT NULL'} 真库={row['is_nullable']}"
-                )
+                errors.append(f"{table}.{col}: NOT NULL 不一致 DDL={'NULL' if spec['nullable'] else 'NOT NULL'} 真库={row['is_nullable']}")
             db_has_default = row.get("column_default") is not None
             ddl_has_default = spec["has_default"] or spec["serial"]
             if ddl_has_default != db_has_default:
                 errors.append(
                     f"{table}.{col}: DEFAULT 不一致 DDL={'有' if ddl_has_default else '无'}"
-                    f" 真库={'有' if db_has_default else '无'}"
-                    + ("（SERIAL 的 nextval 按库侧口径算作有默认）" if spec["serial"] else "")
+                    f" 真库={'有' if db_has_default else '无'}" + ("（SERIAL 的 nextval 按库侧口径算作有默认）" if spec["serial"] else "")
                 )
     for table in sorted(set(ddl) - snap_tables):
         notes.append(f"{table}: 迁移建的这张表不在快照覆盖范围内（快照需要重导后才能比）")
@@ -342,9 +334,9 @@ LIVE_SQL = {
 def alembic_state(rows: list[str] | None) -> str:
     """把三种情形分开：表不存在 / 表在但无行 / 有 head。含义完全不同（05 §1）。"""
     if rows is None:
-        return "no_table"          # 曾走 create_all，从未跑过 alembic
+        return "no_table"  # 曾走 create_all，从未跑过 alembic
     if not rows:
-        return "empty_table"       # 跑过 alembic 但被清过，最危险的一种
+        return "empty_table"  # 跑过 alembic 但被清过，最危险的一种
     return "head:" + ",".join(sorted(rows))
 
 
@@ -374,79 +366,10 @@ def collect_live(database_url: str) -> dict[str, Any]:
     return snapshot
 
 
-def orm_column_types() -> dict[str, dict[str, str]]:
-    """ORM 声明侧的 {表: {列: PG 类型串}}。
-
-    必须用 postgresql dialect 编译：默认 dialect 会把 `DateTime` 渲染成 `DATETIME`、
-    `String` 渲染成 `VARCHAR`，和 `information_schema` 说的不是一种语言，diff 会全线误报。
-    """
-    sys.path.insert(0, str(ROOT))
-    from sqlalchemy.dialects import postgresql
-
-    from backend.core.database import Base
-    import backend.core.models  # noqa: F401  注册全部表到 Base.metadata
-
-    dialect = postgresql.dialect()
-    return {
-        table.name: {c.name: str(c.type.compile(dialect=dialect)) for c in table.columns}
-        for table in Base.metadata.sorted_tables
-    }
-
-
-# information_schema 用的是 SQL 标准名，DDL 侧用的是 PG 简称，同一类型两个写法（05 §1 的列级 diff 先跨这层）。
-_PG_INFO_SCHEMA_NAMES = {
-    "character varying": "varchar",
-    "timestamp without time zone": "timestamp",
-    "timestamp with time zone": "timestamptz",
-    "double precision": "float8",
-}
-
-
-def _norm_type(raw: Any) -> str:
-    s = re.sub(r"\s*\(.*?\)", "", str(raw)).strip().lower()
-    return _PG_INFO_SCHEMA_NAMES.get(s, s)
-
-
-def diff_columns(live_columns: list[dict], declared: dict[str, dict[str, str]]) -> list[dict]:
-    """逐字段 diff：库里有声明没有 / 声明有库里没有 / 同名但类型不符 / 库里没有 DEFAULT。"""
-    actual: dict[str, dict[str, dict]] = {}
-    for row in live_columns:
-        actual.setdefault(row["table_name"], {})[row["column_name"]] = row
-
-    diffs: list[dict] = []
-    for name in sorted(set(actual) | set(declared)):
-        a, d = actual.get(name, {}), declared.get(name, {})
-        for col in sorted(set(a) | set(d)):
-            if col not in a:
-                diffs.append({"table": name, "column": col, "kind": "only_in_orm"})
-            elif col not in d:
-                diffs.append({"table": name, "column": col, "kind": "only_in_db"})
-            else:
-                got, want = _norm_type(a[col].get("data_type", "")), _norm_type(d[col])
-                if got != want:
-                    diffs.append(
-                        {
-                            "table": name,
-                            "column": col,
-                            "kind": "type",
-                            "db": a[col].get("data_type"),
-                            "orm": d[col],
-                        }
-                    )
-                if a[col].get("column_default") is None:
-                    # "值由应用写"这条对 Go 是硬约束：Python 侧的 `default=datetime.utcnow`
-                    # 不进 DDL，Go 不显式赋值就会撞 NOT NULL violation。
-                    diffs.append(
-                        {"table": name, "column": col, "kind": "no_server_default", "db": got}
-                    )
-    return diffs
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check-baseline", action="store_true", help="离线审迁移文件（不需数据库）")
-    ap.add_argument("--verify-columns", action="store_true",
-                    help="离线：把迁移 DDL 逐列比到快照的 columns 段（类型/长度/NOT NULL/DEFAULT）")
+    ap.add_argument("--verify-columns", action="store_true", help="离线：把迁移 DDL 逐列比到快照的 columns 段（类型/长度/NOT NULL/DEFAULT）")
     ap.add_argument("--live", action="store_true", help="连库只读核查（需 DATABASE_URL）")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--database-url", default=None, help="缺省读环境变量 DATABASE_URL")
@@ -472,9 +395,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[schema] 拒跑：{args.out} 不是合法 JSON：{exc}")
             return 2
         if snapshot.get("columns") is None:
-            print("[schema] 拒跑：这份快照没有 columns 段（旧版 --live 导出的）。"
-                  "重跑 `audit_schema.py --live` 拿到带列清单的快照再比。"
-                  "这里不把『比不了』说成『比过了』。")
+            print("[schema] 拒跑：这份快照没有 columns 段（旧版 --live 导出的）。重跑 `audit_schema.py --live` 拿到带列清单的快照再比。这里不把『比不了』说成『比过了』。")
             return 2
         errs, notes = verify_columns(MIGRATIONS, snapshot)
         for n in notes:
@@ -484,15 +405,13 @@ def main(argv: list[str] | None = None) -> int:
             for e in errs:
                 print(f"  - {e}")
             return 1
-        print(f"[schema] 基线 DDL 与真库快照逐列一致"
-              f"（{len(snapshot['columns'])} 列，类型/长度/NOT NULL/DEFAULT 四项均核对）")
+        print(f"[schema] 基线 DDL 与真库快照逐列一致（{len(snapshot['columns'])} 列，类型/长度/NOT NULL/DEFAULT 四项均核对）")
         return 0
 
     if args.live:
         url = args.database_url or os.environ.get("DATABASE_URL")
         if not url:
-            print("[schema] --live 需要 DATABASE_URL。本机没有 PG 时请只跑 --check-baseline，"
-                  "并把 X6 记为 not_run，不要用离线检查冒充真库核查。")
+            print("[schema] --live 需要 DATABASE_URL。本机没有 PG 时请只跑 --check-baseline，并把 X6 记为 not_run，不要用离线检查冒充真库核查。")
             return 2
         live = collect_live(url)
         payload = {
@@ -507,13 +426,12 @@ def main(argv: list[str] | None = None) -> int:
             "columns": live["columns"],
             "indexes": live["indexes"],
             "constraints": live["constraints"],
-            "column_diff": diff_columns(live["columns"], orm_column_types()),
+            "column_diff": diff_columns(live["columns"], orm_column_specs()),
+            "required_inputs": [{"table": c["table_name"], "column": c["column_name"]} for c in live["columns"] if c["is_nullable"] == "NO" and c["column_default"] is None],
         }
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"[schema] 已写 {args.out.relative_to(ROOT)}（{len(payload['tables'])} 表、"
-              f"{len(payload['columns'])} 列，alembic={payload['alembic']}，"
-              f"列漂移 {len(payload['column_diff'])} 条）")
+        print(f"[schema] 已写 {args.out.name}（{len(payload['tables'])} 表、{len(payload['columns'])} 列，alembic={payload['alembic']}，列漂移 {len(payload['column_diff'])} 条）")
         return 0
 
     ap.print_help()

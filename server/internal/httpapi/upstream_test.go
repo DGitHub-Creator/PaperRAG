@@ -25,6 +25,9 @@ func upstreamDeps(t *testing.T, upstreamURL string) Deps {
 // 少状态码=错误被吞成 200）。
 func TestUpstreamForwardsUnhandledPaths(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Trace-Id") == "" {
+			t.Error("Go 生成的追踪号必须传到上游")
+		}
 		w.Header().Set("X-Upstream-Path", r.URL.Path)
 		w.Header().Set("X-Upstream-Query", r.URL.RawQuery)
 		w.WriteHeader(http.StatusTeapot)

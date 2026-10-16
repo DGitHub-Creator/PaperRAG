@@ -16,9 +16,10 @@ ORM 模型定义 —— 数据库表结构与关联关系。
   - parent_chunks 独立存储，通过 chunk_id 与 Milvus 向量库中的分块关联
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
+    text as sql_text,
     JSON,
     DateTime,
     ForeignKey,
@@ -39,6 +40,12 @@ logger = get_logger(__name__)
 # User —— 用户表
 # ══════════════════════════════════════════════════════════════════════
 
+
+def utc_now_naive() -> datetime:
+    """既有 TIMESTAMP 列沿用 naive UTC；新表仍使用 TIMESTAMPTZ。"""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class User(Base):
     """用户模型 —— 存储登录凭据与角色信息。
 
@@ -51,19 +58,13 @@ class User(Base):
     # 主键：自增整数 ID
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     # 用户名：全局唯一，用于登录和 JWT sub 字段
-    username: Mapped[str] = mapped_column(
-        String(100), unique=True, index=True, nullable=False
-    )
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     # 密码哈希：PBKDF2-SHA256 格式字符串，最长 255 字符
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     # 角色：user 或 admin，默认 user
-    role: Mapped[str] = mapped_column(
-        String(20), default="user", nullable=False
-    )
+    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False, server_default=sql_text("'user'::character varying"))
     # 账户创建时间
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     # 关联：一个用户拥有多个对话会话（级联删除）
     sessions = relationship(
@@ -80,6 +81,7 @@ class User(Base):
 # ChatSession —— 对话会话表
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ChatSession(Base):
     """对话会话模型 —— 记录用户与 AI 的多轮对话会话。
 
@@ -89,11 +91,7 @@ class ChatSession(Base):
     """
 
     __tablename__ = "chat_sessions"
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id", "session_id", name="uq_user_session"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "session_id", name="uq_user_session"),)
 
     # 主键：自增整数 ID
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -104,17 +102,11 @@ class ChatSession(Base):
         index=True,
     )
     # 会话标识符：前端生成的唯一 session ID（如 UUID）
-    session_id: Mapped[str] = mapped_column(
-        String(120), nullable=False, index=True
-    )
+    session_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     # 会话元数据：JSON 自由格式，存储标题、标签、模型参数等
-    metadata_json: Mapped[dict] = mapped_column(
-        JSON, default=dict, nullable=False
-    )
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False, server_default=sql_text("'{}'::json"))
     # 最后更新时间：每次新增或修改消息时更新
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
     # 可选所属工作区（多租户），删除工作区时置 NULL
     workspace_id: Mapped[int | None] = mapped_column(
         ForeignKey("workspaces.id", ondelete="SET NULL"),
@@ -122,9 +114,7 @@ class ChatSession(Base):
         index=True,
     )
     # 会话创建时间
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     # 关联回 User 模型（多对一）
     user = relationship("User", back_populates="sessions")
@@ -142,6 +132,7 @@ class ChatSession(Base):
 # ══════════════════════════════════════════════════════════════════════
 # ChatMessage —— 对话消息表
 # ══════════════════════════════════════════════════════════════════════
+
 
 class ChatMessage(Base):
     """对话消息模型 —— 存储单条对话消息（人类/AI/系统）。
@@ -168,15 +159,11 @@ class ChatMessage(Base):
         index=True,
     )
     # 消息类型：human / ai / system
-    message_type: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )
+    message_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # 消息正文：存储完整文本内容
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # 消息时间戳
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
     # RAG 检索追溯信息：JSON 字段，可为 null（非 RAG 消息）
     rag_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
@@ -184,15 +171,13 @@ class ChatMessage(Base):
     session = relationship("ChatSession", back_populates="messages")
 
     def __repr__(self) -> str:
-        return (
-            f"<ChatMessage(id={self.id}, type='{self.message_type}', "
-            f"session_ref_id={self.session_ref_id})>"
-        )
+        return f"<ChatMessage(id={self.id}, type='{self.message_type}', session_ref_id={self.session_ref_id})>"
 
 
 # ══════════════════════════════════════════════════════════════════════
 # ParentChunk —— 父级文档分块表
 # ══════════════════════════════════════════════════════════════════════
+
 
 class ParentChunk(Base):
     """父级文档分块模型 —— 存储文档的层级化分块信息。
@@ -220,47 +205,26 @@ class ParentChunk(Base):
     # 分块文本内容（完整文本，不限长度）
     text: Mapped[str] = mapped_column(Text, nullable=False)
     # 所属文件名（建立索引，方便按文件筛选/删除分块）
-    filename: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True
-    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     # 文件类型（如 pdf、txt、md 等）
-    file_type: Mapped[str] = mapped_column(
-        String(50), default="", nullable=False
-    )
+    file_type: Mapped[str] = mapped_column(String(50), default="", nullable=False, server_default=sql_text("''::character varying"))
     # 文件在服务器上的完整路径
-    file_path: Mapped[str] = mapped_column(
-        String(1024), default="", nullable=False
-    )
+    file_path: Mapped[str] = mapped_column(String(1024), default="", nullable=False, server_default=sql_text("''::character varying"))
     # PDF 页码（非 PDF 文件为 0）
-    page_number: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False
-    )
+    page_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
     # 直属父分块 ID（空字符串表示根节点）
-    parent_chunk_id: Mapped[str] = mapped_column(
-        String(512), default="", nullable=False
-    )
+    parent_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default=sql_text("''::character varying"))
     # 最顶层根分块 ID（用于快速定位整棵分块树）
-    root_chunk_id: Mapped[str] = mapped_column(
-        String(512), default="", nullable=False
-    )
+    root_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default=sql_text("''::character varying"))
     # 分块层级: 0 = 叶节点, 1 = 父节点, 2+ = 更上层
-    chunk_level: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False
-    )
+    chunk_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
     # 同层级内的顺序索引（用于保持原文顺序）
-    chunk_idx: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False
-    )
+    chunk_idx: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
     # 最后更新时间
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     def __repr__(self) -> str:
-        return (
-            f"<ParentChunk(chunk_id='{self.chunk_id[:16]}...', "
-            f"filename='{self.filename}', level={self.chunk_level}, idx={self.chunk_idx})>"
-        )
+        return f"<ParentChunk(chunk_id='{self.chunk_id[:16]}...', filename='{self.filename}', level={self.chunk_level}, idx={self.chunk_idx})>"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -275,15 +239,9 @@ class Workspace(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     def __repr__(self) -> str:
         return f"<Workspace(id={self.id}, name='{self.name}', owner_id={self.owner_id})>"
@@ -305,10 +263,8 @@ class WorkspaceMember(Base):
         nullable=False,
         index=True,
     )
-    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False, server_default=sql_text("'member'::character varying"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     def __repr__(self) -> str:
         return f"<WorkspaceMember(id={self.id}, workspace_id={self.workspace_id}, user_id={self.user_id}, role='{self.role}')>"
@@ -328,17 +284,13 @@ class PaperNode(Base):
     __tablename__ = "paper_nodes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    filename: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
-    )
-    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
-    year: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    authors: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
-    abstract: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    citation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    filename: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), default="", nullable=False, server_default=sql_text("''::character varying"))
+    year: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
+    authors: Mapped[str] = mapped_column(String(1000), default="", nullable=False, server_default=sql_text("''::character varying"))
+    abstract: Mapped[str] = mapped_column(Text, default="", nullable=False, server_default=sql_text("''::text"))
+    citation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     citations_from = relationship(
         "CitationEdge",
@@ -377,17 +329,11 @@ class CitationEdge(Base):
         nullable=False,
         index=True,
     )
-    context: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    context: Mapped[str] = mapped_column(Text, default="", nullable=False, server_default=sql_text("''::text"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
-    source = relationship(
-        "PaperNode", foreign_keys=[source_id], back_populates="citations_from"
-    )
-    target = relationship(
-        "PaperNode", foreign_keys=[target_id], back_populates="citations_to"
-    )
+    source = relationship("PaperNode", foreign_keys=[source_id], back_populates="citations_from")
+    target = relationship("PaperNode", foreign_keys=[target_id], back_populates="citations_to")
 
     def __repr__(self) -> str:
         return f"<CitationEdge({self.source_id} → {self.target_id})>"
@@ -409,10 +355,8 @@ class GlossaryEntry(Base):
     )
     term: Mapped[str] = mapped_column(String(200), nullable=False)
     definition: Mapped[str] = mapped_column(String(1000), nullable=False)
-    chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default=sql_text("''::character varying"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
 
     paper = relationship("PaperNode", backref="glossary_entries")
 

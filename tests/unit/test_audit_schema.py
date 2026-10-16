@@ -102,7 +102,12 @@ class TestAlembicState:
 
 
 class TestDiffColumns:
-    DECLARED = {"users": {"id": "INTEGER", "username": "VARCHAR(100)"}}
+    DECLARED = {
+        "users": {
+            "id": {"type": "INTEGER", "length": None, "nullable": False, "default": None, "serial": False},
+            "username": {"type": "VARCHAR(100)", "length": 100, "nullable": False, "default": None, "serial": False},
+        }
+    }
 
     @staticmethod
     def _row(name, data_type, nullable="NO", default=None):
@@ -111,6 +116,7 @@ class TestDiffColumns:
             "column_name": name,
             "data_type": data_type,
             "is_nullable": nullable,
+            "character_maximum_length": 100 if data_type == "character varying" else None,
             "column_default": default,
         }
 
@@ -121,6 +127,7 @@ class TestDiffColumns:
             "column_name": name,
             "data_type": data_type,
             "is_nullable": "YES",
+            "character_maximum_length": 255 if data_type == "character varying" else None,
             "column_default": default,
         }
 
@@ -128,15 +135,11 @@ class TestDiffColumns:
         # 与 DECLARED 逐字对齐的一版库结构
         return [self._row("id", "integer"), self._row("username", "character varying")]
 
-    def test_aligned_shape_still_reports_missing_server_defaults(self):
-        """Python 侧 `default=datetime.utcnow` 不进 DDL，库里没有 DEFAULT：
-        这是真发现而不是噪声——Go 插入必须自己给这些列写值。"""
-        diffs = diff_columns(self._live(), self.DECLARED)
-        assert {d["kind"] for d in diffs} == {"no_server_default"}
-        assert {d["column"] for d in diffs} == {"id", "username"}
+    def test_required_input_columns_are_not_schema_drift(self):
+        assert diff_columns(self._live(), self.DECLARED) == []
 
     def test_column_missing_in_db_is_caught(self):
-        declared = {"users": dict(self.DECLARED["users"], role="VARCHAR(20)")}
+        declared = {"users": dict(self.DECLARED["users"], role={"type": "VARCHAR(20)", "length": 20, "nullable": False, "default": None, "serial": False})}
         diffs = diff_columns(self._live(), declared)
         assert {"table": "users", "column": "role", "kind": "only_in_orm"} in diffs
 
@@ -156,7 +159,12 @@ class TestDiffColumns:
         不认这层映射的话，真库跑一次会得到 9 张表全线 type 漂移的噪声报告，
         等于把这条核查废掉——所以它必须有专门用例钉住。
         """
-        declared = {"events": {"at": "TIMESTAMP", "payload": "VARCHAR(255)"}}
+        declared = {
+            "events": {
+                "at": {"type": "TIMESTAMP", "length": None, "nullable": True, "default": "now()", "serial": False},
+                "payload": {"type": "VARCHAR(255)", "length": 255, "nullable": True, "default": "''", "serial": False},
+            }
+        }
         rows = [
             self._row_in("events", "at", "timestamp without time zone", "now()"),
             self._row_in("events", "payload", "character varying", "''"),
@@ -198,7 +206,7 @@ def _snapshot_rows():
         _snap("users", "id", "integer", default="nextval('users_id_seq'::regclass)"),
         _snap("users", "username", "character varying", length=100),
         _snap("users", "role", "character varying", default="'user'::character varying", length=20),
-        _snap("users", "prefs", "json", default="'{\"a\": 1, \"b\": 2}'::json"),
+        _snap("users", "prefs", "json", default='\'{"a": 1, "b": 2}\'::json'),
         _snap("users", "workspace_id", "integer", nullable="YES"),
     ]
 
@@ -282,6 +290,23 @@ class TestParseDdlColumns:
 
 
 class TestVerifyColumns:
+    def test_tool_version_table_is_checked_without_copying_it_into_migrations(self, tmp_path):
+        rows = _snapshot_rows() + [
+            _snap("schema_migrations", "version", "bigint"),
+            _snap("schema_migrations", "dirty", "boolean"),
+        ]
+        errs, notes = verify_columns(_migrations(tmp_path), _snapshots(rows, tables=("users", "schema_migrations")))
+        assert errs == []
+        assert any("golang-migrate" in note for note in notes)
+
+    def test_tool_version_table_cannot_hide_a_wrong_column_type(self, tmp_path):
+        rows = _snapshot_rows() + [
+            _snap("schema_migrations", "version", "text"),
+            _snap("schema_migrations", "dirty", "boolean"),
+        ]
+        errs, _ = verify_columns(_migrations(tmp_path), _snapshots(rows, tables=("users", "schema_migrations")))
+        assert any("schema_migrations.version" in error and "类型不一致" in error for error in errs)
+
     def test_matching_snapshot_passes(self, tmp_path):
         errs, notes = verify_columns(_migrations(tmp_path), _snapshots(_snapshot_rows()))
         assert (errs, notes) == ([], [])

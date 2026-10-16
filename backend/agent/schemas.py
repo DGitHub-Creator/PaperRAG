@@ -1,4 +1,7 @@
-from typing import Literal, TypedDict
+from operator import add
+from typing import Annotated, Literal, TypedDict
+
+from langgraph.graph.message import add_messages
 
 from pydantic import BaseModel
 
@@ -11,9 +14,11 @@ class IntentSchema(BaseModel):
 
 class State(TypedDict):
     """Agent 状态字典"""
-    messages: list
+    messages: Annotated[list, add_messages]
     question_input: dict
     classification_decision: str | None
-    trace: list
+    trace: Annotated[list, add]
     retrieved_locators: list
     evidence: list
+    rag_trace: dict | None
+    source_map: dict

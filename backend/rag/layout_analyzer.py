@@ -10,6 +10,8 @@
 """
 
 import traceback
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, NamedTuple
 
 from backend.core.logging_config import get_logger
@@ -56,36 +58,43 @@ def analyze_layout(
             return []
 
         import fitz
-        doc = fitz.open(file_path)
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            pix = page.get_pixmap(dpi=200)
-            image_path = f"/tmp/_lp_page_{page_num}.png"
-            pix.save(image_path)
+        # 请求各用独立目录；异常时也释放 PDF 与页面图片，避免并发覆盖和 Windows 文件锁。
+        with fitz.open(file_path) as doc, TemporaryDirectory(prefix="researchpilot-layout-") as temp_dir:
+            blocks.extend(_detect_pages(doc, lp, model, Path(temp_dir)))
 
-            image = lp.load_image(image_path)
-            result = model.detect(image)
-
-            for block in result:
-                block_type = block.type if block.type else "Text"
-                coords = block.block.coordinates if hasattr(block, "block") else (0, 0, 0, 0)
-                text = block.text if hasattr(block, "text") and block.text else ""
-                blocks.append(LayoutBlock(
-                    block_type=block_type,
-                    page_number=page_num,
-                    x1=float(coords[0]),
-                    y1=float(coords[1]),
-                    x2=float(coords[2]),
-                    y2=float(coords[3]),
-                    text=text.strip() if text else "",
-                ))
-
-        doc.close()
         blocks.sort(key=lambda b: (b.page_number, b.y1))
         logger.info("布局分析完成: %s, %d 个区块", file_path, len(blocks))
 
     except Exception:
         logger.debug("布局分析异常: %s", traceback.format_exc())
+
+    return blocks
+
+
+def _detect_pages(doc, lp: Any, model: Any, temp_dir: Path) -> list[LayoutBlock]:
+    blocks: list[LayoutBlock] = []
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        pix = page.get_pixmap(dpi=200)
+        image_path = str(temp_dir / f"page_{page_num}.png")
+        pix.save(image_path)
+
+        image = lp.load_image(image_path)
+        result = model.detect(image)
+
+        for block in result:
+            block_type = block.type if block.type else "Text"
+            coords = block.block.coordinates if hasattr(block, "block") else (0, 0, 0, 0)
+            text = block.text if hasattr(block, "text") and block.text else ""
+            blocks.append(LayoutBlock(
+                block_type=block_type,
+                page_number=page_num,
+                x1=float(coords[0]),
+                y1=float(coords[1]),
+                x2=float(coords[2]),
+                y2=float(coords[3]),
+                text=text.strip() if text else "",
+            ))
 
     return blocks
 

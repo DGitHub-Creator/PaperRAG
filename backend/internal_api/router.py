@@ -14,12 +14,15 @@
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
+from uuid import uuid4
 
 from backend.api.health import health as _liveness
 from backend.api.health import readiness as _readiness
 from backend.internal_api.auth import require_internal_token
 from backend.internal_api.codes import spec_for
-from backend.internal_api.executions import Execution, store
+from backend.internal_api.executions import Execution
+from backend.internal_api.postgres_executions import PostgresExecutionStore
+from backend.core.logging_config import get_logger
 from backend.internal_api.registry import REGISTRY, TaskError
 from backend.internal_api.schemas import (
     ErrorDetail,
@@ -30,6 +33,8 @@ from backend.internal_api.schemas import (
 )
 
 router = APIRouter(prefix="/internal/v1/ai", tags=["内部执行面"], dependencies=[Depends(require_internal_token)])
+store = PostgresExecutionStore()
+logger = get_logger(__name__)
 
 _NOT_FOUND = JSONResponse(status_code=404, content={"detail": "Execution not found"})
 
@@ -82,16 +87,18 @@ def _run(execution_id: str, req: ExecuteRequest) -> Execution | None:
     if spec is None:  # 提交时已挡过一次，这里挡的是"行存在但类型被摘掉"的竞态
         return store.fail(execution_id, "UNSUPPORTED_TASK_TYPE", f"未注册的任务类型：{req.task_type}", trace_id=req.trace_id)
 
-    if store.start(execution_id) is None:
+    lease_token = uuid4().hex
+    if store.start(execution_id, lease_token=lease_token) is None:
         # 已经取消/过期/终态：不起跑，把当前真实状态还给调用方
         return store.get(execution_id)
 
     try:
         outcome = spec.handler(req)
     except TaskError as exc:
-        return store.fail(execution_id, exc.code, exc.detail, trace_id=req.trace_id)
-    except Exception as exc:  # 未分类内部错误必须带 trace_id 才可诊断（error-codes.md §1）
-        return store.fail(execution_id, "INTERNAL", f"未分类内部错误：{exc}", trace_id=req.trace_id)
+        return store.fail(execution_id, exc.code, exc.detail, trace_id=req.trace_id, lease_token=lease_token)
+    except Exception:
+        logger.exception("内部执行失败: execution_id=%s, trace_id=%s", execution_id, req.trace_id)
+        return store.fail(execution_id, "INTERNAL", "内部执行失败，请按 trace_id 查询日志", trace_id=req.trace_id, lease_token=lease_token)
 
     finished = store.succeed(
         execution_id,
@@ -99,6 +106,7 @@ def _run(execution_id: str, req: ExecuteRequest) -> Execution | None:
         proposed_tasks=outcome.proposed_tasks,
         evidence_candidates=outcome.evidence_candidates,
         usage=outcome.usage,
+        lease_token=lease_token,
     )
     # None 表示这一路结果被丢弃（执行已被取消），返回的是取消后的真实状态
     return finished if finished is not None else store.get(execution_id)
@@ -118,12 +126,15 @@ def _response_for(row: Execution) -> ResultResponse | JSONResponse:
 
 
 @router.post("/execute", response_model=None)
-async def execute(req: ExecuteRequest) -> ResultResponse | JSONResponse:
+def execute(req: ExecuteRequest) -> ResultResponse | JSONResponse:
     """同步执行单个有界任务（§3.1：只用于确定短时的任务，必须带 deadline）。"""
     if req.task_type not in REGISTRY:
         return _error_response("UNSUPPORTED_TASK_TYPE", f"未注册的任务类型：{req.task_type}", req.trace_id)
 
-    row, replayed = store.submit(req)
+    try:
+        row, replayed = store.submit(req)
+    except ValueError as exc:
+        return _error_response("INVALID_PAYLOAD", str(exc), req.trace_id)
     # 幂等命中一个还没起跑的行也由本次调用跑完；命中已结束的则直接返回既有结果，不重跑模型
     if row.status == "queued":
         row = _run(row.execution_id, req) or row
@@ -131,19 +142,22 @@ async def execute(req: ExecuteRequest) -> ResultResponse | JSONResponse:
 
 
 @router.post("/executions", response_model=None)
-async def submit(req: ExecuteRequest, background_tasks: BackgroundTasks) -> SubmitResponse | JSONResponse:
+def submit(req: ExecuteRequest, background_tasks: BackgroundTasks) -> SubmitResponse | JSONResponse:
     """提交即返回 `execution_id`，执行放到响应之后的后台任务里（异步前置，§3.1）。"""
     if req.task_type not in REGISTRY:
         return _error_response("UNSUPPORTED_TASK_TYPE", f"未注册的任务类型：{req.task_type}", req.trace_id)
 
-    row, replayed = store.submit(req)
-    if not replayed:
+    try:
+        row, replayed = store.submit(req)
+    except ValueError as exc:
+        return _error_response("INVALID_PAYLOAD", str(exc), req.trace_id)
+    if row.status == "queued":
         background_tasks.add_task(_run, row.execution_id, req)
     return SubmitResponse(execution_id=row.execution_id, status=row.status, replayed=replayed)
 
 
 @router.get("/executions/{execution_id}", response_model=None)
-async def get_status(execution_id: str) -> StatusResponse | JSONResponse:
+def get_status(execution_id: str) -> StatusResponse | JSONResponse:
     row = store.get(execution_id)
     if row is None:
         return _NOT_FOUND
@@ -151,7 +165,7 @@ async def get_status(execution_id: str) -> StatusResponse | JSONResponse:
 
 
 @router.get("/executions/{execution_id}/result", response_model=None)
-async def get_result(execution_id: str) -> ResultResponse | JSONResponse:
+def get_result(execution_id: str) -> ResultResponse | JSONResponse:
     row = store.get(execution_id)
     if row is None:
         return _NOT_FOUND
@@ -159,7 +173,7 @@ async def get_result(execution_id: str) -> ResultResponse | JSONResponse:
 
 
 @router.post("/executions/{execution_id}/cancel", response_model=None)
-async def cancel(execution_id: str) -> StatusResponse | JSONResponse:
+def cancel(execution_id: str) -> StatusResponse | JSONResponse:
     row = store.cancel(execution_id)
     if row is None:
         return _NOT_FOUND

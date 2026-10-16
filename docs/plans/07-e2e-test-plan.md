@@ -107,7 +107,7 @@
 
 ## 7. 契约测试（L5，**P0-5 已交付 chain 骨架；SSE 字节级帧与 ai-execution 的 Go 侧仍缺**）
 
-[`contracts/`](../../contracts/) 目录为唯一契约源，Go 与 Python 各自生成/校验。
+[`contracts/`](../../contracts) 目录为唯一契约源，Go 与 Python 各自生成/校验。
 静态部分已经有门禁（`scripts/check_contracts.py`，X3 本机 pass）；跨语言对拍已由 P0-5 的 `tests/chain/` 落地
 （`-m chain` 15 项：`-k go_auth` 4 / `-k contract` 5 / `-k go_read` 6，都是两个真服务同时起）：
 

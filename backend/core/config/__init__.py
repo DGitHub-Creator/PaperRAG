@@ -23,7 +23,7 @@ try:
 
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv 未安装时退回纯环境变量
+    logging.getLogger(__name__).warning("python-dotenv 未安装，仅使用进程环境变量")
 
 # APP_ENV 只依赖 os，可先于环境预设导入；其余子模块必须在预设之后导入，
 # 因为它们在 import 期就读取 os.environ。
@@ -64,6 +64,8 @@ from backend.core.config.llm import (  # noqa: F401
     LLM_API_KEY,
     LLM_MODEL,
     LLM_PROVIDER,
+    LLM_BASE_URL,
+    LLM_GRADE_MODEL,
     LLM_COST_PER_1K_TOKENS,
     LLM_TIMEOUT_SECONDS,
     MAX_COST_PER_QUERY,
@@ -86,6 +88,8 @@ from backend.core.config.database import (  # noqa: F401
     DB_POOL_SIZE,
     MILVUS_COLLECTION,
     MILVUS_CONNECT_TIMEOUT,
+    MILVUS_OPERATION_TIMEOUT,
+    DOCUMENT_LOCK_TIMEOUT_SECONDS,
     MILVUS_HOST,
     MILVUS_PORT,
     REDIS_CACHE_TTL,
@@ -128,6 +132,7 @@ from backend.core.config.auth import (  # noqa: F401
     PASSWORD_PBKDF2_ROUNDS,
     RATE_LIMIT,
     TRUST_PROXY_HEADERS,
+    TRUSTED_PROXY_CIDRS,
 )
 from backend.core.config.paths import BM25_STATE_PATH  # noqa: F401
 
@@ -168,6 +173,8 @@ def validate_runtime_security() -> None:
     兜底值可用（空密钥 python-jose 会静默接受，比可猜测的默认值更危险）。
     其余项在生产环境拒绝启动，在开发环境只告警。
     """
+    if TRUST_PROXY_HEADERS and not TRUSTED_PROXY_CIDRS:
+        raise RuntimeError("信任代理头时必须配置 TRUSTED_PROXY_CIDRS")
     if not JWT_SECRET_KEY:
         raise RuntimeError(
             "JWT_SECRET_KEY 未配置，拒绝启动。生成一个强随机值后重试: "

@@ -109,7 +109,7 @@ export interface StreamErrorEvent {
   content: string
 }
 
-/** 仅 WS 通道存在；SSE 靠流结束与字面量 [DONE] 帧 */
+/** WS 直接传 done；SSE 的字面量 [DONE] 在 api/sse.ts 归一成相同事件。 */
 export interface StreamDoneEvent {
   type: "done"
 }

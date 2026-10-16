@@ -1,18 +1,20 @@
-import { parse, setOptions } from "marked"
+import { Marked } from "marked"
 import hljs from "highlight.js"
 import katex from "katex"
+import DOMPurify from "dompurify"
 
-export function configureRenderer(): void {
-  setOptions({
-    highlight(code: string, lang: string): string {
+// 使用库自带类型与实例配置，避免修改全局解析器及用伪造类型掩盖失效选项。
+const renderer = new Marked({
+  breaks: true,
+  gfm: true,
+  renderer: {
+    code(code: string, lang: string | undefined): string {
+      lang = (lang || "").split(/\s/)[0]
       const language = hljs.getLanguage(lang) ? lang : "plaintext"
-      return hljs.highlight(code, { language }).value
+      return `<pre><code class="hljs language-${language}">${hljs.highlight(code, { language }).value}</code></pre>\n`
     },
-    langPrefix: "hljs language-",
-    breaks: true,
-    gfm: true,
-  })
-}
+  },
+})
 
 interface LatexItem {
   type: "block" | "inline"
@@ -29,7 +31,7 @@ export function parseMarkdown(text: string): string {
     latexBlocks.push({ type: "inline", content: formula.trim() })
     return `@@LATEXINLINE${latexBlocks.length - 1}@@`
   })
-  let html: string = parse(protectedText)
+  let html = renderer.parse(protectedText, { async: false }) as string
   html = html.replace(/@@LATEXBLOCK(\d+)@@/g, (_match: string, idx: string) => {
     const item = latexBlocks[parseInt(idx)]
     if (item) {
@@ -48,7 +50,8 @@ export function parseMarkdown(text: string): string {
     }
     return `$$`
   })
-  return html
+  // 模型输出、检索原文和公式均不可信；必须在所有 HTML 拼接完成后净化。
+  return DOMPurify.sanitize(html)
 }
 
 export function escapeHtml(text: string): string {

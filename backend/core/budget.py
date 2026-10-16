@@ -6,6 +6,8 @@
 """
 
 import contextvars
+from dataclasses import dataclass, field
+from threading import Lock
 
 from backend.core.config import (
     LLM_COST_PER_1K_TOKENS,
@@ -16,30 +18,36 @@ from backend.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-_call_count_var: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "_llm_call_count", default=0
-)
-_estimated_tokens_var: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "_llm_estimated_tokens", default=0
-)
+@dataclass
+class _Budget:
+    calls: int = 0
+    tokens: int = 0
+    lock: Lock = field(default_factory=Lock)
+
+
+_budget_var: contextvars.ContextVar[_Budget | None] = contextvars.ContextVar("llm_budget", default=None)
+
+
+def _current_budget() -> _Budget:
+    budget = _budget_var.get()
+    if budget is None:
+        budget = _Budget()
+        _budget_var.set(budget)
+    return budget
 
 
 def reset_budget() -> None:
-    """每轮对话开始时重置预算计数器。"""
-    _call_count_var.set(0)
-    _estimated_tokens_var.set(0)
+    # 一轮请求一个可共享对象；LangGraph 子任务/线程复制上下文时仍共享本轮计数。
+    _budget_var.set(_Budget())
 
 
 def record_llm_call(estimated_tokens: int = 0) -> None:
-    """记录一次 LLM 调用。
-
-    Args:
-        estimated_tokens: 估算的 token 消耗量（输入+输出），用于成本估算。
-    """
-    count = _call_count_var.get() + 1
-    _call_count_var.set(count)
-    tokens = _estimated_tokens_var.get() + estimated_tokens
-    _estimated_tokens_var.set(tokens)
+    if estimated_tokens < 0:
+        raise ValueError("token 估算值不得为负数")
+    budget = _current_budget()
+    with budget.lock:
+        budget.calls += 1
+        budget.tokens += estimated_tokens
 
 
 def budget_ok() -> bool:
@@ -49,8 +57,9 @@ def budget_ok() -> bool:
         True 表示还有预算，可以继续调用 LLM。
         False 表示已超限，应跳过昂贵操作。
     """
-    count = _call_count_var.get()
-    tokens = _estimated_tokens_var.get()
+    status = get_budget_status()
+    count = status["call_count"]
+    tokens = status["estimated_tokens"]
     estimated_cost = (tokens / 1000) * LLM_COST_PER_1K_TOKENS
 
     if count >= MAX_LLM_CALLS_PER_QUERY:
@@ -72,10 +81,13 @@ def budget_ok() -> bool:
 
 def get_budget_status() -> dict:
     """返回当前预算状态信息（用于日志和调试）。"""
+    budget = _current_budget()
+    with budget.lock:
+        calls, tokens = budget.calls, budget.tokens
     return {
-        "call_count": _call_count_var.get(),
+        "call_count": calls,
         "max_calls": MAX_LLM_CALLS_PER_QUERY,
-        "estimated_tokens": _estimated_tokens_var.get(),
-        "estimated_cost": (_estimated_tokens_var.get() / 1000) * LLM_COST_PER_1K_TOKENS,
+        "estimated_tokens": tokens,
+        "estimated_cost": (tokens / 1000) * LLM_COST_PER_1K_TOKENS,
         "max_cost": MAX_COST_PER_QUERY,
     }

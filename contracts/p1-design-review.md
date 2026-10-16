@@ -19,7 +19,7 @@
 | 适用卡 | P1-1, P1-2, P1-3, P1-4, P1-7 |
 | 依据契约 | `contracts/openapi.yaml`, `contracts/error-codes.md`, `contracts/ai-execution.schema.json`, `contracts/table-acl.md`, `contracts/route-ownership.md` |
 | 关联决策 | D3（已关闭）、D4（保留 P1 → P2）、D6（5 张未登记归属的表）、K1/K3/K4（`openapi.yaml` 的 `info.x-decisions`） |
-| 关联台账 | C33, C34, C35, C36, C37（验收条件见 `rules/12` 的 A-2） |
+| 关联台账 | C33, C34, C35, C36, C37（验收条件见 `docs/plans/12-known-code-issues.md` 的当前条目） |
 | 不做什么 | 不新增退出标准（**不加 Y7**）、不改工时与分母、不改 P1/P2 依赖、不为未来建无真实需求的抽象 |
 
 ---
@@ -51,7 +51,7 @@
   `backend/services/upload_jobs.py`、`docs/rules/02-target-architecture.md`
 - **未决**：
   - 文档（`/documents` 那条面）今天**没有稳定 id**——它的标识是文件名，而文件名可被覆盖写。
-    P2-1 建 `paper_files` 时要不要引入 `content_hash` 作为跨库身份（`rules/14` M2 提过按 hash 去重），
+    P2-1 建 `paper_files` 时要不要引入 `content_hash` 作为跨库身份（`plans/14` M2 提过按 hash 去重），
     **属 P2 决策，本审查不替它拍**，只登记为待决。
   - 契约里的路径参数用 **camelCase**（`/sessions/{sessionId}`、`/documents/upload/jobs/{jobId}`），
     而两侧实现与 `route-ownership.md` 都用 **snake_case**（`{session_id}`）。这是**第三套拼写**。
@@ -75,7 +75,7 @@
   4. **Python 不引入第二个全局调度器**：`USE_REDIS_JOB_MANAGER` 之类的进程内循环只允许服务于
      单次执行，跨请求的任务编排属 Go（P1-3）。
 - **依据**：`contracts/route-ownership.md`、`contracts/table-acl.md`、`AGENTS.md`、
-  `docs/rules/13-frontend-backend-architecture.md`、`backend/services/upload_jobs.py`
+  `docs/reference/13-frontend-backend-architecture.md`、`backend/services/upload_jobs.py`
 - **未决**：D6 的 5 张表（`parent_chunks` / `paper_nodes` / `citation_edges` / `glossary_entries` /
   `alembic_version`）归属仍未定；按 D6 的拍板**先审计使用情况**再一次性定归属与生命周期，
   本审查不提前定。
@@ -100,7 +100,7 @@
      `conversation_storage.py:170` 把存储异常吞成空列表是**已知反面样本**，Go 如实回 500
      （第十四轮定的有意分歧）。接管时不许把这条"对齐"回去。
 - **依据**：`contracts/error-codes.md`、`backend/internal_api/codes.py`、
-  `docs/plans/09-milestone-p0.md`、`docs/rules/12-known-code-issues.md`
+  `docs/plans/09-milestone-p0.md`、`docs/plans/12-known-code-issues.md`
 - **未决**：`/metrics` 仍是三不管端点（C31）：契约有、Python 有、nginx 无 location、Go 未实现。
   它归 Go 还是归"从契约里删掉"，**需要人工拍**，本审查不擅自定。
 - **判据**：`uv run python -m pytest -q -m chain`（错误文案逐字对拍已在 `tests/chain`）＋
@@ -110,7 +110,7 @@
 
 - **结论**：
   1. **今天没有真正的流式契约，只有实现形状**：SSE 的实际行为是**整段答案一次性下发**
-     （`rules/14` M6 记为折扣；`docs/reference/00-audit.md` 也记过同一事实）。
+     （`plans/14` M6 记为折扣；`docs/reference/00-audit.md` 也记过同一事实）。
      因此 P1-4 的"接管流式"必须**先定事件协议再接管**，否则门面会把一个未定义的形状固化下来。
   2. **最小事件集（本审查的建议，待人工确认）**：`delta`（增量文本）/ `tool`（工具调用可见进度）/
      `citation`（引用出现，**P1 期间显式标为非证据级**）/ `done`（正常终止）/ `error`（带九码之一）。
@@ -121,7 +121,7 @@
   4. **取消**：Go 侧取消要落到内部面的 `POST /executions/{id}/cancel`（`contracts/ai-execution.schema.json::x-endpoints`），
      而不是悄悄断开连接——断开连接不产生任何可观测状态。
 - **依据**：`contracts/ai-execution.schema.json`、`docs/reference/01-current-architecture.md`、
-  `docs/rules/14-feature-modules.md`、`backend/api/chat.py`
+  `docs/plans/14-feature-modules.md`、`backend/api/chat.py`
 - **未决**：①WS（`/api/v1/ws/chat`）与 SSE 的关系——两条通道今天能力重叠，P1-4 是收口成一条还是并存，
   **需要人工拍**；②事件帧是否带 `trace_id`（建议带，但要确认前端能忽略未知键而不炸，今天前端解析器未验过）。
 - **判据**：Y3（SSE 字节级帧序列跨语言比对）＋ 一条新 chain 用例断言"`done` 帧之后连接关闭且无第二终止帧"。
@@ -142,7 +142,7 @@
   4. **缓存不是归属方**：Redis 里的会话缓存不构成第二个写者，但**写者必须负责失效**（C35）。
      P1-1 的删除面在 C35 处置前，不许被宣称为"已完整接管"。
 - **依据**：`contracts/table-acl.md`、`server/migrations/000002_ai_executions.up.sql`、
-  `docs/plans/05-database-migration.md`、`docs/rules/12-known-code-issues.md`
+  `docs/plans/05-database-migration.md`、`docs/plans/12-known-code-issues.md`
 - **未决**：D6 那 5 张表；以及 `papers` 系列 4 张表的建表时点（P2-1）——P1 **不建 P2 的表**，
   本审查只登记它们的归属意图与切换后旧路径的移除时点。
 - **判据**：`uv run python scripts/check_contracts.py`（ACL 值域与 ≤2 张 Python 可写表）＋

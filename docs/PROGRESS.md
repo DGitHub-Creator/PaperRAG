@@ -1,22 +1,16 @@
 # 进度报告
 
 > 本文件由 `scripts/sync_progress.py` 从 [`progress.json`](progress.json) 生成，**请勿手改**。
-> 数据截止 2026-10-15 · 基线 `106f17dd` · 投入 15-20 小时/周
+> 数据截止 2026-10-16 · 基线 `106f17dd` · 投入 15-20 小时/周
 
 ## 一句话现状
 
 - **完成了多少**：30%（按工时加权；118/394 小时，任务完成 14/40，验收 8/25 通过）
-- **现在在哪**：**读数（2026-10-15 现场取，别抄）**：完成度 **30%**（118/394 h）；40 张卡 done 14 / in_progress 0 / pending 26；25 条退出标准 **pass 8**（X1–X8 全绿）、not_run 17（属 P1/P2/P3）。测试分层 unit 527 / integration 57 / **chain 27** / pytest-e2e **0**（Playwright 另有 9 项结构级，`cd frontend && npm run test:e2e`）；全量 `pytest -q` **644 passed**。
+- **现在在哪**：P0 已按既有验收收口；产品阶段状态以本文件任务卡与退出标准为准，不按代码整改数量增加完成度。当前执行全仓质量重构，尚未完成最终验收。
 
-**P0 已收口**：四条卡（P0-6 / P0-7 / P0-8 / P0-9）全部 done，X2 于第十七轮转 pass。
-**待决只剩 D1 / D2 / D7**（D3、D4、D5、D6、D8 已于 2026-10-15 定案，记录在 `decisions_resolved`）。
-**收口时刻的边界**（详见 `rules/frontend-backend-division-of-labor.md` §0.4 与 `contracts/route-ownership.md`）：前端只经 `api/client.ts` 一份路径字面量；Go = 公开入口 + 8 条原生业务面 + 4 条探针 + 未迁移面的反代门面 + 直连 PG 的三张表；Python = 解析/检索/生成的实现 + `/internal/v1/ai/*` 执行面，另有 17 条 `proxy` 面待搬。
+本轮已修复会话覆盖/缓存不一致、AIExecution 记录内存态、工具执行与追踪、上传任务状态及前端流式状态等问题，证据与边界见 docs/WORKLOG.md；未决项见 docs/plans/12-known-code-issues.md 与 docs/plans/repository-standardization.md。
 
-**下一步（P1 开工安排，2026-10-15 用户定案）**：按 **D4：保留 P1 → P2**推进——不前移 P2、不拆卡、不解锁依赖。开工前置有两件：①**过设计门禁**——`contracts/p1-design-review.md` 已建（五维：数据标识 / 服务职责 / 错误语义 / 流式事件契约 / 数据所有权），执行者 `scripts/check_design_review.py` 已接进 CI 的 backend job；它现在是 **proposed**，五个维度的人工确认签完改成 approved 之前，P1-1 / P1-2 / P1-3 / P1-4 / P1-7 任何一张都不得开工（这条不新增退出标准、不改分母、不动依赖——它是**开工前置条件**）。②C33–C37 的归属与验收条件已在台账 A-2 定稿，逐条带可机检判据，**不允许带着已知缺陷进入下一阶段**。P1 完成后按正式依赖进 P2（一次性建可信存储与证据链，M1/M3/M5/M7 的数据链路合批做，不分别打补丁）。原则序位：**正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度**——产品轴暂时不前进是可接受的。P1 的账已经明确：搬 documents（前置是文档真相进 PG）、搬流式 chat/ws、删 Python 那 12 条可达不调的面、Go 补限流（C33，登录/注册已经丢了）、缓存失效（C35）、`rag_trace` 投影口径（C34）、任务态持久化（C37：`ai_executions` 表已建但零写入方）。
-
-**三条别读成「已完成」**：①X2 是**静态配置级**证据，prod 全栈容器本机没跑过；②e2e 是结构级、不判像素，而且不在 pytest 的 e2e marker 里；③X5 的 `--from-db` 真库形状统计仍不可执行（C20），P1 接管 `users` 前必须先跑。
-
-**⚠️ 本字段只放当前读数与下一步，不放日志。**逐轮实录在 `docs/WORKLOG.md`；规约与硬约束在 `AGENTS.md`；代码问题与处置在 `rules/12` 台账；现状形状在 `rules/13`。往本字段追加 dated 内容 = 违反 `08 §6`。
+P1 接管开工仍受 contracts/p1-design-review.md 的设计门禁约束；该审查仍为 proposed，本轮不改变依赖、不把质量修复记为 P1 完成。当前实现说明见 docs/reference/13-frontend-backend-architecture.md，历史阶段实跑见 docs/archive/2026-10-15-p0-worklog.md。
 - **还差多少**：待办 26 项 / 276 小时（约 13.8-18.4 周），进行中 0 项；可立即开工：P1-0
 
 ## 阶段进度

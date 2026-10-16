@@ -75,7 +75,7 @@ def get_milvus_writer():
 
 
 def get_rag_graph():
-    from backend.rag.rag_pipeline import build_rag_graph
+    from backend.rag.workflow import build_rag_graph
     return _container.get_or_create("rag_graph", build_rag_graph)
 
 

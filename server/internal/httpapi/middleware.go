@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -29,10 +31,32 @@ type statusWriter struct {
 }
 
 func (w *statusWriter) WriteHeader(code int) {
-	if w.status == 0 {
+	if w.status != 0 {
+		return
+	}
+	// 1xx 不是最终响应，不能阻止后续 200 写入。
+	if code >= 200 {
 		w.status = code
 	}
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap 允许 ResponseController 穿过日志包装访问底层连接能力。
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *statusWriter) FlushError() error {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err == nil && w.status == 0 {
+		w.status = http.StatusSwitchingProtocols
+	}
+	return conn, rw, err
 }
 
 func (w *statusWriter) Write(p []byte) (int, error) {
@@ -51,6 +75,9 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			rec := &statusWriter{ResponseWriter: w}
 			defer func() {
+				if rec.status == 0 {
+					rec.status = http.StatusOK
+				}
 				observability.WithTrace(logger, r.Context()).Info("http_request",
 					"method", r.Method,
 					"path", r.URL.Path,

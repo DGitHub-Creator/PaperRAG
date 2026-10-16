@@ -36,3 +36,5 @@ TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").strip().lower() 
 }
 """仅在服务确实部署在可信反向代理之后时才开启：开启后限流键取
 X-Forwarded-For 的首个地址。直连场景开启会让客户端伪造该头绕过限流。"""
+
+TRUSTED_PROXY_CIDRS = os.getenv("TRUSTED_PROXY_CIDRS", "")

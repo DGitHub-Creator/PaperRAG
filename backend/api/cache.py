@@ -21,4 +21,4 @@ async def clear_cache(_: User = Depends(require_admin)):
         return {"message": f"缓存已清空，移除 {n} 条记录"}
     except Exception as e:
         logger.exception("清空缓存失败")
-        raise HTTPException(status_code=500, detail=f"清空缓存失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e

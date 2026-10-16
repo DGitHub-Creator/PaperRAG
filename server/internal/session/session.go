@@ -61,10 +61,7 @@ type Service struct {
 
 // List 返回当前用户的会话摘要，按最后更新时间倒序。
 //
-// 与 Python 的一处**有意分歧**：那边把存储层异常吞成空列表（`conversation_storage.py:170`
-// 的 `except Exception: return []`），所以库里出错时 `/sessions` 会安静地显示"你没有会话"；
-// 这里如实回错误，由 handler 翻成 500。理由是"读不出来"伪装成"没有"会让用户去重建会话。
-// 这条分歧记进台账，不当成兼容性问题修掉。
+// Go 与 Python 均直接读 PG，不缓存会话；数据库异常由 handler 返回错误。
 func (s *Service) List(ctx context.Context, identity *auth.Identity) (*ListResponse, error) {
 	if s.Store == nil {
 		return nil, ErrStoreUnavailable

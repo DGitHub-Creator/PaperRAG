@@ -71,7 +71,7 @@ def python_routes() -> set[tuple[str, str]]:
     try:
         from backend.app import app
     except Exception as exc:  # 导不动就等于没法判，宁可红也不要默默通过
-        raise SystemExit(f"[ownership] 导入 backend.app 失败，无法判定服务侧: {exc}")
+        raise SystemExit(f"[ownership] 导入 backend.app 失败，无法判定服务侧: {exc}") from exc
 
     out: set[tuple[str, str]] = set()
     for route in app.routes:

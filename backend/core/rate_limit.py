@@ -15,11 +15,13 @@
 建应用时输出，来源就是这里导出的三个量。
 """
 
+from ipaddress import ip_address, ip_network
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request
 
-from backend.core.config.auth import RATE_LIMIT, TRUST_PROXY_HEADERS
+from backend.core.config.auth import RATE_LIMIT, TRUST_PROXY_HEADERS, TRUSTED_PROXY_CIDRS
 
 
 def _resolve_storage_uri() -> str | None:
@@ -31,12 +33,13 @@ def _resolve_storage_uri() -> str | None:
             return None
         import redis
 
-        client = redis.Redis.from_url(
-            REDIS_URL, socket_connect_timeout=1, socket_timeout=1
-        )
-        client.ping()
+        with redis.Redis.from_url(REDIS_URL, socket_connect_timeout=1, socket_timeout=1) as client:
+            client.ping()
         return REDIS_URL
-    except Exception:
+    except Exception as exc:
+        from backend.core.config.llm import APP_ENV
+        if APP_ENV in {"prod", "production"}:
+            raise RuntimeError("Redis 限流存储不可用，拒绝在生产环境降级") from exc
         return None
 
 
@@ -46,14 +49,26 @@ def _parse_default_limits(raw: str) -> list[str]:
     return [spec] if spec else []
 
 
+_trusted_networks = tuple(ip_network(value.strip(), strict=False) for value in TRUSTED_PROXY_CIDRS.split(",") if value.strip())
+
+
 def rate_limit_key(request: Request) -> str:
-    """限流键：可信代理场景取 X-Forwarded-For 首跳，否则取直连 IP。"""
-    if TRUST_PROXY_HEADERS:
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            # 首跳由最靠近客户端的代理写入；本服务只应部署在可信代理之后
-            return forwarded.split(",")[0].strip()
-    return get_remote_address(request)
+    """只从已配置的可信直连代理接受转发链，并从右侧剥离可信跳数。"""
+    remote = get_remote_address(request)
+    if not TRUST_PROXY_HEADERS:
+        return remote
+    try:
+        current = ip_address(remote)
+        if not any(current in network for network in _trusted_networks):
+            return remote
+        for value in reversed(request.headers.get("X-Forwarded-For", "").split(",")):
+            forwarded = ip_address(value.strip())
+            current = forwarded
+            if not any(current in network for network in _trusted_networks):
+                break
+        return str(current)
+    except ValueError:
+        return remote
 
 
 storage_uri = _resolve_storage_uri()

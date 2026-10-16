@@ -154,7 +154,7 @@ class MilvusWriter:
                     "has_proof_in_parent": doc.get("has_proof_in_parent", False),
                 }
                 for doc, dense_emb, sparse_emb in zip(
-                    batch, dense_embeddings, sparse_embeddings
+                    batch, dense_embeddings, sparse_embeddings, strict=True
                 )
             ]
 

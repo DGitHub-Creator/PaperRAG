@@ -129,7 +129,7 @@ async def refresh_token(
             raise credentials_exception
     except JWTError:
         logger.warning("Refresh token decode failed or token expired")
-        raise credentials_exception
+        raise credentials_exception from None
 
     user = db.query(User).filter(User.username == username).first()
     if not user:

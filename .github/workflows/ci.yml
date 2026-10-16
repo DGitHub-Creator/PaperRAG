@@ -19,13 +19,16 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra test
+        run: uv sync --frozen --extra test
 
       - name: Lint (ruff)
         run: uv run ruff check backend/ tests/ scripts/
 
       - name: Check API contracts
         run: uv run python scripts/check_contracts.py
+
+      - name: Check repository conventions
+        run: uv run python scripts/check_repository.py
 
       # P1 设计审查的准入门禁：结构与依据可追 + 接管卡开工必须 approved。
       # 放 CI 而不是只写进文档清单，是因为"记得跑"这件事本身不可依赖。
@@ -34,6 +37,39 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q --tb=short
+
+  storage:
+    name: PostgreSQL and Redis behavior
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15@sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c
+        env:
+          POSTGRES_DB: langchain_app
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Install dependencies
+        run: uv sync --frozen --extra test
+      - name: Verify real storage and migrations
+        run: uv run python scripts/verify_storage.py --postgres-container ${{ job.services.postgres.id }}
+      - name: Verify shared Go rate limits
+        working-directory: server
+        env:
+          REFACTOR_TEST_REDIS_URL: redis://127.0.0.1:6379/0
+        run: go test ./internal/httpapi/...
 
   go:
     name: Go server (fmt + vet + test)
@@ -94,6 +130,12 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install browser for security and transport regression
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify Markdown and transport behavior
+        run: npx playwright test e2e/markdown-security.spec.ts e2e/transport-state.spec.ts
 
       # 结构门禁：唯一请求出口、token 单一所有者、状态层不碰 DOM 这些约定不靠人盯。
       # 脚本只用标准库，所以这里用 runner 自带的 python3，不为它引 uv。

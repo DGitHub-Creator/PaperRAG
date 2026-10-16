@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,7 +27,10 @@ type Config struct {
 	// （backend/core/config 读的就是 REDIS_URL），两侧读出的必须指向同一个实例，
 	// 否则"Go 说 redis ok、Python 说 error"这种分歧会一直说不清。
 	// 为空时不拒绝启动：dev 形态下没 Redis 是常见状态，/ready 如实报 error 就是它的正确行为。
-	RedisURL string
+	RedisURL          string
+	RedisKeyPrefix    string
+	RateLimit         string
+	TrustedProxyCIDRs string
 	// Version 进 /health 响应，与 Python 侧的 version 字段同位。
 	Version string
 	// ReadyTimeout 是单项依赖探测的超时上限，默认对齐 backend/api/health.py 的 3s。
@@ -99,14 +103,16 @@ func (c Config) IsProduction() bool {
 // Load 读取配置并给默认值；只在 production 且必需项缺失时报错。
 func Load(service, defaultAddr string) (Config, error) {
 	cfg := Config{
-		Service:      service,
-		Env:          envString("APP_ENV", "development"),
-		Addr:         defaultAddr,
-		DatabaseURL:  os.Getenv("DATABASE_URL"),
-		RedisURL:     envString("REDIS_URL", "redis://127.0.0.1:6379/0"),
-		Version:      envString("VERSION", "dev"),
-		ReadyTimeout: envDuration("READY_TIMEOUT", 3*time.Second),
-		UpstreamURL:  envString("PYTHON_UPSTREAM", "http://127.0.0.1:8000"),
+		Service:        service,
+		Env:            envString("APP_ENV", "development"),
+		Addr:           defaultAddr,
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		RedisURL:       envString("REDIS_URL", "redis://127.0.0.1:6379/0"),
+		RedisKeyPrefix: envString("REDIS_KEY_PREFIX", "researchpilot"),
+		RateLimit:      os.Getenv("RATE_LIMIT"),
+		Version:        envString("VERSION", "dev"),
+		ReadyTimeout:   envDuration("READY_TIMEOUT", 3*time.Second),
+		UpstreamURL:    envString("PYTHON_UPSTREAM", "http://127.0.0.1:8000"),
 
 		JWTSecretKey:         os.Getenv("JWT_SECRET_KEY"),
 		JWTAlgorithm:         envString("JWT_ALGORITHM", "HS256"),
@@ -115,6 +121,17 @@ func Load(service, defaultAddr string) (Config, error) {
 		AdminInviteCode:      os.Getenv("ADMIN_INVITE_CODE"),
 		MinPasswordLength:    envInt("MIN_PASSWORD_LENGTH", 8),
 		PasswordPBKDF2Rounds: envInt("PASSWORD_PBKDF2_ROUNDS", 310000),
+	}
+	if cfg.IsProduction() {
+		if _, configured := os.LookupEnv("RATE_LIMIT"); !configured {
+			cfg.RateLimit = "60/minute"
+		}
+	}
+	if map[string]bool{"1": true, "true": true, "yes": true, "on": true}[strings.ToLower(strings.TrimSpace(os.Getenv("TRUST_PROXY_HEADERS")))] {
+		cfg.TrustedProxyCIDRs = os.Getenv("TRUSTED_PROXY_CIDRS")
+		if cfg.TrustedProxyCIDRs == "" {
+			return cfg, fmt.Errorf("信任代理头时必须配置 TRUSTED_PROXY_CIDRS")
+		}
 	}
 	if port := os.Getenv("PORT"); port != "" {
 		cfg.Addr = ":" + port

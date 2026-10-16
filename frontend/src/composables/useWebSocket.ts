@@ -2,11 +2,13 @@
 import { ref } from "vue"
 import { wsChatUrl } from "../api/ws"
 import { parseStreamEvent } from "../api/sse"
+import { t } from "../i18n"
 import type { ChatRequest, StreamEvent } from "../api/types"
 
 const isConnected = ref(false)
 
 let socket: WebSocket | null = null
+let inFlight = false
 let onEvent: ((event: StreamEvent) => void) | null = null
 
 export function useWebSocket() {
@@ -15,24 +17,35 @@ export function useWebSocket() {
     onEvent = handler
     const next = new WebSocket(wsChatUrl(token))
     next.onopen = () => {
+      if (socket !== next) return
       isConnected.value = true
     }
     next.onmessage = (message: MessageEvent) => {
-      if (typeof message.data !== "string") return
+      if (socket !== next || typeof message.data !== "string") return
       const event = parseStreamEvent(message.data)
-      if (event) onEvent?.(event)
+      if (event) {
+        if (event.type === "done" || event.type === "error") inFlight = false
+        onEvent?.(event)
+      }
     }
-    next.onerror = () => {
+    function closed(): void {
+      if (socket !== next) return
       isConnected.value = false
+      if (inFlight) {
+        inFlight = false
+        onEvent?.({ type: "error", content: t("ws.error") })
+      }
     }
-    next.onclose = () => {
-      isConnected.value = false
-    }
+    next.onerror = closed
+    next.onclose = closed
     socket = next
   }
 
-  function send(input: ChatRequest): void {
-    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(input))
+  function send(input: ChatRequest): boolean {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+    socket.send(JSON.stringify(input))
+    inFlight = true
+    return true
   }
 
   function disconnect(): void {
@@ -45,6 +58,7 @@ export function useWebSocket() {
       socket = null
     }
     onEvent = null
+    inFlight = false
     isConnected.value = false
   }
 

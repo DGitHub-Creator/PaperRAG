@@ -101,17 +101,22 @@ def extract_outcome(messages: list, source_map: dict | None = None) -> dict:
     for msg in reversed(messages):
         if hasattr(msg, "tool_calls"):
             for tc in msg.tool_calls or []:
-                if tc["name"] == "Answer":
-                    final_answer = tc["args"].get("answer", "")
+                if tc["name"] in {"Answer", "Question"}:
+                    key = "answer" if tc["name"] == "Answer" else "question"
+                    final_answer = tc["args"].get(key, "")
                     break
         if final_answer:
             break
 
     if not final_answer:
         for msg in reversed(messages):
+            if getattr(msg, "type", None) != "ai":
+                continue
             content = getattr(msg, "content", "")
             if content and "out_of_scope" not in str(content):
-                final_answer = content
+                final_answer = content if isinstance(content, str) else "".join(
+                    block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"
+                )
                 break
 
     citations = extract_citations(final_answer)

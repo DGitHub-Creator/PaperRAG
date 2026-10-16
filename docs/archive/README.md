@@ -49,3 +49,15 @@
 | `docs/refactor/README.md` | `docs/README.md`（文档宪法） |
 
 **新文档不再取号**（不再有 `15-`、`16-`…）：分层与命名规则见 [`../README.md`](../README.md) §0/§9。
+
+## 2026-10-16 文档整理快照
+
+以下原文保留追溯，不再作为当前现状、规则或进度。现行分类与入口见 [文档导航](../README.md)。
+
+- [12-known-code-issues.md](2026-10-16-12-known-code-issues.md)
+- [13-frontend-backend-architecture.md](2026-10-16-13-frontend-backend-architecture.md)
+- [14-feature-modules.md](2026-10-16-14-feature-modules.md)
+- [frontend-backend-division-of-labor.md](2026-10-16-frontend-backend-division-of-labor.md)
+
+- [旧环境运行记录](2026-10-16-p0-environment.md)：由根 README 与 plans/p0-environment.md 接管。
+- [P0 阶段历史实录](2026-10-15-p0-worklog.md)：阶段已收口，仅用于追溯。

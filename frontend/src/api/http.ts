@@ -117,6 +117,7 @@ export function uploadFile<T>(path: string, file: File, opts: UploadOptions): Pr
     const form = new FormData()
     form.append("file", file)
     xhr.open(opts.method, BASE + path)
+    xhr.timeout = 120_000
     const token = readToken()
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
     xhr.upload.onprogress = (e: ProgressEvent) => {
@@ -129,15 +130,19 @@ export function uploadFile<T>(path: string, file: File, opts: UploadOptions): Pr
         reject(new ApiError(xhr.status, detailFromJson(xhr.responseText, xhr.status)))
         return
       }
-      resolve(JSON.parse(xhr.responseText || "{}") as T)
+      try { resolve(JSON.parse(xhr.responseText || "{}") as T) }
+      catch (_) { reject(new ApiError(xhr.status, "invalid_response")) }
     }
     xhr.onerror = () => reject(new ApiError(0, REASON_UPLOAD_FAILED))
     xhr.ontimeout = () => reject(new ApiError(0, REASON_UPLOAD_TIMEOUT))
     xhr.onabort = () => reject(new ApiError(0, REASON_UPLOAD_ABORTED))
-    if (opts.signal) {
-      if (opts.signal.aborted) xhr.abort()
-      else opts.signal.addEventListener("abort", () => xhr.abort())
+    const abort = () => xhr.abort()
+    xhr.onloadend = () => opts.signal?.removeEventListener("abort", abort)
+    if (opts.signal?.aborted) {
+      reject(new ApiError(0, REASON_UPLOAD_ABORTED))
+      return
     }
+    opts.signal?.addEventListener("abort", abort, { once: true })
     xhr.send(form)
   })
 }

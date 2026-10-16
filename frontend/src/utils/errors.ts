@@ -7,6 +7,9 @@ const REASON_KEYS: Record<string, string> = {
   upload_failed: "errors.upload_failed",
   upload_timeout: "errors.upload_timeout",
   upload_aborted: "errors.upload_aborted",
+  invalid_response: "errors.invalid_response",
+  stream_incomplete: "errors.stream_incomplete",
+  stream_frame_too_large: "errors.stream_frame_too_large",
   empty_response_body: "errors.empty_response_body",
 }
 

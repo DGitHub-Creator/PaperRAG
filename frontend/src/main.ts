@@ -21,9 +21,7 @@ import "./assets/chat.css"
 import "./assets/history.css"
 import "./assets/settings.css"
 import "./assets/rag-trace.css"
-import { configureRenderer } from "./utils/markdown"
 import i18n from "./i18n"
 import router from "./router"
 
-configureRenderer()
 createApp(App).use(i18n).use(router).mount("#app")

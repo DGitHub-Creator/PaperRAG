@@ -378,6 +378,9 @@
     "upload_failed": "上传请求失败",
     "upload_timeout": "上传超时",
     "upload_aborted": "上传已取消",
-    "empty_response_body": "响应体为空"
+    "empty_response_body": "响应体为空",
+    "stream_incomplete": "连接在回答完成前中断，请重试",
+    "stream_frame_too_large": "服务返回的单条事件过大",
+    "invalid_response": "服务返回的数据格式无效"
   }
 }

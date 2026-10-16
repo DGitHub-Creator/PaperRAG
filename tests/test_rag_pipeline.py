@@ -1,19 +1,6 @@
 """LangGraph RAG 管线节点单元测试 —— mock LLM 输出。"""
 
-import sys
 from unittest.mock import MagicMock, patch
-
-# Mock langgraph if not installed
-for mod in ["langgraph", "langgraph.checkpoint", "langgraph.checkpoint.memory",
-            "langgraph.graph", "langgraph.types"]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
-
-# Mock langchain.chat_models if not installed
-if "langchain" not in sys.modules:
-    sys.modules["langchain"] = MagicMock()
-if "langchain.chat_models" not in sys.modules:
-    sys.modules["langchain.chat_models"] = MagicMock()
 
 
 def _make_state(overrides: dict | None = None) -> dict:

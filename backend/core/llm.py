@@ -19,6 +19,7 @@ from backend.core.config import (
     LLM_GRADE_MODEL,
     LLM_MODEL,
     LLM_PROVIDER,
+    LLM_TIMEOUT_SECONDS,
 )
 from backend.core.logging_config import get_logger
 
@@ -54,6 +55,7 @@ def get_chat_model(role: str = "agent"):
         api_key=LLM_API_KEY,
         temperature=temp,
         stream_usage=True,
+        timeout=LLM_TIMEOUT_SECONDS,
     )
     if LLM_BASE_URL:
         kwargs["base_url"] = LLM_BASE_URL

@@ -22,7 +22,7 @@ try:
     import yaml
 except ImportError:  # pragma: no cover
     print("[contracts] 需要 PyYAML：请在 uv 环境里运行（uv run python scripts/check_contracts.py）")
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / "contracts"
@@ -107,7 +107,7 @@ def path_matches(contract_path: str, called_path: str) -> bool:
     b = called_path.strip("/").split("/")
     if len(a) != len(b):
         return False
-    for seg_a, seg_b in zip(a, b):
+    for seg_a, seg_b in zip(a, b, strict=True):
         if seg_a.startswith("{") and seg_a.endswith("}"):
             continue
         if seg_a != seg_b:

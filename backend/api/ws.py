@@ -8,8 +8,10 @@
 """
 
 import json
-import time
-from collections import defaultdict
+import asyncio
+
+from limits import parse as parse_limit
+from pydantic import ValidationError
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
@@ -18,13 +20,13 @@ from backend.core.database import SessionLocal
 from backend.core.logging_config import get_logger
 from backend.core.models import User
 from backend.services.agent import chat_with_agent_stream
+from backend.core.rate_limit import limiter
+from backend.schemas.schemas import ChatRequest
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-_WS_RATE_LIMIT = 10
-_WS_RATE_WINDOW = 60.0
-_ws_msg_counts: dict[str, list[float]] = defaultdict(list)
+_WS_LIMIT = parse_limit("10/minute")
 
 
 async def get_user_from_ws_token(websocket: WebSocket) -> User | None:
@@ -42,11 +44,11 @@ async def get_user_from_ws_token(websocket: WebSocket) -> User | None:
     if not token:
         logger.warning("WebSocket 未提供 token")
         return None
-    db = SessionLocal()
-    try:
-        return get_user_from_bearer_token(token, db)
-    finally:
-        db.close()
+    def authenticate():
+        with SessionLocal() as db:
+            return get_user_from_bearer_token(token, db)
+
+    return await asyncio.to_thread(authenticate)
 
 
 @router.websocket("/ws/chat")
@@ -76,18 +78,17 @@ async def websocket_chat_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            data = await websocket.receive_json()
-            message = data.get("message", "")
-            session_id = data.get("session_id", "default_session")
-
-            now = time.time()
-            _ws_msg_counts[username] = [
-                t for t in _ws_msg_counts[username] if now - t < _WS_RATE_WINDOW
-            ]
-            if len(_ws_msg_counts[username]) >= _WS_RATE_LIMIT:
+            try:
+                body = ChatRequest.model_validate(await websocket.receive_json())
+                if not body.message.strip():
+                    raise ValueError("消息不能为空")
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                await websocket.send_json({"type": "error", "content": "消息格式无效"})
+                continue
+            message, session_id = body.message, body.session_id or "default_session"
+            if not await asyncio.to_thread(limiter.limiter.hit, _WS_LIMIT, username, "ws-chat"):
                 await websocket.send_json({"type": "error", "content": "消息频率超限，请稍后再试"})
                 continue
-            _ws_msg_counts[username].append(now)
 
             # 使用已有的 SSE 流式函数，将事件转发到 WebSocket
             async for chunk in chat_with_agent_stream(
@@ -99,8 +100,8 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                     try:
                         event = json.loads(json_str)
                         await websocket.send_json(event)
-                    except json.JSONDecodeError:
-                        pass
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError("内部流式事件不是合法 JSON") from exc
                 elif chunk.strip() == "data: [DONE]":
                     await websocket.send_json({"type": "done"})
 
@@ -111,4 +112,4 @@ async def websocket_chat_endpoint(websocket: WebSocket):
         try:
             await websocket.send_json({"type": "error", "content": "服务器内部错误"})
         except Exception:
-            pass
+            logger.warning("可选操作失败: websocket_chat_endpoint", exc_info=True)

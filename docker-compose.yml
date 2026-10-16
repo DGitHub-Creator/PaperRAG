@@ -9,7 +9,7 @@ name: researchpilot
 services:
   postgres:
     container_name: researchpilot-postgres
-    image: postgres:15
+    image: postgres:15@sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c
     environment:
       POSTGRES_DB: langchain_app
       POSTGRES_USER: postgres
@@ -26,7 +26,7 @@ services:
 
   redis:
     container_name: researchpilot-redis
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"

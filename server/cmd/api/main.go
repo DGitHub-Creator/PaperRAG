@@ -38,10 +38,19 @@ func main() {
 	}
 
 	logger := observability.New(cfg.Service, !cfg.IsProduction())
+	rate, err := httpapi.NewRateLimiter(cfg.RedisURL, cfg.RedisKeyPrefix, cfg.RateLimit, cfg.TrustedProxyCIDRs)
+	if err != nil {
+		logger.Error("限流配置无效", "error", err)
+		os.Exit(1)
+	}
+	defer rate.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, poolErr := newPool(ctx, cfg, logger)
+	if pool != nil {
+		defer pool.Close()
+	}
 	checks := databaseChecks(pool, poolErr, cfg)
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger:   logger,
@@ -50,9 +59,9 @@ func main() {
 		Timeout:  cfg.ReadyTimeout,
 		Upstream: upstreamProxy(cfg, logger),
 	})
-	authSvc := mountAuthRoutes(router, cfg, pool, poolErr, logger)
-	mountSessionRoutes(router, authSvc, pool, poolErr, logger)
-	logger.Info("upstream_configured", "url", cfg.UpstreamURL)
+	authSvc := mountAuthRoutes(router, cfg, pool, poolErr, logger, rate)
+	mountSessionRoutes(router, authSvc, pool, poolErr, logger, rate)
+	logger.Info("上游门面配置完成", "enabled", cfg.UpstreamURL != "")
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
@@ -89,7 +98,7 @@ func main() {
 //
 // 返回那个 *auth.Service 是给业务面复用身份解析的唯一途径——每条接管的路由都要先知道
 // "这是谁"，而令牌校验只能有一份实现（各处各抄就会漂出不同的 401 语义，那是安全语义）。
-func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) *auth.Service {
+func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poolErr error, logger *slog.Logger, rate *httpapi.RateLimiter) *auth.Service {
 	svc := auth.NewService(
 		userStore(pool, poolErr),
 		auth.TokenConfig{
@@ -107,12 +116,12 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 	if pool != nil {
 		svc.Prefs = db.New(pool)
 	}
-	router.Post("/api/v1/auth/register", auth.RegisterHandler(svc))
-	router.Post("/api/v1/auth/login", auth.LoginHandler(svc))
-	router.Get("/api/v1/auth/me", auth.MeHandler(svc))
-	router.Post("/api/v1/auth/password", auth.ChangePasswordHandler(svc))
-	router.Get("/api/v1/me/preferences", auth.GetPreferencesHandler(svc))
-	router.Put("/api/v1/me/preferences", auth.PutPreferencesHandler(svc))
+	router.Post("/api/v1/auth/register", rate.Wrap(auth.RegisterHandler(svc), 10, time.Minute))
+	router.Post("/api/v1/auth/login", rate.Wrap(auth.LoginHandler(svc), 20, time.Minute))
+	router.Get("/api/v1/auth/me", rate.Default(auth.MeHandler(svc)))
+	router.Post("/api/v1/auth/password", rate.Default(auth.ChangePasswordHandler(svc)))
+	router.Get("/api/v1/me/preferences", rate.Default(auth.GetPreferencesHandler(svc)))
+	router.Put("/api/v1/me/preferences", rate.Default(auth.PutPreferencesHandler(svc)))
 	return svc
 }
 
@@ -122,14 +131,14 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 //
 // 显式路由优先于 NewRouter 里那条 `/api/*` 通配转发（chi 的 trie 按具体度匹配），
 // 所以接管一条就少转发一条，不用动反代本身。
-func mountSessionRoutes(router *chi.Mux, authSvc *auth.Service, pool *pgxpool.Pool, poolErr error, logger *slog.Logger) {
+func mountSessionRoutes(router *chi.Mux, authSvc *auth.Service, pool *pgxpool.Pool, poolErr error, logger *slog.Logger, rate *httpapi.RateLimiter) {
 	svc := &session.Service{
 		Auth:   authSvc,
 		Store:  sessionStore(pool, poolErr),
 		Logger: logger,
 	}
-	router.Get("/api/v1/sessions", session.ListHandler(svc))
-	router.Delete("/api/v1/sessions/{session_id}", session.DeleteHandler(svc))
+	router.Get("/api/v1/sessions", rate.Default(session.ListHandler(svc)))
+	router.Delete("/api/v1/sessions/{session_id}", rate.Default(session.DeleteHandler(svc)))
 }
 
 // sessionStore 与 userStore 同构：池不可用时给一个"一律报错"的实现，于是会话面回 500，

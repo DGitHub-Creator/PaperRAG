@@ -1,187 +1,54 @@
-"""Agent 模块单元测试 —— ConversationStorage 消息持久化与缓存。"""
+"""对话存储的边界验证；并发、引用保留和跨服务删除在真库验收。"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-_STORAGE_MOD = "backend.services.conversation_storage"
+import pytest
 
-
-class TestConversationStorageCacheKeys:
-    def setup_method(self):
-        from backend.services.conversation_storage import ConversationStorage
-        self.store = ConversationStorage
-
-    def test_messages_cache_key(self):
-        key = self.store._messages_cache_key("alice", "sess1")
-        assert key == "chat_messages:alice:sess1"
-
-    def test_sessions_cache_key(self):
-        key = self.store._sessions_cache_key("alice")
-        assert key == "chat_sessions:alice"
+from backend.services import conversation_storage
+from backend.services.conversation_storage import ConversationStorage
 
 
-class TestConversationStorageSave:
-    def test_save_new_session(self):
-        from langchain_core.messages import HumanMessage
-
-        from backend.services.conversation_storage import ConversationStorage
-
-        store = ConversationStorage()
-        db = MagicMock()
-
-        user = MagicMock()
-        user.id = 1
-        session_filter = MagicMock()
-        session_filter.first.return_value = None
-        user_filter = MagicMock()
-        user_filter.first.return_value = user
-
-        def query_side_effect(model):
-            name = getattr(model, '__name__', '')
-            if name == 'User':
-                q = MagicMock()
-                q.filter.return_value = user_filter
-                return q
-            if name == 'ChatSession':
-                q = MagicMock()
-                q.filter.return_value = session_filter
-                return q
-            q = MagicMock()
-            q.filter.return_value = MagicMock()
-            return q
-
-        db.query.side_effect = query_side_effect
-        db.add = MagicMock()
-        db.flush = MagicMock()
-        db.commit = MagicMock()
-        db.close = MagicMock()
-
-        with (
-            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
-            patch.object(store, "_messages_cache_key", return_value="cache:k"),
-            patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch(f"{_STORAGE_MOD}.cache"),
-        ):
-            store.save(
-                user_id="alice",
-                session_id="sess1",
-                messages=[HumanMessage(content="Hello")],
-            )
-            db.commit.assert_called_once()
+@pytest.fixture
+def db(monkeypatch):
+    session = MagicMock()
+    session.__enter__.return_value = session
+    monkeypatch.setattr(conversation_storage, "SessionLocal", lambda: session)
+    return session
 
 
-class TestConversationStorageLoad:
-    def test_load_from_redis(self):
-        from backend.services.conversation_storage import ConversationStorage
-
-        store = ConversationStorage()
-        cache_mock = MagicMock()
-        cache_mock.get_json.return_value = [{"type": "human", "content": "Hello"}]
-
-        with (
-            patch(f"{_STORAGE_MOD}.cache", cache_mock),
-            patch.object(store, "_messages_cache_key", return_value="cache:k"),
-        ):
-            result = store.load("alice", "sess1")
-            assert len(result) == 1
-            assert result[0].content == "Hello"
-
-    def test_load_empty_session(self):
-        from backend.services.conversation_storage import ConversationStorage
-
-        store = ConversationStorage()
-        cache_mock = MagicMock()
-        cache_mock.get_json.return_value = None
-        db = MagicMock()
-        db.query.return_value.filter.return_value.all.return_value = []
-        db.close = MagicMock()
-
-        with (
-            patch(f"{_STORAGE_MOD}.cache", cache_mock),
-            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
-            patch.object(store, "_messages_cache_key", return_value="cache:k"),
-        ):
-            result = store.load("alice", "empty_sess")
-            assert result == []
+def test_append_turn_uses_transaction_and_preserves_trace(db):
+    db.execute.side_effect = [MagicMock(scalar_one_or_none=lambda: 1), MagicMock(scalar_one=lambda: 5)]
+    trace = {"source_map": {"Source 1": {"chunk_id": "old"}}}
+    ConversationStorage().append_turn("alice", "session", "question", "answer", trace)
+    messages = db.add_all.call_args.args[0]
+    assert [(row.message_type, row.content) for row in messages] == [("human", "question"), ("ai", "answer")]
+    assert messages[1].rag_trace == trace
+    db.begin.assert_called_once()
+    db.__exit__.assert_called_once()
 
 
-class TestConversationStorageList:
-    def test_list_sessions(self):
-        import backend.services.conversation_storage as storage_mod
-        from backend.services.conversation_storage import ConversationStorage
+def test_missing_user_is_a_write_failure(db):
+    db.execute.return_value.scalar_one_or_none.return_value = None
+    with pytest.raises(ValueError, match="用户不存在"):
+        ConversationStorage().append_turn("missing", "session", "question", "answer")
+    db.add_all.assert_not_called()
 
-        store = ConversationStorage()
-        user = MagicMock()
-        user.id = 1
-        session_record = MagicMock()
-        session_record.id = 100
-        session_record.session_id = "sess1"
-        session_record.updated_at = MagicMock()
-        session_record.updated_at.isoformat.return_value = "2026-06-16T12:00:00"
 
-        db = MagicMock()
-        q_user = MagicMock()
-        q_user.filter.return_value = MagicMock(first=MagicMock(return_value=user))
+@pytest.mark.parametrize("method,args", [
+    ("list_session_infos", ("alice",)),
+    ("get_session_messages", ("alice", "session")),
+    ("delete_session", ("alice", "session")),
+])
+def test_database_errors_propagate_and_release_session(db, method, args):
+    db.execute.side_effect = RuntimeError("database unavailable")
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        getattr(ConversationStorage(), method)(*args)
+    db.__exit__.assert_called_once()
 
-        q_session = MagicMock()
-        q_session.filter.return_value = q_session
-        q_session.order_by.return_value = MagicMock(all=MagicMock(return_value=[session_record]))
 
-        q_msg = MagicMock()
-        q_msg.filter.return_value = MagicMock(count=MagicMock(return_value=5))
-
-        call_log = []
-        def query_side_effect(*args):
-            call_log.append(args)
-            if args and args[0] is storage_mod.User:
-                return q_user
-            if args and args[0] is storage_mod.ChatSession:
-                return q_session
-            if args and args[0] is storage_mod.ChatMessage:
-                return q_msg
-            return MagicMock()
-
-        db.query.side_effect = query_side_effect
-        db.close = MagicMock()
-
-        with (
-            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
-            patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch(f"{_STORAGE_MOD}.cache") as cache_mock,
-        ):
-            cache_mock.get_json.return_value = None
-            infos = store.list_session_infos("alice")
-            assert len(call_log) > 0, f"No query calls made. infos={infos}"
-            assert len(infos) == 1, f"infos={infos}, calls={call_log}"
-            assert infos[0]["session_id"] == "sess1"
-
-    def test_delete_session_exists(self):
-        from backend.services.conversation_storage import ConversationStorage
-
-        store = ConversationStorage()
-        db = MagicMock()
-        session = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = session
-        db.delete = MagicMock()
-
-        with (
-            patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db),
-            patch.object(store, "_messages_cache_key", return_value="cache:k"),
-            patch.object(store, "_sessions_cache_key", return_value="cache:sk"),
-            patch(f"{_STORAGE_MOD}.cache"),
-        ):
-            result = store.delete_session("alice", "sess1")
-            assert result is True
-
-    def test_delete_session_not_found(self):
-        from backend.services.conversation_storage import ConversationStorage
-
-        store = ConversationStorage()
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = None
-
-        with patch(f"{_STORAGE_MOD}.SessionLocal", return_value=db):
-            result = store.delete_session("alice", "nonexistent")
-            assert result is False
+def test_delete_missing_or_other_user_returns_false(db):
+    db.execute.return_value.rowcount = 0
+    assert ConversationStorage().delete_session("alice", "other-session") is False
 
 
 class TestToLangchainMessages:

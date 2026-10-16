@@ -1,3 +1,5 @@
+> 历史快照：2026-10-16 整理前版本，不作为现行规范或现状。现行入口见 [文档导航](../README.md)。
+
 # 13 — 前后端架构（As-Is 实测，以及与 To-Be 的差）
 
 > **本文定位**：[02-target-architecture.md](02-target-architecture.md) 写的是**目标态**，本文写的是

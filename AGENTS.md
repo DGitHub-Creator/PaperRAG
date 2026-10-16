@@ -1,210 +1,146 @@
-# AGENTS.md —— 给接手这个仓库的 agent
+# AGENTS.md — 仓库协作与开发规范
 
-> 本文只放三样东西：**项目愿景、项目规约、必须严格遵守的内容**。
-> 它是常青的，所以**不写日志**——"第几轮做了什么、实跑读数是多少、当时踩了什么坑"一律在
-> [`docs/WORKLOG.md`](docs/WORKLOG.md)；进度真相**只有** [`docs/progress.json`](docs/progress.json)；
-> 代码层的问题与处置在 [`docs/rules/12-known-code-issues.md`](docs/rules/12-known-code-issues.md) 台账。
-> 往本文里追加 dated 内容 = 违反 `docs/rules/08` §6。
+## 1. 使用范围与实现原则
 
-## 1. 项目愿景与定位
+适用于 ResearchPilot 仓库自有代码、脚本、数据库迁移、配置和现行文档。
+用户本轮指令优先；不要把历史记录中的建议当成当前要求。
 
-**ResearchPilot**（原 PaperRAG）：面向研究者的 AI 科研工作台。
+- 优先最简单、直接、最少改动的实现，先检查已有函数和类型。
+- 只有多个真实实现、调用方或重复逻辑才引入抽象；不要提前增加 Manager、Service、Factory、Adapter 等层。
+- 按故障根因重构，保留已有能力与对外契约；不能靠吞异常、空返回或修改测试掩盖缺陷。
+- 文件拆分以职责为依据；行数用于提醒审查，不作为制造转发文件的理由。
 
-- **三条架构定位**：Go 是唯一公开入口与唯一全局调度；Python（`backend/`）只被动执行单次 `AIExecution`；
-  **PostgreSQL 是唯一业务真相**，Milvus 降为可重建索引。
-- **三方分工（用户 2026-10-14 定）**：前端负责展示；Python 负责核心业务端（agent 领域的库与方法多，
-  用它方便）；Go 负责后端与编排等一切后端能力——**能用 Go 就用 Go，实现不了的才用 Python**，
-  目标是一个高性能后端服务。
-- **阶段之间的取舍按这条序位仲裁（用户 2026-10-15 定）**：
-  **正确性 > 架构一致性 > 可测试性 > 功能完整度 > 开发速度**。
-  开发阶段不为短期产品进度打乱阶段依赖，也不为赶进度引入临时实现；
-  产品轴暂时不前进是**可接受的结果**。论证与执行形式见 `rules/08 §1/§2/§10` 与 `plans/04 §4.4`。
-- **产品轴愿景**（五个入口、十项能力、V1.0–V4.0 路线）见 [`docs/rules/11-product-vision.md`](docs/rules/11-product-vision.md)。
-  终局**不是**"输入主题一键生成一篇论文"，而是"输入研究方向，建立能持续积累知识、追踪证据、
-  执行研究任务的科研工作空间"（`11 §11`）。
-- **两轴别混用编号**：工程阶段 **P0–P3**（`plans/04` 定义）、产品价值 **V1.0–V4.0**（`rules/11` 定义），
-  映射见 `11 §7`。
+## 2. 权威入口与冲突处理
 
-## 2. 文档权威层级（冲突时按此优先级）
-
-> **目录结构、分类、命名与归档规则见 [`docs/README.md`](docs/README.md)（文档宪法）**；下表是**内容**的权威层级。
-
-| 顺位 | 文件 | 性质 |
-| --- | --- | --- |
-| 1 | `docs/rules/08-principles-and-conventions.md` | **最高约束**（四条原则、阶段顺序律、任务卡规范、开发规范、进度同步律） |
-| 2 | `docs/progress.json` | **进度唯一真相**；`PROGRESS.md` 与 `progress.html` 是它的生成物，改完必须重跑 `sync_progress.py` |
-| 3 | `docs/plans/09-milestone-p0.md`、`docs/rules/10-frontend-structure.md` | 当前阶段的任务卡与退出标准 |
-| 3.5 | `docs/rules/11-product-vision.md`、`docs/rules/12-known-code-issues.md` | 产品轴（V1–V4）与代码问题台账 |
-| 3.6 | `docs/rules/13-frontend-backend-architecture.md`、`docs/rules/14-feature-modules.md`、`docs/rules/frontend-backend-division-of-labor.md` | **As-Is 实测**：13 = 前后端与数据面的当前形状（每条带 `file:line`），14 = 产品轴逐功能模块规划，division-of-labor = M1–M17 × 三方分工 + 表级写入边界 |
-| 4 | `contracts/` | Go↔Python 契约；改契约改这里，`check_contracts.py` 机检 |
-| 5 | `docs/WORKLOG.md` | **逐轮实录（日志）**：某轮的产出、证据等级、实跑读数、踩过的坑。dated 事实，**不作为规约** |
-| 6 | `docs/reference/00-audit.md`、`docs/reference/01-current-architecture.md` | **dated 事实**：历史审计基线，**不是现状**（只读，不追改） |
-| 7 | `docs/archive/` | 归档件，**不作为实施依据**，正文逐字保留 |
-
-**两层分界（别混用）**：`docs/rules/` = **常青规则**（改它等于改契约，必须先回文档层对齐再动代码）；
-`docs/plans/` = **会变的详细计划**（实施细节以它为准，但与 `rules/` 冲突时让位于 rules）。
-**一句话**：内容听 `08`，结构听 `docs/README.md`，进度听 `progress.json`，历史听 `WORKLOG.md`。
-
-## 3. 现在的架构事实（只留结论；来龙去脉见 `WORKLOG.md`）
-
-- **两种运行形态**：dev = **中间件容器 + 三个源码进程**（Go / Python / 前端，见 §6），**dev compose 里没有任何应用服务**（由 `check_nginx_routes.py` 的 R5 守着，台账 C29 已处置）；
-  prod = `docker-compose.prod.yml` 的**全栈容器**（部署形态）。"容器只跑中间件"这条定案**只管 dev**。
-- **dev 的入口链**：`vite`（:5173）→ **go-api**（:8080）→ 尚未迁移的路径反代给 `PYTHON_UPSTREAM`
-  （默认 `127.0.0.1:8000`）。**搬一条路由就少转发一条**（`14 §19` 铁律 2「门面先于重写」）。
-- **Go 原生服务的面**：8 条业务（auth 的 register/login/me/password、me/preferences 的 GET+PUT、
-  sessions 的 list/delete）+ 4 条探针（`/api/v1/health`、`/api/v1/ready` 及两条根路径别名）。
-  `/ready` 的探测键是 `database` + `redis`，键名与 detail 文案与 Python 逐字对齐。
-- **Python 仍是主业务后端**：浏览器面 13 条 + 内部面 7 条（`/internal/v1/ai/*`，**零生产调用方**）
-  + 前端不调但仍可达 12 条 → "只被动执行单次 AIExecution"**尚未成立**。
-  每条面由 `contracts/route-ownership.md` + `scripts/check_route_ownership.py` 逐一认领（归属 ∈ `go`/`shared`/`proxy`/`internal`）：接管了却没删、新加了没人认领，都会红。
-- **数据面**：`server/migrations/` 3 份迁移**已有执行器**（`dev.py migrate-go`，决策 D8 定案：显式命令、不进启动路径；台账 C18 已处置），dev 库实测 13 张基础表 = 12 张建表 + `schema_migrations`；sqlc 10 条查询分布在 3 个文件
-  （`users` / `user_preferences` / `chat_sessions`），也就是 **Go 今天只读写 3 张表**。
-  ⚠️ `contracts/table-acl.md` 声明 25 张（现场取：`grep -c '^| `' contracts/table-acl.md`），其中 18 张的 `go: W` 是
-  **纸面归属**（库里没有这些表，台账 C30，差集已逐张点名在 ACL 文末）；另有 5 张库里存在但未登记，归属属决策 D6。
-- **文档真相不在 PG**：`/documents` 读文件系统 `UPLOAD_DIR` + `ingested_state.json` + Milvus（chunk 数），
-  所以 Go 接管它的硬前置是先建文档真相表；`rag_trace` 是 pydantic **投影**而非透传（台账 C34）。
-- **迁移编号规则**（详见 `plans/05 §2.6`）：`000001` 基线 / `000002` `ai_executions` / `000003`
-  `user_preferences` 已落；`000004` `fix_drift` / `000005` `paper_chunks` 待落。**条件性预留不占号**。
-  新表一律 `TIMESTAMPTZ`；可空列做唯一键成员时必须 `NOT NULL DEFAULT ''`（PG 里 NULL 互不相等，
-  唯一约束会静默失效）；实现没写到的列不预先建；`GRANT` 在角色定义之前不写。
-- **分支布局**：远端只剩 `main`，本地工作分支就是 `main`（跟踪 `origin/main`）。
-  ⚠️ `backup/main-pre-rewrite-20261012` 携带 2026-10-11 历史重写**之前**的 92 个提交（含已清除的
-  个人/设备信息）——**不要 push 它、不要删它、不要把本地 `main` 挪回它**。
-  PR 入口形态：`https://github.com/DGitHub-Creator/ResearchPilot/pull/new/<分支名>`。
-- **读数一律现场取，别抄文档里的数字**：`uv run python -m pytest -q`、`--collect-only -m <层>`、
-  `uv run python scripts/sync_progress.py --check`、`grep -c operationId: contracts/openapi.yaml`。
-
-## 4. ⚠️ 已被推翻的旧结论（**不要重复相信**）
-
-> 一行一条；论证、取数方式与操作坑见 [`docs/WORKLOG.md`](docs/WORKLOG.md) 的**附 B / 附 B-1**。
-
-| 旧结论 | 事实 |
+| 问题 | 依据 |
 | --- | --- |
-| 「本机缺一次重启才能用 Docker」 | 真因只是 Docker Desktop 没在运行，拉起后约 5 秒就绪 |
-| 「Docker Desktop 是系统级安装」 | **这条更正本身是错的**：它是 per-user 安装（`%LOCALAPPDATA%\Programs\DockerDesktop`） |
-| 「compose 不写 `name:` 无所谓」 | 项目名会退回**目录名**（本机叫 `PaperRAG`），换目录 clone 就换一个项目名（C26，已钉 `researchpilot`） |
-| 「只验骨架可跳过 LLM key」 | `app.py` 的 startup **无条件**调 `validate_config()`，缺 key 即拒绝启动 |
-| 「schema 源整目录交给 sqlc 就行」 | `.down.sql` 按文件名排在 `.up.sql` **前面** → 先 DROP 再 CREATE。必须逐个列 `*.up.sql` |
-| 「`--check-baseline` 通过 = 基线与真库一致」 | 它只校验**文件形态**；内容比对是 `--verify-columns`（快照缺 `columns` 时如实 exit 2） |
-| 「sqlc 的 diff 能核对列默认值」 | **sqlc 不把 DEFAULT 编码进 Go 类型**，diff 抓不到；DEFAULT 的机检是 `--verify-columns` |
-| 「本机没有 sqlc 二进制」 | `$HOME/go/bin/sqlc.exe` 就是钉住的 v1.30.0，`dev.py gen` 本来就优先用本机二进制 |
-| 「真库有 9 张表」 | **10 张**（含 `alembic_version`）；它的归属是决策 D6 |
-| 「`users.created_at`/`role` 库里没有 DEFAULT」 | 真库有 `DEFAULT now()` 与 `DEFAULT 'user'` |
-| 「X5 的命令是 `cd server && go test -run …`」 | `server/` 根目录没有 Go 文件 → **rc 恒为 1，与测试是否存在无关**（C22）。已补包路径 |
-| 「Go 依赖拉不动」 | 可解，但**本机 GOPROXY 一直没设**；`goproxy.cn` 后 1.6s 拉到 |
-| 「密码长度用 `len(password)`」 | Go 的 `len(string)` 是**字节**，生产侧是**码点** → 用 `utf8.RuneCountInString` |
-| 「Basic 方案的 401 是 `Invalid authentication credentials`」 | 实测 `OAuth2PasswordBearer` 回 **`Not authenticated`**；那句在 `HTTPBearer` 里，本项目没用 |
-| 「Go 的 500 文案是 `Internal Server Error`」 | 生产侧是 `Internal server error`（**小写 s**）（C23，已对齐） |
-| 「契约里 `role` 是 enum，Go 该按枚举校验」 | 实现是 `str \| None`，`role:"root"` 返回 **200** 并折叠成 `user`（C21）。照实现走 |
-| 「`cp .env.example .env` 就能起」 | 旧模板的**行内注释**被 dotenv 当成值（`int('#1024')`），已改成整行注释 |
-| 「compose 的 backend 开箱可用」 | **缺 `target: backend`** → 构建出 nginx 镜像 → 永远 unhealthy（已修） |
-| 「旧名 PaperRAG 还留在 module path / 指标名」 | 已全部改为 `researchpilot`；**唯一保留旧字面量的是安全黑名单**（删了等于把泄露口令重新变成可用口令） |
-| 「minio 镜像拉不到是网络问题」 | **上游归档**，`dl.min.io` 对当前版与全部归档版都 410 Gone（C24/D9）。已换 `versity/versitygw` |
-| 「ACL 里写着 `go: W` 所以 Go 在写这张表」 | **纸面归属**：18 张表在 SQL 里根本不存在（C30）。判归属前先求差集 |
-| 「契约里有 `/api/v1/health` 所以打它就通」 | **只有 Go 满足**；Python 的 health 路由不带 `/api/v1` 前缀（C31）。`check_contracts.py` 抓不到 |
-| 「`/metrics` 在契约里说明监控已就位」 | **三不管端点**：契约有、Python 有、nginx 无 location、前端不调、Go 未实现 |
-| 「prod compose 写了 `env_file:` 就能取到 `${VAR:?}`」 | **不能**：service 级 `env_file` 不参与顶层插值，prod 启动必须带 `--env-file`（C27） |
-| 「Python 的 login/register/chat 是可用的（测试全绿）」 | 曾**对任何合法请求都回 500**（C32，已修）。无效 body 的用例覆盖不到限流路径；门面会掩盖上游坏死 |
-| 「P0-8 要在 compose 里加三个应用服务」 | **前提被 2026-10-13 定案推翻**（C6 作废、遗留冲突记 C29）。别照旧卡片去加 compose 服务 |
-| 「V1.0 的可信化应前移（`11 §7` 的最小解法：P0-2 基线 + chunk 正文进 PG）」 | **该建议已于 2026-10-15 撤回并拍板为 D4 定案**：保留 P1 → P2，不前移、不拆 `P2-1/P2-2` 成 `P1-9/P1-10`、不解锁依赖。替代物是 P1 的**设计门禁**（`04 §4.4`），不是提前实现 |
-| 「测试基线是 448 / 515 / 547 / 572 项」 | 都过期过。**读数现场取**，别抄文档 |
-| 「文档里的数量与命令面是按机器现状写的」 | 2026-10-12 扫出 **12 处过期**（C19），并修掉一处自相矛盾（`TEMP`/`TMP` 该指工作区外） |
-| 「别把重建出的库当原库用」 | `alembic upgrade head` 建的是**全新库**，拿它验 X6 的"存量库幂等"是**自证**；原对象已永久消失（C20） |
+| 原则、阶段顺序、证据与任务卡 | [最高约束 08](docs/rules/08-principles-and-conventions.md) |
+| 工程进度 | [progress.json](docs/progress.json)，生成页面不手改 |
+| 对外接口、跨语言消息、数据归属 | [contracts/](contracts)，以实现和契约检查核实差异 |
+| 阶段计划与产品模块 | [plans/](docs/plans)，计划不是完成证据 |
+| 当前实现与已知限制 | [架构现状 13](docs/reference/13-frontend-backend-architecture.md)、[问题台账 12](docs/plans/12-known-code-issues.md) |
+| 文档分类与维护 | [docs/README.md](docs/README.md) |
+| 历史过程与当时读数 | [WORKLOG](docs/WORKLOG.md)、reference 中注明日期的快照、archive |
 
-## 5. 本机环境要点（操作性约束）
+规则约束目标，代码与本轮运行证据说明现状；二者不一致时登记差距，不能把目标写成事实。
+档案与旧测试读数不能证明当前状态。不要在本文件维护百分比、测试数量、镜像数量或机器配置。
 
-- **前置**：Docker Desktop 必须在运行；引擎没起来时 `docker info` 只报 pipe-not-found（不是缺组件）。
-- `.env` **三个必填**：`JWT_SECRET_KEY`、`LLM_API_KEY`、`LLM_MODEL`（后两个连只验骨架也要有非空占位值）。
-  `.env` 与 `.env.production` **都不入库**；换 `JWT_SECRET_KEY` 等于让既有 token 全失效（生产必须先备份）。
-- `scripts/audit_schema.py --live` 与 `probe_timestamps.py` **要显式 export `DATABASE_URL`**（脚本不读 config 默认值）。
-- 中国大陆：`go env -w GOPROXY=https://goproxy.cn,direct`；`docker.io` 被 DNS 污染 → 用镜像源
-  （`docker.m.daocloud.io` / `docker.1ms.run` / `quay.io` 直连），**要拉带版本号的 tag，别拉 latest 再改名**。
-- **跑 chain / e2e 证据时 `dev.py serve` 要带 `--no-reload`**：集成用例往 `backend/data/documents/` 写文件会触发热重载、把真栈打断，chain 就红在一片"断言写错了"的表象里（本轮实测：带 reload 时 7 条红，`--no-reload` 时全量 644 passed）。内部执行面的 chain 用例还要 `AICORE_INTERNAL_TOKEN`，服务与用例必须用同一个值。
-- **Playwright 的浏览器包在本机装不全**（镜像与官方 CDN 两次都只落 `chrome.dll`，`chrome.exe` 被丢，现象像杀软拦截新落地可执行文件），所以 e2e 实跑用 `E2E_BROWSER_CHANNEL=chrome` 走系统 Chrome；**不设这个变量就回到 Playwright 自带 chromium**，别把它写进默认值。
-- **跑全量测试必须把 `TEMP`/`TMP` 指到工作区外的空目录**，否则 `tmp_path` 用例会以 `PermissionError`
-  **假失败**；也**不要**用 `--basetemp` 指到工作区内（会产生谁都删不掉的毒目录）。
-- Docker 数据盘与 WSL distro 本体都在 `D:\DockerData`；改它必须先 `docker desktop stop`（运行中改会被覆写）。
-  **要挪盘趁项目小的时候挪**——Docker 是新建盘不是搬旧盘，挪完镜像全丢。
-- ⚠️ **Milvus 不是"起起来就一直活着"**：实测约 25 分钟后因 etcd 磁盘停顿 FATAL 退出（C28）。
-  **任何长时间跑 Milvus 的 real/e2e 证据都要中途复检容器还在不在。**
-- 更细的坑（`psql` 表达式要带 `SELECT`、VHDX 不自动缩小、BuildKit 的 `# syntax` 行不走代理、
-  `MSYS_NO_PATHCONV`、UTF-16 输出要 `iconv`、管道后取 `$?` 取到的是最后一个命令的 rc）见
-  `WORKLOG.md` **附 B-1**；启动序列见 [`docs/plans/p0-environment.md`](docs/plans/p0-environment.md)。
+## 3. 架构边界
 
-## 6. 运行路径：容器只跑中间件，应用层源码跑
+ResearchPilot 是 AI 科研工作台，产品愿景见 [11](docs/rules/11-product-vision.md)。
+目标是 Go 唯一公开入口及全局编排、Python 执行局部 AI 任务、PostgreSQL 保存业务真相、Milvus 保存可重建索引。
+这属于目标边界，迁移尚未全部完成；现有反代与 Python 业务接口见架构现状和 route-ownership 契约。
 
-**2026-10-13 定案**：Docker 只用于中间件（数据库 / 队列 / 向量库 / 对象存储）；Go、Python、前端**一律源码运行**。
+前端负责展示，后端能力优先 Go，模型、解析与检索执行复用 Python；不建第二个全局调度器。
+工程轴 P0–P3 与产品轴 V1–V4 分开，质量修复不自动完成产品任务卡。
+不为赶进度打乱依赖；正确性、架构一致性、可测试性优先于功能数量和速度。
+
+## 4. 开工与变更方式
+
+1. 检查 Git 工作区、相关实现、契约、当前任务状态和适用目录规则，保留已有未提交改动。
+2. 说明具体故障、修复范围和验收方法；架构或对外行为改变先更新对应设计与契约。
+3. 按根因修改生产代码，补能复现故障的测试；mock 只隔离外部依赖，不替换被测核心。
+4. 修复后更新现状、台账及质量清单；过程证据写 WORKLOG，阶段状态写 progress.json。
+
+## 5. 数据、密钥与资源
+
+- 密钥经环境变量注入，禁止提交 .env、生产配置、上传文件、模型、日志、缓存和数据库卷。
+- 变更现有库前备份；验证优先隔离库，清理只能针对本轮创建的对象。
+- 不原地改已发布迁移，不用新建空库冒充历史存量兼容性证据。
+- Docker、端口和后台进程先盘点再启动，只启动验证需要的服务；结束停止本轮启动的进程与容器，保留数据卷。
+- Windows 临时目录权限错误先核实运行环境；必要时将 TEMP/TMP 指向工作区外新建目录，不改测试断言绕过。
+
+## 6. 开发与验收入口
+
+安装步骤以 [README](README.md) 为准，命令参数以 `scripts/dev.py --help` 为准。
+开发 compose 只运行中间件；Go、Python、前端源码运行。prod compose 是部署形态，不混用两套拓扑。
 
 ```bash
-uv run python scripts/dev.py infra       # 只起中间件：postgres/redis/etcd/minio(versitygw)/milvus/attu
-uv run python scripts/dev.py seed-admin  # 建/校管理员账号（口令只从 ADMIN_PASSWORD 环境变量取）
-uv run python scripts/dev.py serve       # 宿主 uvicorn（ai-core；尚未搬走的路径由 Go 反代到此）
-uv run python scripts/dev.py go-serve    # go-api（:8080，dev 单一入口；自动做 DATABASE_URL 归一化）
-cd frontend && npm run dev               # vite（只监听 ::1，用 localhost 访问；/api 已代理到 :8080）
+uv run python scripts/dev.py up postgres redis
+uv run python scripts/dev.py migrate-go
+uv run python scripts/dev.py serve --no-reload
+uv run python scripts/dev.py go-serve
+# 在 frontend 目录：npm run dev
 ```
 
-- 只起判据需要的最小集合：`dev.py up postgres redis` 比 `infra` 轻得多（见 §7 的进程纪律）。
-- ⚠️ `attu` 的宿主端口是 **3001**（8080 让给 go-api，也是 X1 判据的落点）。
-- `nginx` 的 `/api/` 已切到 `go-api`（X2 于第十七轮转 pass），但 **dev 形态下 nginx 不在请求路径上**：
-  它属部署形态，实跑要起 prod compose（`go-api` 服务用 `server/Dockerfile` 构建）。
-- ⚠️ 台账 **C29**（四处"应用服务容器化"遗留物）已于第十七轮**全部处置**：dev compose 的 `backend` 服务已删、
-  `dev.py up` 现在等价于"起全部中间件"、`dev.py migrate` 改宿主跑 alembic、`server/Dockerfile` 转为被 prod 的
-  `go-api` 服务使用，`check_nginx_routes.py` 的 R4 按形态分判并新增 **R5**（dev 不得出现应用服务）。
-- **全新电脑的完整安装步骤**（依赖版本、五步命令、验收方法、起不来的三处排查）见 [README §3](README.md)。
+chat/索引验收另需 Milvus 及其依赖和实际模型配置；内部执行面还需 AICORE_INTERNAL_TOKEN。
+只起 PG/Redis 不能据此宣称完整 RAG 可用。验证命令见 §9；真实存储专项使用 `scripts/verify_storage.py`。
 
-## 7. 绝对不能做
+## 7. 保留能力与禁区
 
-- 不删 `parent_chunks` / `multimodal.py` / `layout_analyzer.py`（只降级能力口径，不删代码）。
-- **不把应用服务塞进 dev 的 compose**（2026-10-13 定案，范围是 **dev**）：容器只跑中间件，
-  Go / Python / 前端源码跑。想往 dev compose 里加 `go-api`/`go-worker`/`ai-core` 之前，
-  先读台账 **C6**（原建议已作废）与 **C29**（遗留冲突项）。
-  ⚠️ `docker-compose.prod.yml` 是**部署形态**、仍是全栈容器，本条不禁它。
-- 不 `git mv backend → ai-core`；不引入 Kafka / RabbitMQ / Neo4j / 服务注册中心；不建两个全局调度器。
-- **不把 mock 绿灯说成完成**：`status=done` 必须 `evidence ≥ requires`，由 `sync_progress.py --check` 强制。
-  同理**不要在 P0 收口前开工 P1 的卡**（`08 §2` 阶段顺序律由同一条机检强制）。
-- 不删 `docs/archive/` 里的归档件；不改 `docs/reference/00-audit.md`、`01-current-architecture.md` 里
-  dated 的事实（它们是历史证据）。**不往本文追加 dated 内容**——日志进 `docs/WORKLOG.md`。
-- 密钥只经环境变量，不提交 `.env` 与 `.env.production`；注释一律中文。
-  管理员口令只从 `ADMIN_PASSWORD` 取，**不接受 CLI 参数**。
-- **不要攒后台进程**（`08 §6`「后台进程」）：只起判据需要的最小集合，起之前先 `netstat`/`docker compose ps`
-  盘点，验证一结束就停。⚠️ `TaskStop` 只杀外层 shell，**子进程可能活着占端口**（实测 vite 的子进程
-  在 TaskStop 之后仍占着 5173，要 `taskkill /PID <pid> /T /F`），所以**每次收尾要复验端口**。
-  遗留进程会占端口（本项目两次因 stale go-api 占 `:8080` 起服务失败），多起的容器会放大 etcd/Milvus
-  的磁盘停顿（C28）。
-- **不要为每次小改动重跑全量套件**（同一条纪律的 I/O 半边）：本仓库与 Docker 的 VHDX 在同一块物理盘上，
-  改了哪个包就跑那个包；**全量 pytest 与 `npm run build` 在一个批次收尾时只跑一次**。
-- **不要把新能力继续往大文件里叠**（`08 §6`「文件体积」）：新增一块默认落到**新文件/新包**，
-  软上限 300 行、硬上限 500 行；拆的边界按 `08 §6` 指的分层口径走（Go `internal/<domain>`、
-  Python `backend/<layer>/<module>`、前端 `10 §2` 五层——**一个板块一个组件**），不是"顺手分个 utils"。
-  存量超标文件不追改，但**碰到就必须顺手拆**，且不许让它更长。
-- **不为短期进度解锁跨阶段依赖**（2026-10-15 定案 D4）：不提前实现下一阶段的存储方案、
-  不建临时表/兼容层/双写、不改依赖图让下一阶段的卡提前开工。
-  但"不提前实现"**不等于"不提前设计"**——P1 每张接管卡开工前必须过 `plans/04 §4.4` 的设计门禁。
-  九条具体禁止项（`except: pass`、mock 宣称完成、内存任务态、跨服务临时通知、死表空接口等）见 `rules/08 §10`。
-- **接管一条路由必须带上它原先的能力**：Python 那条被删掉之后，它的限流（C33）、缓存失效（C35）、
-  探测键（X1 那一格）不会自动跟过来。**"Go 覆盖了这条路径"不等于"这条路径的能力没退化"**，
-  而这类退化没有任何门禁会红——只能靠接管卡片把它列成验收项。
-  **新接管一条面必须同时改 `contracts/route-ownership.md`**——这条现在有门禁会红了（第十七轮）。
+- 不删除 parent_chunks、multimodal.py、layout_analyzer.py；未达到能力要求就明确降级口径。
+- 不将 backend 整体改名 ai-core，不引入 Kafka、RabbitMQ、Neo4j、服务注册中心或重复调度器。
+- 不删除历史归档，不追改 00/01 的 dated 事实；需要纠正现状时改现行入口。
+- 不用 mock 结果填 real/e2e 证据，不把零用例收集、跳过或离线检查说成通过真实链路。
+- 不删除泄露口令的安全黑名单；不推送含清除前个人信息的备份分支。
+- 除非处理明确问题，不重写 Git 历史；确需重写时先备份、核对影响并同步 SHA 引用。
 
-## 8. 提交纪律
+## 8. 提交与进度纪律
 
-Conventional Commits（`fix(p0):` / `feat(dev):` / `chore(repo):` …）＋**每提交同更 `docs/progress.json`**
-（并重跑生成物）＋ 门禁全绿。**按关注点分批**：代码 / 文档口径 / 进度收口各一个提交；
-统一 push 前先 `git fetch`，确认 `git rev-list --left-right --count origin/main...HEAD` 是 `0 N`（快进）。
+Conventional Commits，一个提交一个关注点；未得到发布指令不擅自推送。
+每次提交同步 progress.json 并运行 `scripts/sync_progress.py`；只更新有证据支持的状态。
+不得用质量修复工时抬高产品进度。提交前检查 diff、敏感信息和相关门禁。
+
+## 9. 全仓开发规范（阿里规约的跨语言适配）
+
+来源：[阿里巴巴官方开发手册与工具](https://github.com/alibaba/p3c)。采用其命名清晰、异常可观测、
+资源有界、安全校验、数据库约束、测试与工程治理要求；Java/MySQL 专属规则不直接套到本项目。
+Go 遵循 gofmt/vet 与标准库惯例，Python 遵循 PEP 8 与 Ruff，Vue/TypeScript 使用真实依赖类型。
+下面规则适用于仓库自有代码、脚本、配置、迁移和现行文档；第三方依赖、模型、缓存、数据库卷是运行资产，
+由依赖锁定与运行配置管理，不手改其内容。历史报告保留当时事实，现行入口必须明确引用当前文件。
+
+### 实现与命名
+
+- 优先现有函数、现有类型和最少改动；没有多个真实实现或调用方，不新增 Manager、Factory、Adapter、Registry 等层。
+- 名称使用准确英文；Python 用 snake_case，Go 按导出规则命名，Vue 组件用 PascalCase，TS 函数用 camelCase。
+- 变量名解释领域含义；公共常量放在所属域，不建立无边界的 constants/utils 大杂烩。
+- 只在职责混杂、重复或复杂度有实证时拆分；禁止为缩短文件制造转发层、循环导入或空实现。
+- 第三方库优先使用其正式类型与受支持接口，禁止伪造声明来掩盖类型错误；生成代码由生成器修改。
+
+### 异常、日志与资源
+
+- 不吞异常，不把数据库失败伪装成空列表、未找到或任务成功；边界层返回契约内错误，内部保留异常链。
+- 只有明确可选的能力允许降级，必须记录原因；核心写入或清理失败必须使任务失败。
+- Python 异常转换使用 `raise ... from exc`；没有可用异常变量且刻意隐藏内部链时明确 `from None`。
+- HTTP 对外不泄露凭据、连接串、堆栈和内部路径；诊断细节只进受控日志，日志不记录 token、密码或全文。
+- 每个请求的日志含 trace_id，跨服务透传；日志文件必须轮转。JSON 与文本日志由统一入口配置。
+- 文件、数据库会话、临时目录和连接必须在异常路径也释放；禁止固定临时文件名和无上限重试。
+- HTTP 包装器必须保留 flush、hijack、取消等底层能力；验证首帧到达和连接升级，不能只测最终响应。
+- 等长数据配对使用 `zip(..., strict=True)`；允许截短必须显式 `strict=False` 并解释业务原因。
+
+### 安全与数据库
+
+- 用户、模型、检索原文均视为不可信输入；所有最终 HTML 在进入 v-html 前统一净化，不自行编写正则净化器。
+- 文件名不得含路径段、反斜杠、NUL 或 Windows 数据流分隔符；数据库查询参数化，Milvus 字符串使用合法转义。
+- 密钥只来自运行环境，示例不得包含真实密钥；禁止关闭 TLS 校验和执行不可信字符串。
+- PostgreSQL 为唯一业务真相；表有主键，业务唯一性由约束保证，索引依据实际查询设计，不为形式批量添加。
+- 新时间列用 TIMESTAMPTZ 与 UTC；既有时间语义变更必须先取证，不能直接把 naive 时间解释为本地时间。
+- 已发布迁移不原地改写，结构修复使用新迁移；up/down 配对，验证空库与存量库、重复执行及失败恢复。
+- 数据变更前保存可恢复备份；验收优先用隔离数据库，不能用重建的新库冒充原库证据。
+
+### 工程、文档与 Git
+
+- Python 依赖唯一声明在 pyproject.toml，uv.lock 保证可复现；requirements.txt 只提供 pip 安装入口。
+- 前端 package.json 与锁文件同步，CI 使用 npm ci；格式服从 .editorconfig/.gitattributes，文本 UTF-8、LF。
+- 本机 .env、模型、上传文件、日志、容器卷和构建缓存不得提交；现行文档相对链接必须可解析。
+- 历史事实、测试读数、计划、已实现能力分开记录；没有本轮复验的历史测试不得冒充当前结果。
+- 新提交使用 Conventional Commits，一个提交一个关注点；历史提交只有存在实际治理问题才改写，先保留可恢复备份并更新引用。
+- 质量整改不代表产品功能完成，不借规范化提前实现未批准的阶段任务；整改证据写 WORKLOG 和 progress.json。
+
+### 必跑检查
 
 ```bash
+uv run ruff check backend/ tests/ scripts/
+uv run python scripts/check_repository.py
 uv run python scripts/sync_progress.py --check
 uv run python scripts/check_contracts.py
 uv run python scripts/check_frontend.py
-uv run python scripts/check_route_ownership.py  # 面归属 ↔ Go 注册 ↔ Python 路由 ↔ chain 用例
-uv run python scripts/check_design_review.py    # P1 准入门禁：五维度齐 + 依据可追 + 接管卡须 approved
+uv run python scripts/check_route_ownership.py
+uv run python scripts/check_design_review.py
+uv run python scripts/check_nginx_routes.py
 uv run python scripts/audit_schema.py --check-baseline
-uv run python scripts/export_pbkdf2_golden.py --check
-uv run python scripts/export_jwt_golden.py --check
-uv run python -m pytest -q                  # 读数现场取，别抄文档
-uv run python scripts/dev.py gen --check    # sqlc 生成物漂移门禁（改了 server/sql/queries 必跑）
-cd server && gofmt -l . && go vet ./... && go test ./...
+uv run python scripts/audit_schema.py --verify-columns
 ```
 
-**`check_nginx_routes.py` 不在这份清单里**：它是 X2/Y4 的判据，在 nginx 切到 Go 之前必然红。
-把一个阶段性的真实状态挂成提交门禁，结果只会是人人加 `|| true`，把判据废掉。
+按修改范围运行 pytest、Go vet/test、前端 typecheck/build 与 Playwright；全量检查在一个批次收尾只跑一次。
+脚本通过仅证明其检查项通过，不能据此宣称全仓安全、真实数据库或产品端到端均已验证。

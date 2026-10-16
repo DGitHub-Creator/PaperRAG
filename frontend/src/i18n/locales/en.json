@@ -378,6 +378,9 @@
     "upload_failed": "Upload request failed",
     "upload_timeout": "Upload timed out",
     "upload_aborted": "Upload cancelled",
-    "empty_response_body": "Empty response body"
+    "empty_response_body": "Empty response body",
+    "stream_incomplete": "Connection closed before the response completed. Please retry.",
+    "stream_frame_too_large": "The server returned an oversized event",
+    "invalid_response": "The server returned invalid JSON"
   }
 }

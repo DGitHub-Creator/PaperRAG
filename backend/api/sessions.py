@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionMessagesResponse)
-async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user)):
+def get_session_messages(session_id: str, current_user: User = Depends(get_current_user)):
     try:
         storage = get_conversation_storage()
         messages = [
@@ -34,11 +34,11 @@ async def get_session_messages(session_id: str, current_user: User = Depends(get
         return SessionMessagesResponse(messages=messages)
     except Exception as e:
         logger.exception("Failed to get session messages: session_id=%s", session_id)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(current_user: User = Depends(get_current_user)):
+def list_sessions(current_user: User = Depends(get_current_user)):
     try:
         storage = get_conversation_storage()
         sessions = [
@@ -48,11 +48,11 @@ async def list_sessions(current_user: User = Depends(get_current_user)):
         return SessionListResponse(sessions=sessions)
     except Exception as e:
         logger.exception("Failed to list sessions: user=%s", current_user.username)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
-async def delete_session(session_id: str, current_user: User = Depends(get_current_user)):
+def delete_session(session_id: str, current_user: User = Depends(get_current_user)):
     try:
         storage = get_conversation_storage()
         deleted = storage.delete_session(current_user.username, session_id)
@@ -64,4 +64,4 @@ async def delete_session(session_id: str, current_user: User = Depends(get_curre
         raise
     except Exception as e:
         logger.exception("Failed to delete session: session_id=%s", session_id)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error") from e

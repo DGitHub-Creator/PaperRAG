@@ -1,6 +1,7 @@
 """Tests for rate limiting configuration."""
 
 from unittest.mock import patch
+from ipaddress import ip_network
 
 from slowapi import Limiter
 from starlette.requests import Request
@@ -79,8 +80,8 @@ class TestProxyAwareKey:
             assert rate_limit_key(req) == "203.0.113.9"
 
     def test_first_forwarded_hop_used_when_trusted(self):
-        with patch("backend.core.rate_limit.TRUST_PROXY_HEADERS", True):
-            req = _request(forwarded="198.51.100.7, 10.0.0.1")
+        with patch("backend.core.rate_limit.TRUST_PROXY_HEADERS", True), patch("backend.core.rate_limit._trusted_networks", (ip_network("10.0.0.0/8"),)):
+            req = _request(client_ip="10.0.0.1", forwarded="198.51.100.7, 10.0.0.2")
             assert rate_limit_key(req) == "198.51.100.7"
 
     def test_trusted_proxy_without_header_falls_back(self):

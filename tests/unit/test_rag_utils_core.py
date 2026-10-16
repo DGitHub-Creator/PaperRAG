@@ -1,13 +1,6 @@
 """RAG 核心检索函数单元测试 —— auto_merge、rerank、expand_context、retrieve_documents。"""
 
-import sys
 from unittest.mock import MagicMock, patch
-
-# Mock langgraph if not installed
-for mod in ["langgraph", "langgraph.checkpoint", "langgraph.checkpoint.memory",
-            "langgraph.graph", "langgraph.types"]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
 
 
 def _make_doc(**overrides) -> dict:

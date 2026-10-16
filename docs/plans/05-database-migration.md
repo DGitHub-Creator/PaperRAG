@@ -1,5 +1,8 @@
 # 05 — PostgreSQL Schema 收编与 Chunk 数据重建
 
+> 文档性质：实施计划/运行参考。文中早期实跑与现状数字是 dated 记录，不自动代表当前工作区。
+> 当前实现见 [13](../reference/13-frontend-backend-architecture.md)，状态见 [progress.json](../progress.json)，启动见 [README](../../README.md)。
+
 > **本文状态**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)；逐轮实录见 [../WORKLOG.md](../WORKLOG.md)、卡片状态见 [../progress.json](../progress.json)。
 > **当前进度**：三份迁移已落——`000001_baseline`（真库 10 表抄录）、`000002_ai_executions`、`000003_user_preferences`，`sqlc.yaml` 的 schema 源已指过来（编号规则见 §2.6）；核查脚本 `scripts/audit_schema.py` 三模式（`--check-baseline` / `--live` / `--verify-columns`，判定单测 37 项）与 §4.1 时间戳验证（`scripts/probe_timestamps.py` → `docs/reference/timestamp-audit.md`）已落。**仍未做**：`000004_fix_drift`、`000005_paper_chunks`（§3）、§4.2 的时间戳**转换**（验证已做、转换未执行）、`scripts/rebuild_chunks.py`。
 > ✅ **执行器已接线（2026-10-15，决策 D8 / 台账 C18）**：`uv run python scripts/dev.py migrate-go`。

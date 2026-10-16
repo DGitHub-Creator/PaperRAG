@@ -79,7 +79,7 @@ def test_read_returns_snapshot_not_the_live_row():
     store = ExecutionStore()
     row, _ = store.submit(make_req())
     store.start(row.execution_id, lease_token="L1")
-    snapshot = store.succeed(row.execution_id, result={"chunks": [{"page": 1}]})
+    snapshot = store.succeed(row.execution_id, result={"chunks": [{"page": 1}]}, lease_token="L1")
     snapshot.status = "queued"
     snapshot.result["chunks"].append({"page": 2})
     again = store.get(row.execution_id)

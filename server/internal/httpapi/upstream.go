@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
 
 // NewUpstreamProxy 把 Go 尚未接管的路径转发给 Python 上游（14 §19 铁律 2「门面先于重写」）。
@@ -21,10 +23,16 @@ func NewUpstreamProxy(target *url.URL, logger *slog.Logger) http.Handler {
 		logger = slog.Default()
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		director(r)
+		// 新生成的追踪号也必须到达 Python，不能只出现在 Go 的响应头里。
+		r.Header.Set(observability.TraceIDHeader, observability.TraceID(r.Context()))
+	}
 	// 信封只能有一处形状（01 §6.3）：上游不可达/超时时给 {"detail": ...}，
 	// 与其余错误同形，前端的 detailFromJson 不必为这一条单独分支。
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.Error("upstream_proxy_failed", "method", r.Method, "path", r.URL.Path, "error", err)
+		observability.WithTrace(logger, r.Context()).Error("上游转发失败", "method", r.Method, "path", r.URL.Path, "error", err)
 		WriteError(w, http.StatusBadGateway, "上游服务不可用")
 	}
 	return proxy
