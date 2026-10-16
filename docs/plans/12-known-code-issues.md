@@ -11,12 +11,12 @@
 | C7 | 数据可信化未完成：全文仍受 Milvus 字段长度限制，学术元数据未完整入库 | 按 P2 设计构建 PG 正文真相与位置映射；真实 PDF 全文、公式和引用回溯验收 |
 | C9 | 上传/删除任务有内存与 Redis 两种状态实现；终态及并发更新已修，执行恢复未实现 | Go/PG 编排仍属计划；验证进程退出后的任务恢复，不能把 Redis 状态存留当执行续跑 |
 | C10 | 双图与 Evidence Registry 未完成；存在模型或页面不等于能力实现 | 按已确认版本范围实施，真实读写与证据定位验收 |
-| C21 | 注册 role 的契约与宽松折叠行为仍需统一核对 | 比较 OpenAPI、Python 和 Go，避免仅按 enum 重新实现导致不兼容 |
+
 | C28 | 曾出现 etcd 磁盘停顿致 Milvus 退出；本轮未复验长时间索引负载 | 检查磁盘与日志，隔离环境做长时读写；不要未经迁移直接换卷丢元数据 |
-| C30 | ACL 同时包含目标表与实际表，声明不能证明表存在或已有读写方 | 明确 planned/implemented 与物理存在性，逐表核对迁移和实际调用 |
-| C33 | Go Redis 限流已实现，真实 Redis 并发与故障测试通过；尚缺完整部署链路对拍 | 原生认证/会话等注册点已挂载；补真实 HTTP 第 N+1 次 429、头与代理配置验收 |
-| C34 | rag_trace 仍是 Pydantic 投影，未知字段会丢弃，缺必填键可能使历史消息读取失败 | 对齐写入、读取与契约，覆盖历史不完整追踪记录；未解决前不宣称任意 JSON 透传 |
-| C36 | Go/Python 注册的完整错误及邀请码行为仍缺逐字对拍 | 删除旧注册面之前取得真实注册行为基线，覆盖 role、邀请码、重复用户与错误码 |
+| C30 | ACL 已区分 present/planned 并与迁移机检；当前写入偏差已登记 | 索引必要性、未穷尽调用方和 PG 实际 GRANT 仍待审查，present 不代表目标权限已执行 |
+
+
+| C36 | 注册 role 的缺省/null/空串/root 与 admin 关闭分支已真实对拍 | 有效/错误邀请码、重复用户及其余非法入参仍须逐项对拍，不能据此删除旧面 |
 | C37 | AIExecution 已落既有 PG 表，幂等/租约/终态及重新实例化读取通过；执行恢复仍缺 | 验证进程中断、重启后的调度与恢复；不能把记录持久化等同于可靠任务投递 |
 | Q1 | 文档索引跨 PG/Milvus/文件/BM25 不具备原子提交 | 当前解析失败不删旧索引，但写入阶段失败仍可能留下部分状态；需恢复策略与故障注入验收 |
 | Q2 | SSE 当前为完整答案事件，非逐 token 输出 | 确认产品要求后实现与验证首 token 延迟、取消、存储失败语义，保持对外口径准确 |
@@ -48,6 +48,15 @@
 | C31 | 路由归属检查已补；不再假定 Python 与 Go 探针路径完全相同 | contracts/route-ownership.md、check_route_ownership.py；可达性仍需运行验证 |
 | C32 | Python 限流端点签名已修并有静态回归 | tests/unit/test_rate_limit_signatures.py |
 | C35 | 已移除会话缓存，Go 删除后 Python 直接读 PG，不再等待 TTL | conversation_storage.py、test_conversation_postgres.py；全栈 HTTP 并发仍需补验 |
+
+### 本批新增修复
+
+| ID | 当前结论 | 证据入口 |
+| --- | --- | --- |
+| C21 | 注册 role 契约、TS 与 Python DTO 对齐；缺省/null/空串/root 折叠为 user，admin 关闭分支两侧一致 | check_contracts.py 漂移负向用例、真实 register_parity |
+| C33 | Go/Python 真实登录第 21 次 429，伪造 X-Forwarded-For 无效；所有项目启动入口禁用 Uvicorn 代理头重写 | verify_storage.py --http、rate_limit chain、dev CLI 回归 |
+| C34 | 新追踪写前校验并投影；坏历史仅追踪置 null，保留正文且告警；引用随答案保存并历史回显 | 真实 go_read_legacy_trace、HTTP 与浏览器回归 |
+| Q4 | 修复先 Go 迁移再启动 Python 的重复建表；clean 版本 ≥3 只读检查，旧库保留 Alembic | 真空库启动测试、database 单测、隔离 HTTP 全链 |
 
 ## C. 澄清与环境历史
 

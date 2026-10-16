@@ -17,7 +17,7 @@ export interface LoginRequest {
 export interface RegisterRequest {
   username: string
   password: string
-  role?: Role
+  role?: string | null
   admin_code?: string | null
 }
 
@@ -58,10 +58,11 @@ export interface ChatRequest {
   session_id?: string | null
 }
 
-/** 契约只锁 tool_used / tool_name，其余字段由 Python 侧透传（openapi.yaml: RagTrace） */
+/** 服务端按 RagTrace 已声明字段投影；未知字段不保证保留。 */
 export interface RagTrace {
   tool_used: boolean
   tool_name: string
+  citations?: CitationItem[] | null
   [key: string]: unknown
 }
 
@@ -76,7 +77,7 @@ export interface RagStep {
 export interface CitationItem {
   source_label?: string
   filename?: string | null
-  page?: number | null
+  page?: string | number | null
   chunk_id?: string | null
   supported?: boolean
   reason?: string

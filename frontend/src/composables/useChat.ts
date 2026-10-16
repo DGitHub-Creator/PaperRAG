@@ -89,8 +89,8 @@ export function useChat() {
       isThinking: false,
       ragSteps: [],
       ragTrace: record.rag_trace ?? null,
-      citations: [],
-      unsupported: [],
+      citations: record.rag_trace?.citations?.filter((citation) => citation.supported === true) ?? [],
+      unsupported: record.rag_trace?.citations?.filter((citation) => citation.supported === false) ?? [],
     }))
     revision.value += 1
   }

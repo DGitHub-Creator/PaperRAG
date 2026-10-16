@@ -64,7 +64,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra test
       - name: Verify real storage and migrations
-        run: uv run python scripts/verify_storage.py --postgres-container ${{ job.services.postgres.id }}
+        run: uv run python scripts/verify_storage.py --http --postgres-container ${{ job.services.postgres.id }}
       - name: Verify shared Go rate limits
         working-directory: server
         env:

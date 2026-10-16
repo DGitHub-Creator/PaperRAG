@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from backend.core.database import SessionLocal
 from backend.core.models import ChatMessage, ChatSession, User
+from backend.schemas.schemas import RagTrace
 
 
 class ConversationStorage:
@@ -18,6 +19,8 @@ class ConversationStorage:
 
     def append_turn(self, user_id: str, session_id: str, question: str, answer: str, rag_trace: dict | None = None) -> None:
         """事务内追加一轮；唯一键 UPSERT 串行化同一会话的并发写，保留旧消息与引用。"""
+        if rag_trace is not None:
+            rag_trace = RagTrace.model_validate(rag_trace).model_dump(exclude_none=True)
         with SessionLocal() as db, db.begin():
             user = db.execute(select(User.id).where(User.username == user_id)).scalar_one_or_none()
             if user is None:

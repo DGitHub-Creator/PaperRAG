@@ -18,7 +18,7 @@ def db(monkeypatch):
 
 def test_append_turn_uses_transaction_and_preserves_trace(db):
     db.execute.side_effect = [MagicMock(scalar_one_or_none=lambda: 1), MagicMock(scalar_one=lambda: 5)]
-    trace = {"source_map": {"Source 1": {"chunk_id": "old"}}}
+    trace = {"tool_used": True, "tool_name": "search_knowledge_base", "source_map": {"Source 1": {"chunk_id": "old"}}}
     ConversationStorage().append_turn("alice", "session", "question", "answer", trace)
     messages = db.add_all.call_args.args[0]
     assert [(row.message_type, row.content) for row in messages] == [("human", "question"), ("ai", "answer")]
@@ -32,6 +32,15 @@ def test_missing_user_is_a_write_failure(db):
     with pytest.raises(ValueError, match="用户不存在"):
         ConversationStorage().append_turn("missing", "session", "question", "answer")
     db.add_all.assert_not_called()
+
+
+def test_new_invalid_trace_is_rejected_before_database_write(db):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ConversationStorage().append_turn("alice", "session", "q", "a", {"query": "q"})
+    db.begin.assert_not_called()
+    db.execute.assert_not_called()
 
 
 @pytest.mark.parametrize("method,args", [

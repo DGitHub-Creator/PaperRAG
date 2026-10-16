@@ -1,28 +1,6 @@
 """文档加载模块单元测试 —— PDF 多解析器降级链。"""
 
-import sys
-from unittest.mock import MagicMock, patch
-
-
-def _ensure_doc_loader_importable():
-    """Mock missing dependencies so document_loader can be imported."""
-    mocks = {
-        "langchain_community": MagicMock(),
-        "langchain_community.document_loaders": MagicMock(),
-        "langchain_text_splitters": MagicMock(),
-    }
-    for mod, mock_obj in mocks.items():
-        if mod not in sys.modules:
-            sys.modules[mod] = mock_obj
-    # Ensure submodule attributes exist
-    sys.modules["langchain_community.document_loaders"].PyPDFLoader = MagicMock()
-    sys.modules["langchain_community.document_loaders"].Docx2txtLoader = MagicMock()
-    sys.modules["langchain_community.document_loaders"].UnstructuredExcelLoader = MagicMock()
-    sys.modules["langchain_text_splitters"].MarkdownHeaderTextSplitter = MagicMock()
-    sys.modules["langchain_text_splitters"].RecursiveCharacterTextSplitter = MagicMock()
-
-
-_ensure_doc_loader_importable()
+from unittest.mock import patch
 
 
 class TestParsePdfWithFallback:

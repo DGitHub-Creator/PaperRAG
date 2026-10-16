@@ -67,6 +67,21 @@ def test_dangling_ref_is_caught(contracts):
     assert any("StreamGhostEvent" in e for e in errors)
 
 
+@pytest.mark.parametrize("role", [
+    {"type": "string", "enum": ["user", "admin"], "nullable": True, "default": "user"},
+    {"type": "string", "nullable": False, "default": "user"},
+    {"type": "string", "nullable": True, "default": "admin"},
+])
+def test_register_role_cannot_drift_from_actual_request_model(contracts, role):
+    path = contracts / "openapi.yaml"
+    doc = cc.yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["components"]["schemas"]["RegisterRequest"]["properties"]["role"] = role
+    path.write_text(cc.yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    errors = []
+    cc.check_openapi(errors)
+    assert any("RegisterRequest.role" in error for error in errors)
+
+
 def test_operation_needs_success_response(contracts):
     me = (
         "      responses:\n"
@@ -123,6 +138,17 @@ def test_acl_double_write_needs_transition(contracts):
     errors: list[str] = []
     cc.check_acl(errors)
     assert any("chat_messages 双写但没有标过渡期" in e for e in errors)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("[planned] Go 是文献实体权威", "[present] Go 是文献实体权威"),
+    ("[present] Python 独占", "[planned] Python 独占"),
+])
+def test_acl_presence_must_match_migrations(contracts, old, new):
+    rewrite(contracts / "table-acl.md", old, new)
+    errors = []
+    cc.check_acl(errors)
+    assert any("存在性应标为" in error for error in errors)
 
 
 def test_scheduler_tables_must_be_python_denied(contracts):

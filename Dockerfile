@@ -61,7 +61,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # 单 worker 起步：嵌入模型常驻内存 + 进程内状态（限流/统计）
 # 多副本扩展请通过 compose replicas / k8s，而非增加 worker 数
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
 
 # ── Stage 3: nginx 运行时（静态资源 + 反向代理）───────────────────────
 FROM nginx:alpine AS nginx

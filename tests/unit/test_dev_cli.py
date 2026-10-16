@@ -29,6 +29,13 @@ dev = _load_dev()
 
 
 class TestCommandSurface:
+    def test_serve_keeps_proxy_header_trust_in_application(self, monkeypatch):
+        commands = []
+        monkeypatch.setattr(dev, "run", lambda command: commands.append(command) or 0)
+        assert dev.main(["serve", "--no-reload"]) == 0
+        assert "--no-proxy-headers" in commands[0]
+        assert "--proxy-headers" not in commands[0]
+
     def test_documented_subcommands_are_exposed(self):
         help_text = dev.build_parser().format_help()
         for name in SUBCOMMANDS:

@@ -286,6 +286,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     cmd = [
         sys.executable, "-m", "uvicorn", "backend.app:app",
         "--host", args.host, "--port", str(args.port),
+        "--no-proxy-headers",
     ]
     if not args.no_reload:
         cmd.append("--reload")

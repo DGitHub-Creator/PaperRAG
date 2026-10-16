@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import os
-import warnings
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -151,23 +150,9 @@ def chain_seed(chain_pg):
     }
 
     with chain_pg.begin() as conn:
-        # 级联会带走 chat_sessions 与 chat_messages，但带不走 Redis 里可能留下的缓存
+        # 会话与消息由外键级联清理，读取不再经过会话缓存。
         conn.execute(text("DELETE FROM users WHERE id = :i"), {"i": user_id})
-    _flush_chat_cache(username)
 
-
-def _flush_chat_cache(username: str) -> None:
-    """清掉该用户的会话缓存键。
-
-    失败只可能让下一轮读到陈旧缓存，不会让本轮断言变绿，所以这里不抛——
-    但也不静默：真栈上 Redis 是 preflight 之后必然在的，正常路径永远走不到 except。
-    """
-    try:
-        from backend.services.cache import cache
-
-        cache.delete_pattern(f"chat_*:{username}*")
-    except Exception:  # noqa: BLE001
-        warnings.warn("会话缓存清理失败，链路验证可能读到旧数据", RuntimeWarning, stacklevel=2)
 
 
 def _login(client: httpx.Client, url: str, seed: dict) -> str:
@@ -191,3 +176,22 @@ def py_token(http, chain_endpoints, chain_seed) -> str:
 @pytest.fixture()
 def bearer(go_token) -> dict[str, str]:
     return {"Authorization": f"Bearer {go_token}"}
+
+
+@pytest.fixture
+def chain_rate_scope():
+    """只清理隔离 HTTP 进程的限流键，不触及开发或生产前缀。"""
+    import redis
+
+    prefix = os.getenv("CHAIN_REDIS_PREFIX", "")
+    if not prefix.startswith("quality_http_"):
+        pytest.skip("限流与注册对拍需 verify_storage.py --http 创建的隔离进程")
+    with redis.Redis.from_url(os.getenv("REFACTOR_TEST_REDIS_URL", "redis://127.0.0.1:6379/0"), socket_timeout=2) as client:
+        def clear():
+            for key in client.scan_iter(match=f"*{prefix}*", count=100):
+                client.delete(key)
+        clear()
+        try:
+            yield
+        finally:
+            clear()

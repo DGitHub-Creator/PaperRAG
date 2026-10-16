@@ -18,6 +18,20 @@
 
 ---
 
+## 全仓整改续批 · 真实入口验收与第二轮故障修复
+
+- 发布：上一批基线 2a44ad65 已 push 至 origin/main；本批按 TODO R02–R11 跟踪，质量整改不增加产品完成度。
+- R02：历史追踪不合法时只将可选追踪置 null、保留正文并告警，不记录原始追踪；新写入严格校验。检索来源和引用结果随答案持久化，历史回显区分 supported 真/假。REST/SSE 按已声明 RagTrace 投影，契约不再承诺任意字段透传。
+- R03：注册 role 的契约、Python DTO 与 TS 输入类型对齐；漂移门禁从真实 DTO 提取类型/可空性/默认值。真 HTTP 对拍缺省/null/空串/root 与 admin 关闭分支；有效邀请码和其他注册错误仍未穷尽。
+- R04：移除解析/分块/多模态测试的全局 sys.modules 伪模块与自制假 splitter；实际已安装库下关联 36 passed。替换空 refresh 测试为真实 401 断言，移除链路 fixture 的旧会话缓存清理旁路。
+- R05：首次真实登录验证发现 Python 信任已关闭仍可被 X-Forwarded-For 绕过，根因是 Uvicorn 提前改写 client 地址。已在 dev.py、main.py、app.py、Docker 与验证入口关闭底层代理头改写，应用按可信 CIDR 判定；HTTP/WS 限流均增加项目 Redis 命名空间。复验两侧第 21 次均 429，伪造头无效，Go 删除后两侧消息立即不可见。
+- R10：Go 迁移空库后 Python init_db 曾 exit 1、DuplicateTable；隔离库已实证。已接管库改为只读检查 schema_migrations（版本至少 3、clean），未接管旧库保留 Alembic；没有 stamp、重建或 create_all 兜底。真实空库启动和旧库失败/dirty 单测通过。
+- R06（部分）：ACL 的 present/planned 与迁移机检；登记目标权限和当前实际写入偏差，修正 D6 状态描述。尚未完成实际角色/GRANT 与索引必要性审计。
+- 本批真实证据：verify_storage.py --http 的存储组 **18 passed**、Go/Python HTTP 组 **17 passed**；仅临时库与随机测试账户，两个进程自动退出、隔离库已删除。前端 typecheck/build 与 Chrome 专项 **12 passed**，Go vet/test 通过。
+- 回归过程中曾在运行测试时更新进度生成物，导致一项生成物一致性测试读到不同版本（其余 665 passed / 48 skipped）。已停止并发修改生成物，最终回归结果另行补记，不将该次失败报成全绿。
+- 最终复验：Python **666 passed / 48 skipped**；进度生成物停止变动后全绿。Ruff 与全部仓库/契约/路由/前端/设计/拓扑/基线/golden 门禁通过。Docker 查询隔离库剩余 **0**；本轮 PG/Redis 已停止，无常用应用端口监听，数据卷保留。
+- 新增 --http 已接入存储 CI job；未据本机通过推定远端 Actions 已通过。未解决项继续见台账与 TODO。
+
 ## 2026-10-16 · 实质重构与文档治理（持续进行）
 
 - 根因整改：会话按轮事务追加，不再覆盖历史；移除跨服务会话缓存。AIExecution 改用既有 PG 表，修复幂等、租约、终态与过期；持久记录不代表崩溃后执行恢复。

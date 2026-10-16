@@ -20,7 +20,9 @@ Pydantic 数据模型定义 —— API 请求/响应的 Schema。
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+
+from backend.core.logging_config import get_logger
 
 from backend.schemas.auth import (
     AuthResponse as AuthResponse,
@@ -152,6 +154,8 @@ class RagTrace(BaseModel):
         initial_retrieved_chunks: 初始检索到的分块列表（扩展前）。
         expanded_retrieved_chunks: 扩展后的检索分块列表。
     """
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     tool_used: bool
     tool_name: str
     query: str | None = None
@@ -217,6 +221,17 @@ class MessageInfo(BaseModel):
     content: str
     timestamp: str
     rag_trace: RagTrace | None = None
+
+    @field_validator("rag_trace", mode="wrap")
+    @classmethod
+    def read_optional_trace(cls, value, handler):
+        try:
+            return handler(value)
+        except ValidationError:
+            # 旧 JSON 列没有写入校验；追踪是可选信息，不能拖垮整段已保存正文。
+            # 不记录原值或异常文本，避免日志带出检索正文与内部地址。
+            get_logger(__name__).warning("历史消息追踪格式不兼容，本次仅返回正文")
+            return None
 
 
 class SessionMessagesResponse(BaseModel):

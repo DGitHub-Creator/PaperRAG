@@ -1,40 +1,6 @@
 """文档解析模块单元测试 —— 分块逻辑、结构分块、标准分块。"""
 
-import sys
 from unittest.mock import MagicMock, patch
-
-# Mock missing dependencies
-for mod in ["langchain_community", "langchain_community.document_loaders",
-            "langchain_text_splitters"]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
-
-sys.modules["langchain_community.document_loaders"].PyPDFLoader = MagicMock()
-sys.modules["langchain_community.document_loaders"].Docx2txtLoader = MagicMock()
-sys.modules["langchain_community.document_loaders"].UnstructuredExcelLoader = MagicMock()
-
-# Create proper mock for RecursiveCharacterTextSplitter that actually splits
-class MockDocument:
-    def __init__(self, page_content, metadata=None):
-        self.page_content = page_content
-        self.metadata = metadata or {}
-
-class MockSplitter:
-    def __init__(self, chunk_size=800, chunk_overlap=100, **kwargs):
-        self.chunk_size = chunk_size
-    def create_documents(self, texts, metadatas=None):
-        results = []
-        for text in texts:
-            # Simple split by chunk_size
-            for i in range(0, max(len(text), 1), self.chunk_size):
-                chunk = text[i:i + self.chunk_size]
-                if chunk.strip():
-                    results.append(MockDocument(page_content=chunk))
-        return results
-
-mock_ts = sys.modules["langchain_text_splitters"]
-mock_ts.RecursiveCharacterTextSplitter = MockSplitter
-mock_ts.MarkdownHeaderTextSplitter = MagicMock()
 
 
 def _make_base_doc(**overrides) -> dict:

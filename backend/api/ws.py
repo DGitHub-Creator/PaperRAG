@@ -17,6 +17,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from backend.core.auth import get_user_from_bearer_token
 from backend.core.database import SessionLocal
+from backend.core.config.database import REDIS_KEY_PREFIX
 from backend.core.logging_config import get_logger
 from backend.core.models import User
 from backend.services.agent import chat_with_agent_stream
@@ -86,7 +87,7 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "content": "消息格式无效"})
                 continue
             message, session_id = body.message, body.session_id or "default_session"
-            if not await asyncio.to_thread(limiter.limiter.hit, _WS_LIMIT, username, "ws-chat"):
+            if not await asyncio.to_thread(limiter.limiter.hit, _WS_LIMIT, REDIS_KEY_PREFIX + ":ws-chat", username):
                 await websocket.send_json({"type": "error", "content": "消息频率超限，请稍后再试"})
                 continue
 

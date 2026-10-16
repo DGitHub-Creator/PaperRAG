@@ -1,5 +1,30 @@
 import { expect, test } from '@playwright/test'
 
+test('加载历史会话保留支持和不支持的引用，不把未知状态当成已验证', async ({ page }) => {
+  await page.goto('/login')
+  const result = await page.evaluate(async () => {
+    const path = '/src/composables/useChat.ts'
+    const { useChat } = await import(/* @vite-ignore */ path)
+    const chat = useChat()
+    chat.loadHistory([{ type: 'ai', content: 'saved answer', rag_trace: {
+      tool_used: true, tool_name: 'search_knowledge_base', citations: [
+        { source_label: 'Source 1', supported: true },
+        { source_label: 'Source 9', supported: false },
+        { source_label: 'Source 2' },
+      ],
+    } }, { type: 'ai', content: 'legacy answer', rag_trace: null }])
+    return chat.messages.value.map(message => ({
+      text: message.text,
+      supported: message.citations.map(citation => citation.source_label),
+      unsupported: message.unsupported.map(citation => citation.source_label),
+    }))
+  })
+  expect(result).toEqual([
+    { text: 'saved answer', supported: ['Source 1'], unsupported: ['Source 9'] },
+    { text: 'legacy answer', supported: [], unsupported: [] },
+  ])
+})
+
 test('SSE 跨字节分块支持 UTF-8、CRLF 并释放流锁', async ({ page }) => {
   await page.goto('/login')
   const result = await page.evaluate(async () => {

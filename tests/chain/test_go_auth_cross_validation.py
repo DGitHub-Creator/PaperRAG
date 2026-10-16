@@ -21,6 +21,44 @@ from sqlalchemy import text
 pytestmark = pytest.mark.chain
 
 
+@pytest.mark.parametrize("side", ["go", "py"])
+def test_rate_limit_login_twenty_first_request_and_spoofed_proxy(http, chain_endpoints, chain_seed, chain_rate_scope, side):
+    url = getattr(chain_endpoints, side)("/api/v1/auth/login")
+    payload = {"username": chain_seed["username"], "password": chain_seed["password"]}
+    for number in range(20):
+        response = http.post(url, json=payload, headers={"X-Forwarded-For": f"198.51.100.{number + 1}"})
+        assert response.status_code == 200, response.text
+        assert int(float(response.headers["X-RateLimit-Limit"])) == 20
+    blocked = http.post(url, json=payload, headers={"X-Forwarded-For": "203.0.113.77"})
+    assert blocked.status_code == 429, f"限流未生效: status={blocked.status_code}"
+    assert set(blocked.json()) == {"detail"}
+    assert int(float(blocked.headers["X-RateLimit-Limit"])) == 20
+
+
+@pytest.mark.parametrize("fields,expected", [({}, 200), ({"role": None}, 200), ({"role": "root"}, 200), ({"role": ""}, 200), ({"role": "admin"}, 403)])
+def test_register_parity_for_optional_and_unknown_roles(http, chain_endpoints, chain_pg, chain_rate_scope, fields, expected):
+    from uuid import uuid4
+
+    names = ["qr_" + uuid4().hex[:12] for _ in range(2)]
+    responses = []
+    try:
+        for endpoint, username in zip((chain_endpoints.go, chain_endpoints.py), names, strict=True):
+            response = http.post(endpoint("/api/v1/auth/register"), json={"username": username, "password": "Quality2026case", **fields})
+            assert response.status_code == expected, f"注册行为不一致: status={response.status_code} expected={expected}"
+            responses.append(response.json())
+        if expected == 200:
+            assert set(responses[0]) == set(responses[1])
+            assert responses[0]["role"] == responses[1]["role"] == "user"
+            with chain_pg.connect() as connection:
+                roles = connection.execute(text("SELECT role FROM users WHERE username IN (:a, :b)"), {"a": names[0], "b": names[1]}).scalars().all()
+                assert roles == ["user", "user"]
+        else:
+            assert responses[0] == responses[1]
+    finally:
+        with chain_pg.begin() as connection:
+            connection.execute(text("DELETE FROM users WHERE username IN (:a, :b)"), {"a": names[0], "b": names[1]})
+
+
 def test_go_minted_token_is_accepted_by_python(http, chain_endpoints, go_token, chain_seed):
     """Go 签发的令牌打到 Python 的受保护路由：这一向在 mock 级没有判据，只有真进程能给。"""
     resp = http.get(chain_endpoints.py("/api/v1/auth/me"), headers={"Authorization": f"Bearer {go_token}"})

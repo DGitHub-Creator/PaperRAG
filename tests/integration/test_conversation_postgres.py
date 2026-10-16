@@ -10,6 +10,18 @@ from backend.core.models import ChatMessage, ChatSession, User
 from backend.services import conversation_storage
 
 
+def test_fresh_go_migrated_database_starts_python_without_legacy_ddl(monkeypatch, isolated_pg_factory):
+    from backend.core import database
+
+    engine = isolated_pg_factory.kw["bind"]
+    monkeypatch.setattr(database, "engine", engine)
+    with engine.connect() as connection:
+        before = connection.execute(text("SELECT version_num FROM alembic_version")).all()
+    database.init_db()
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).all() == before == []
+
+
 @pytest.fixture
 def storage_db(monkeypatch, isolated_pg_factory):
     factory = isolated_pg_factory
@@ -29,7 +41,7 @@ def storage_db(monkeypatch, isolated_pg_factory):
 
 def test_concurrent_turns_preserve_every_message_and_old_citation(storage_db):
     storage, _, username, _ = storage_db
-    trace = {"source_map": {"Source 1": {"chunk_id": "original"}}}
+    trace = {"tool_used": True, "tool_name": "search_knowledge_base", "source_map": {"Source 1": {"chunk_id": "original"}}}
     storage.append_turn(username, "same-session", "old-question", "old-answer", trace)
     with ThreadPoolExecutor(max_workers=4) as workers:
         futures = [workers.submit(storage.append_turn, username, "same-session", f"q-{i}", f"a-{i}") for i in range(10)]

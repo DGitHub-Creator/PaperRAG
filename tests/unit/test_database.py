@@ -12,6 +12,26 @@ import pytest
 from backend.core.database import Base, init_db
 
 
+@pytest.fixture(autouse=True)
+def legacy_database(_patch_database):
+    from backend.core import database
+    connection = database.engine.connect.return_value.__enter__.return_value
+    connection.execute.return_value.scalar.return_value = None
+    return connection
+
+
+@pytest.mark.parametrize("state", [None, (2, False), (3, True)])
+def test_go_managed_database_never_falls_back_to_alembic(legacy_database, state):
+    from types import SimpleNamespace
+
+    legacy_database.execute.return_value.scalar.return_value = "schema_migrations"
+    legacy_database.execute.return_value.one_or_none.return_value = None if state is None else SimpleNamespace(version=state[0], dirty=state[1])
+    with patch("subprocess.run") as migrate:
+        with pytest.raises(RuntimeError, match="migrate-go"):
+            init_db()
+        migrate.assert_not_called()
+
+
 @pytest.fixture
 def no_create_all():
     """断言 create_all 从未被调用。"""

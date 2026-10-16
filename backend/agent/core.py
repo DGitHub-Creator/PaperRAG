@@ -27,6 +27,7 @@ from backend.services.tools import (
     set_conversation_history,
     set_rag_step_queue,
 )
+from backend.schemas.schemas import RagTrace
 
 logger = get_logger(__name__)
 
@@ -271,9 +272,18 @@ def _turn_result(result: dict) -> dict:
     response = outcome["answer"]
     if not response:
         raise RuntimeError("模型未返回有效回答")
+    trace = result.get("rag_trace")
+    if trace is not None or source_map or outcome["citations"] or outcome["unsupported"]:
+        if trace is None:
+            trace = {"tool_used": False, "tool_name": ""}
+        trace = RagTrace.model_validate({
+            **trace,
+            "source_map": source_map,
+            "citations": outcome["citations"] + outcome["unsupported"],
+        }).model_dump(exclude_none=True)
     return {
         "response": response,
-        "rag_trace": result.get("rag_trace"),
+        "rag_trace": trace,
         "source_map": source_map,
         "citations": outcome["citations"],
         "unsupported": outcome["unsupported"],

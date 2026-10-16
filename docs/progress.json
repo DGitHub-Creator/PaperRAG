@@ -1034,6 +1034,17 @@
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
-    "note": "实质重构与文档分层已实施；本轮验证与剩余缺口见 WORKLOG 和质量清单，尚不能宣称全仓合规。"
+    "note": "质量整改持续进行；追踪/契约/测试隔离、真实 HTTP 限流与 Go 库启动已修。ACL 存在性校验已补，索引与实际角色、索引恢复等未完成；阶段进度不变。",
+    "current_task": "R11 发布本批验收；随后继续 R06/R07/R08",
+    "published_commit": "2a44ad65",
+    "completed_tasks": [
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R09",
+      "R10"
+    ]
   }
 }

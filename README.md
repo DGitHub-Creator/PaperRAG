@@ -64,7 +64,8 @@ uv run python scripts/dev.py migrate-go
 
 infra 启动开发中间件，首次可能需要下载镜像。只验认证与 PG/Redis 时，可改用 `dev.py up postgres redis`。
 Go 迁移显式执行，失败先处理原因，不盲目 force dirty 或重建库；已有数据先备份。
-旧 Alembic 链仍保留供既有 Python 路径使用，不以 create_all 静默兜底。
+Go 接管库的 Python 启动只读检查版本（至少 3 且 clean），不重复执行旧建表链。
+未接管旧库仍沿用 Alembic；dirty/未完成迁移和失败均不以 create_all 静默兜底。
 
 ### 3.4 三个终端分别运行
 
@@ -85,7 +86,7 @@ npm run dev
 ```
 
 浏览器访问 `http://localhost:5173`，开发请求经 Vite → Go → 必要时反代 Python。
-不要遗漏 Go 进程后按旧 Python 单体说明启动。验收时使用 --no-reload，避免上传测试文件触发服务重启。
+不要遗漏 Go 进程后按旧 Python 单体说明启动。所有项目入口关闭 Uvicorn 代理头改写，可信代理由应用按 CIDR 校验；手动启动也需 --no-proxy-headers。验收时使用 --no-reload，避免上传测试文件触发服务重启。
 
 ### 3.5 检查与收工
 
@@ -129,7 +130,7 @@ uv run python -m pytest -q
 Go 在 server 目录运行 gofmt、go vet ./...、go test ./...；前端在 frontend 目录运行 npm run typecheck、npm run build。
 修改查询后运行 `uv run python scripts/dev.py gen --check`。
 
-真实存储专项：`uv run python scripts/verify_storage.py`，需运行的 PG/Redis 和 Go 工具链；它创建并清理隔离测试库。
+真实存储/HTTP 专项：`uv run python scripts/verify_storage.py --http`，需运行的 PG/Redis 和 Go 工具链；它创建隔离测试库，启动临时 Go/Python 进程并在验收后清理，不调用 LLM/Milvus。
 chain 层需对应服务完整启动，浏览器验收使用 frontend 的 npm run test:e2e；具体环境看测试配置。
 测试跳过、零收集、仅静态检查均不能宣称真实业务通过。
 

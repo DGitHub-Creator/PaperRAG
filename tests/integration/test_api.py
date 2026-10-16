@@ -34,7 +34,9 @@ class TestAuthUnauthenticated:
         assert resp.status_code == 401
 
     def test_refresh_unauthenticated(self, client):
-        pass
+        response = client.post("/api/v1/auth/refresh", json={"refresh_token": "invalid"})
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid or expired refresh token"}
 
 
 class TestStatsEndpoint:
@@ -45,3 +47,29 @@ class TestStatsEndpoint:
     def test_reset_stats_requires_admin(self, client):
         resp = client.delete("/api/v1/stats/usage")
         assert resp.status_code == 401
+
+
+class TestSessionTrace:
+    def test_invalid_historical_trace_preserves_all_messages(self, app, client, monkeypatch, caplog):
+        from types import SimpleNamespace
+        from backend.api import sessions
+        from backend.core.auth import get_current_user
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(username="alice")
+        records = [
+            {"type": "ai", "content": "old answer", "timestamp": "2026-10-16T00:00:00", "rag_trace": {"query": "private-raw-value"}},
+            {"type": "ai", "content": "new answer", "timestamp": "2026-10-16T00:00:01", "rag_trace": {
+                "tool_used": True, "tool_name": "search_knowledge_base", "query": "q", "unknown_internal_key": "private-raw-value",
+                "citations": [{"source_label": "Source 1", "supported": True, "chunk_id": "c1"}],
+            }},
+        ]
+        monkeypatch.setattr(sessions, "get_conversation_storage", lambda: SimpleNamespace(get_session_messages=lambda user, sid: records))
+        response = client.get("/api/v1/sessions/history")
+        assert response.status_code == 200
+        messages = response.json()["messages"]
+        assert [message["content"] for message in messages] == ["old answer", "new answer"]
+        assert messages[0]["rag_trace"] is None
+        assert messages[1]["rag_trace"]["citations"][0]["chunk_id"] == "c1"
+        assert "unknown_internal_key" not in messages[1]["rag_trace"]
+        assert "历史消息追踪格式不兼容" in caplog.text
+        assert "private-raw-value" not in caplog.text

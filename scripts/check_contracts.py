@@ -8,7 +8,7 @@
   3. 不伪装通过：任何一条不满足即 exit 1，并打印可定位的条目。
 
 用法：uv run python scripts/check_contracts.py
-依赖：PyYAML（openapi.yaml 是手写的 YAML；JSON 部分只用标准库）。
+依赖：PyYAML 与项目 Pydantic DTO；JSON 部分只用标准库。
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
     raise SystemExit(2) from None
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 CONTRACTS = ROOT / "contracts"
 FRONTEND_SRC = ROOT / "frontend" / "src"
 
@@ -216,6 +217,22 @@ def check_openapi(errors: list[str]) -> tuple[set[tuple[str, str]], dict]:
     unknown = scopes - schemes
     if unknown:
         errors.append(f"security 引用了未定义的安全方案：{'、'.join(sorted(unknown))}")
+    # 本字段曾比实现更严格，导致照契约重写后拒绝既有客户端；从实际 DTO 提取值域。
+    from backend.schemas.auth import RegisterRequest
+
+    declared_role = ((doc.get("components") or {}).get("schemas") or {}).get("RegisterRequest", {}).get("properties", {}).get("role", {})
+    model_role = RegisterRequest.model_json_schema()["properties"]["role"]
+    branches = model_role.get("anyOf", [model_role])
+    non_null = [branch for branch in branches if branch.get("type") != "null"]
+    expected_role = dict(non_null[0]) if len(non_null) == 1 else {"anyOf": non_null}
+    if len(non_null) < len(branches):
+        expected_role["nullable"] = True
+    if "default" in model_role:
+        expected_role["default"] = model_role["default"]
+    actual_role = {key: value for key, value in declared_role.items() if key not in {"title", "description"}}
+    expected_role.pop("title", None)
+    if actual_role != expected_role:
+        errors.append("RegisterRequest.role 的类型/可空性/默认值与 Python DTO 不一致")
     return surface, doc
 
 
@@ -290,6 +307,11 @@ def check_schema(errors: list[str]) -> dict:
 
 
 def check_acl(errors: list[str]) -> None:
+    from scripts.audit_schema import parse_ddl_columns
+
+    built = set()
+    for migration in (ROOT / "server/migrations").glob("*.up.sql"):
+        built.update(parse_ddl_columns(migration.read_text(encoding="utf-8")))
     path = CONTRACTS / "table-acl.md"
     if not path.is_file():
         errors.append(f"缺文件：{path.relative_to(ROOT)}")
@@ -305,6 +327,9 @@ def check_acl(errors: list[str]) -> None:
             continue
         table, go, py, transition = row[0], row[1], row[2], row[3]
         table = table.strip("`")
+        state = "present" if table in built else "planned"
+        if len(row) < 5 or not row[4].startswith(f"[{state}]"):
+            errors.append(f"{table} 存在性应标为 [{state}]，必须与迁移一致")
         if not SNAKE_RE.match(table):
             errors.append(f"表名必须是 snake_case：{table}")
         if go not in WRITE_TOKENS or py not in WRITE_TOKENS:

@@ -6,7 +6,7 @@
   - 提供 SessionLocal 会话工厂供 FastAPI 依赖注入使用
   - 提供 get_db 生成器函数（FastAPI Depends 标准用法）
   - 声明 Base（declarative_base），所有 ORM 模型统一继承
-  - 提供 init_db()：只走 Alembic 迁移，失败即抛错（不再静默 create_all）
+  - 提供 init_db()：Go 接管库只检查就绪；旧库走 Alembic，失败不静默 create_all
 
 所有配置值统一从 backend.core.config 导入。
 日志通过 backend.core.logging_config.get_logger 获取标准化 logger。
@@ -23,7 +23,7 @@
     init_db()
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from backend.core.config import DATABASE_URL, DB_MAX_OVERFLOW, DB_POOL_SIZE
@@ -84,7 +84,7 @@ def get_db():
 
 
 def init_db() -> None:
-    """Run Alembic migrations to head. Never falls back to create_all.
+    """Go 接管库只检查版本；旧 Python 库沿用 Alembic，均不回退 create_all。
 
     历史实现在 alembic 缺失或执行失败时回退 ``Base.metadata.create_all``，
     结果是表被静默建出来、库里却没有 `alembic_version` 行，之后的迁移无法
@@ -97,6 +97,15 @@ def init_db() -> None:
     import subprocess
     import sys
     from pathlib import Path
+
+    with engine.connect() as connection:
+        if connection.execute(text("SELECT to_regclass('public.schema_migrations')")).scalar() is not None:
+            state = connection.execute(text("SELECT version, dirty FROM public.schema_migrations")).one_or_none()
+            # 三份既有 Go 迁移包含 Python 所需基线与执行表；不能在它们之后重放旧建表链。
+            if state is None or state.version < 3 or state.dirty:
+                raise RuntimeError("Go 数据库迁移尚未完成或处于 dirty 状态，请先运行 dev.py migrate-go")
+            logger.info("Go 数据库迁移已就绪，跳过旧 Alembic 启动迁移")
+            return
 
     alembic_ini = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
     if not alembic_ini.exists():

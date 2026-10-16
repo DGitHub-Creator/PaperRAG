@@ -1,7 +1,7 @@
 """ResearchPilot FastAPI 应用入口 —— CORS、静态文件、数据库初始化、路由挂载。
 
 启动方式:
-    uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
+    uv run python scripts/dev.py serve
     python backend/app.py
 """
 
@@ -197,4 +197,5 @@ if __name__ == "__main__":
         app,
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
+        proxy_headers=False,
     )

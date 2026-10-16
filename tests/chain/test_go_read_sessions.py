@@ -5,9 +5,8 @@
 形状里最容易漂的两处都专门盯了：naive TIMESTAMP 的 `isoformat()` 渲染，
 以及"没有会话时是 `[]` 还是 `null`"。
 
-删除那条只断言 Go 与 PG 一致，不断言"Python 也立刻看不到了"——
-Python 那侧还有一层 Redis 缓存，而 Go 的写不会去失效它（记在台账 C35）。
-在这里断言那一半会把一个已知缺口变成偶发红。
+删除用例先经 Python 读取，再经 Go 删除，要求两侧消息立即不可见，
+防止重新引入跨服务失效不完整的会话缓存（台账 C35）。
 """
 
 from __future__ import annotations
@@ -66,6 +65,17 @@ def test_go_read_session_list_matches_python_byte_for_byte(http, chain_endpoints
     assert mine[1]["updated_at"] == "2026-10-14T07:08:09", "微秒为 0 的要整段省略，且不带时区后缀"
     assert mine[0]["message_count"] == 2 and mine[1]["message_count"] == 1
     assert all(set(s) == {"session_id", "updated_at", "message_count"} for s in mine)
+
+
+def test_go_read_legacy_trace_preserves_saved_answer(http, chain_endpoints, go_token, chain_seed):
+    path = f"{LIST_PATH}/{chain_seed['newer']['session_id']}"
+    responses = [http.get(endpoint(path), headers=_bearer(go_token)) for endpoint in (chain_endpoints.go, chain_endpoints.py)]
+    assert all(response.status_code == 200 for response in responses)
+    assert responses[0].json() == responses[1].json()
+    messages = responses[0].json()["messages"]
+    assert len(messages) == 2
+    assert messages[1]["content"].startswith("MPC lets parties")
+    assert messages[1]["rag_trace"] is None
 
 
 def test_go_read_session_list_is_empty_array_for_a_user_with_no_sessions(http, chain_endpoints, chain_pg):
@@ -147,6 +157,10 @@ def test_go_read_delete_cascade_removes_messages_from_pg(http, chain_endpoints, 
     ref_id = _make_session(chain_pg, chain_seed["user_id"], session_id)
     _make_message(chain_pg, ref_id, "about to be cascade-removed")
 
+    before = http.get(f"{chain_endpoints.py(LIST_PATH)}/{session_id}", headers=_bearer(go_token))
+    assert before.status_code == 200
+    assert before.json()["messages"][0]["content"] == "about to be cascade-removed"
+
     resp = http.delete(f"{chain_endpoints.go(LIST_PATH)}/{session_id}", headers=_bearer(go_token))
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"session_id": session_id, "message": "Session deleted"}
@@ -161,6 +175,11 @@ def test_go_read_delete_cascade_removes_messages_from_pg(http, chain_endpoints, 
         ).scalar_one()
     assert sessions_left == 0
     assert messages_left == 0, "消息还在说明级联没生效，Go 得自己补一条 DELETE"
+
+    for endpoint in (chain_endpoints.py, chain_endpoints.go):
+        after = http.get(f"{endpoint(LIST_PATH)}/{session_id}", headers=_bearer(go_token))
+        assert after.status_code == 200
+        assert after.json() == {"messages": []}
 
     # 再删一次必须是 404，而不是把"已经没了"算成成功
     assert http.delete(f"{chain_endpoints.go(LIST_PATH)}/{session_id}", headers=_bearer(go_token)).status_code == 404

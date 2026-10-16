@@ -21,9 +21,10 @@ Go、Python、前端运行源码；dev compose 仅中间件。prod compose 使�
 
 - [ConversationStorage](../../backend/services/conversation_storage.py) 直接读 PostgreSQL，不再缓存会话与消息。
 - append_turn 在一笔事务中追加问答，锁定同用户同会话的更新，不覆盖已有历史及追踪数据。
-- Go 删除会话之后，Python 下一次读取以数据库为准；删除与新消息并发的产品语义仍需真实链路核验。
+- Go 删除会话之后，Python 下一次读取以数据库为准；已用真实 HTTP 验证先读后删的可见性。删除与正在生成的新消息并发的产品语义仍需设计。
 - [agent/core.py](../../backend/agent/core.py) 使用单层 LangGraph；消息累积、工具结果与引用来源通过图状态传递。
 - 长历史仅在模型输入中压缩，不把摘要覆盖回完整数据库历史。
+- 新追踪按 RagTrace 校验并投影；引用校验结果随答案保存，历史恢复区分 supported 真/假。旧追踪不合法时仅追踪置 null，保留正文并告警，不推断或伪造来源。
 - SSE/WS 输出完成事件前提交问答；失败发 error，不伪装 DONE。
 - 目前输出完整回答帧，**并非模型逐 token 流式输出**。断开会取消协程，但不能据此保证已启动的线程/模型调用立即终止。
 - 引用标签校验只证明标签来自检索结果，未达到 P2 所要求的 PG 正文证据链。
@@ -41,7 +42,7 @@ Go、Python、前端运行源码；dev compose 仅中间件。prod compose 使�
 
 ## 4. 数据库与任务状态
 
-- DDL 由 [Go migrations](../../server/migrations/) 管理；显式 `dev.py migrate-go` 执行，不在服务启动中偷偷迁移。
+- DDL 由 [Go migrations](../../server/migrations/) 管理；显式 `dev.py migrate-go` 执行。已接管库的 Python 启动只读检查 schema_migrations，版本至少 3 且 clean，禁止重放旧建表链；未接管旧库仍沿用 Alembic。
 - ai_executions 已由 [PostgresExecutionStore](../../backend/internal_api/postgres_executions.py) 读写；复用既有表与唯一约束。
 - 并发幂等提交、租约、终态与过期更新受数据库事务保护；新进程可读取执行记录。
 - **执行记录持久化不等于执行恢复**：后台任务仍为进程内执行，没有可靠消息投递、崩溃后续跑或全局调度。
@@ -53,7 +54,7 @@ Go、Python、前端运行源码；dev compose 仅中间件。prod compose 使�
 ## 5. 安全与横切能力
 
 - Go [ratelimit.go](../../server/internal/httpapi/ratelimit.go)：Redis 原子固定窗口，注册/登录独立限额，其余原生路由用配置限额；Redis 故障返回 503。
-- 代理 IP 只有来自配置的可信 CIDR 才采信；Go/Python 均不能无条件信任客户端 X-Forwarded-For。
+- 代理 IP 只有来自配置的可信 CIDR 才采信；项目所有 Uvicorn 启动入口禁用底层代理头改写，避免应用拿不到真实直连地址。Go/Python 均不能无条件信任客户端 X-Forwarded-For；限流使用项目 Redis 前缀隔离。
 - [middleware.go](../../server/internal/httpapi/middleware.go) 保留流式刷新和连接升级，跨服务透传 trace_id。
 - Python [logging_config.py](../../backend/core/logging_config.py) 注入请求 trace_id 并轮转日志；对外边界不返回内部异常原文。
 - Markdown 经 DOMPurify 净化后渲染；引用、模型文本、检索文档仍视为不可信。
@@ -70,11 +71,11 @@ readSse 检查终止事件、UTF-8/CRLF 与帧大小，释放 reader；旧请求
 ```bash
 uv run python scripts/check_route_ownership.py
 uv run python scripts/check_contracts.py
-uv run python scripts/verify_storage.py
+uv run python scripts/verify_storage.py --http
 uv run python -m pytest -q
 ```
 
-verify_storage 使用隔离 PG 库与 Redis 测试键，不调用外部 LLM/Milvus。
+verify_storage 使用隔离 PG 库与 Redis 测试键，--http 另起并清理真实 Go/Python 进程，覆盖认证/限流/会话；不调用外部 LLM/Milvus。
 真实 RAG 验收另需 Milvus、模型服务、PDF 和对应 chain/e2e，跳过不算通过。
 
 ## 8. 维护方式

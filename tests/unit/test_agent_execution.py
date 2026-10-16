@@ -17,7 +17,7 @@ def graph_with_retrieval(monkeypatch):
     def search(query: str) -> tuple[str, dict]:
         """测试中的确定性检索，不调用外部模型或数据库。"""
         return "retrieved evidence", {
-            "rag_trace": {"retrieved_chunks": [{"chunk_id": "chunk", "text": "evidence"}]},
+            "rag_trace": {"tool_used": True, "tool_name": "search_knowledge_base", "retrieved_chunks": [{"filename": "paper.pdf", "text": "evidence"}]},
             "source_map": {"Source 1": {"filename": "paper.pdf", "chunk_id": "chunk"}},
         }
 
@@ -80,9 +80,11 @@ async def test_stream_commits_before_done_and_keeps_trace(monkeypatch):
     assert events[-1] == "data: [DONE]\n\n"
     assert any('"type": "trace"' in event for event in events)
     assert any('"supported": true' in event for event in events)
-    storage.append_turn.assert_called_once_with("alice", "session", "new", "answer [Source 1]", {
-        "retrieved_chunks": [{"chunk_id": "chunk", "text": "evidence"}],
-    })
+    saved = storage.append_turn.call_args.args
+    assert saved[:4] == ("alice", "session", "new", "answer [Source 1]")
+    assert saved[4]["tool_used"] is True
+    assert saved[4]["source_map"]["Source 1"]["chunk_id"] == "chunk"
+    assert saved[4]["citations"][0]["supported"] is True
     storage.save.assert_not_called()
 
 

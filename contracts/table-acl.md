@@ -2,37 +2,39 @@
 
 > 出处：`02-target-architecture.md` §6.2。本文件是那张表的**机器可读版本**，
 > 由 `scripts/check_contracts.py` 校验；`02` §6.2 保留叙述，两者冲突时以本文件为准并回改 `02`。
-> 落实方式：PG 侧按角色 GRANT（Go 对 Python 只授 `SELECT`，除 `ai_executions` 外不给 DML）。
+> 本矩阵定义目标权限，不代表当前数据库已实施 GRANT。`present` 只说明迁移建了表，不说明目标写入边界已接管。
+
+存在性：note 的 `[present]` / `[planned]` 由迁移文件校验，新增建表必须同批更新。
 
 标记：`W` = 独占写，`R` = 只读，`X` = 禁止访问。`transition` 非 `-` 表示允许双写的过渡期。
 
 | table | go | python | transition | note |
 | --- | --- | --- | --- | --- |
-| `users` | W | R | - | Python 只校验服务身份，不改业务主体 |
-| `user_preferences` | W | X | - | 设置页的用户自助面（theme / start_view），只读自己的行；与 `users` 同属 Go 的账号域 |
-| `workspaces` | W | R | - | 同上 |
-| `workspace_members` | W | R | - | 同上 |
-| `chat_sessions` | W | X | - | 迁移后 Python 不再持久化对话 |
-| `chat_messages` | W | X | - | 需把覆盖式写改 append-only（00-audit §4） |
-| `papers` | W | X | - | Go 是文献实体权威 |
-| `paper_versions` | W | X | - | 同上 |
-| `paper_files` | W | X | - | 同上 |
-| `paper_chunks` | W | W | until-P2 | 过渡期由 Python 写以重建可信 chunk 层；Go 接管后改 Python 只读 |
-| `research_projects` | W | X | - | L1 全局调度 |
-| `research_runs` | W | X | - | 同上 |
-| `research_plans` | W | X | - | 同上 |
-| `research_tasks` | W | X | - | 写必须带 `WHERE lease_token = $t`（02 §3.4 fencing） |
-| `research_task_dependencies` | W | X | - | 同上 |
-| `research_events` | W | X | - | 事件日志/SSE 游标归 Go，Redis 不得作为唯一事件源 |
-| `outbox_events` | W | X | - | 同上 |
-| `research_budget_usage` | W | X | - | Python 上报 usage，Go 记账 |
-| `model_usage_records` | W | X | - | 同上 |
-| `knowledge_items` | W | X | - | Python 只交候选（02 §3.2 约定） |
-| `exploration_gaps` | W | X | - | 同上 |
-| `evidence_links` | W | X | - | 同上 |
-| `research_claims` | W | X | - | 同上 |
-| `report_sections` | W | X | - | 同上 |
-| `ai_executions` | R | W | - | Python 独占；Go 只读状态推进自己的 ResearchTask |
+| `users` | W | R | - | [present] Python 只校验服务身份，不改业务主体 |
+| `user_preferences` | W | X | - | [present] 设置页的用户自助面（theme / start_view），只读自己的行；与 `users` 同属 Go 的账号域 |
+| `workspaces` | W | R | - | [present] 同上 |
+| `workspace_members` | W | R | - | [present] 同上 |
+| `chat_sessions` | W | X | - | [present] 迁移后 Python 不再持久化对话 |
+| `chat_messages` | W | X | - | [present] 需把覆盖式写改 append-only（00-audit §4） |
+| `papers` | W | X | - | [planned] Go 是文献实体权威 |
+| `paper_versions` | W | X | - | [planned] 同上 |
+| `paper_files` | W | X | - | [planned] 同上 |
+| `paper_chunks` | W | W | until-P2 | [planned] 过渡期由 Python 写以重建可信 chunk 层；Go 接管后改 Python 只读 |
+| `research_projects` | W | X | - | [planned] L1 全局调度 |
+| `research_runs` | W | X | - | [planned] 同上 |
+| `research_plans` | W | X | - | [planned] 同上 |
+| `research_tasks` | W | X | - | [planned] 写必须带 `WHERE lease_token = $t`（02 §3.4 fencing） |
+| `research_task_dependencies` | W | X | - | [planned] 同上 |
+| `research_events` | W | X | - | [planned] 事件日志/SSE 游标归 Go，Redis 不得作为唯一事件源 |
+| `outbox_events` | W | X | - | [planned] 同上 |
+| `research_budget_usage` | W | X | - | [planned] Python 上报 usage，Go 记账 |
+| `model_usage_records` | W | X | - | [planned] 同上 |
+| `knowledge_items` | W | X | - | [planned] Python 只交候选（02 §3.2 约定） |
+| `exploration_gaps` | W | X | - | [planned] 同上 |
+| `evidence_links` | W | X | - | [planned] 同上 |
+| `research_claims` | W | X | - | [planned] 同上 |
+| `report_sections` | W | X | - | [planned] 同上 |
+| `ai_executions` | R | W | - | [present] Python 独占；Go 只读状态推进自己的 ResearchTask |
 
 ## 校验规则（`check_contracts.py` 实际执行的内容）
 
@@ -51,7 +53,7 @@
 | 类别 | 表 | 事实 |
 | --- | --- | --- |
 | 本表声明了归属、但**库里根本没有** | `papers` `paper_versions` `paper_files` `paper_chunks` `research_projects` `research_runs` `research_plans` `research_tasks` `research_task_dependencies` `research_events` `outbox_events` `research_budget_usage` `model_usage_records` `knowledge_items` `exploration_gaps` `evidence_links` `research_claims` `report_sections`（18 张） | 它们的 `go: W` 是 P2/P3 建表时的**预定归属**（台账 **C30**）。落表时点：`papers`/`paper_versions`/`paper_files`/`paper_chunks` 属 P2-1，`research_*`/`outbox_events` 属 P3-1，`knowledge_*`/`exploration_*`/`evidence_links`/`research_claims`/`report_sections` 属 P3 之后 |
-| 库里存在、但**本表故意不登记** | `parent_chunks` `paper_nodes` `citation_edges` `glossary_entries` `alembic_version`（5 张） | 归属是**决策 D6**，还没拍。写进矩阵等于替 D6 做决定，所以留空并在这里点名。前四张里 `paper_nodes`/`citation_edges`/`glossary_entries` 实测是**死表**（`13 §6`），`alembic_version` 属 alembic 那条线，不是 Go 的表 |
+| 库里存在、但**本表故意不登记** | `parent_chunks` `paper_nodes` `citation_edges` `glossary_entries` `alembic_version`（5 张） | D6 已确定“先审计，再明确归属与生命周期”，不是已逐表定案；因此本矩阵暂不替它决定目标权限。前四张里 `paper_nodes`/`citation_edges`/`glossary_entries` 当前未发现业务写入调用方（schema 存在不证明功能已实现），`alembic_version` 属 alembic 那条线，不是 Go 的表 |
 
 **取数命令**（两边各一次，别信任何文档里的表数）：
 
@@ -67,5 +69,20 @@ ls server/sql/queries/
 ```
 
 **写入边界的执行**目前只有第 1–4 条校验规则（值域、单 `W`、`ai_executions` 与 `research_*` 的律、
-Python 可写 ≤ 2）。"谁真的在写这张表"今天**无机检**——那需要 PG 侧的角色与 `GRANT`，
+Python 目标可写 ≤ 2）与 note 的存在性标识。"谁真的在写这张表"今天**无机检**——那需要 PG 侧的角色与 `GRANT`，
 属 P1-3/P2-1 建表时一并做（迁移里 `GRANT` 在角色定义之前不写，见 `05 §2.6`）。
+
+## 当前写入偏差（迁移期事实，不是额外授权）
+
+| 表 | 当前实际行为 | 实现依据 |
+| --- | --- | --- |
+| users | Go 与旧 Python 注册接口都能写；目标仅 Go，旧接口尚未删除 | server/internal/auth、backend/api/auth.py |
+| chat_sessions | Go 删除，Python 按轮 UPSERT；目标仅 Go，现有双写是待收编事实 | server/internal/session、backend/services/conversation_storage.py |
+| chat_messages | Python 在追加问答事务中写入；Go 删除会话触发级联 | backend/services/conversation_storage.py、000001 外键 |
+| parent_chunks | Python 负责当前索引路径的写入与清理 | backend/rag/parent_chunk_store.py |
+| ai_executions | Python 已实际写入，不再是空表意图；Go 调度尚未完成 | backend/internal_api/postgres_executions.py |
+| user_preferences | Go SQL 查询负责更新 | server/sql/queries/user_preferences.sql |
+| schema_migrations / alembic_version | 分别为 Go 工具与旧 Alembic 版本表；不是业务写入 API | server/cmd/migrate、backend/core/database.py |
+
+此表校准已识别调用，不声称数据库角色已隔离或所有读写路径已穷尽。
+工作区等遗留表的调用方、必要索引与实际 GRANT 仍需审计；质量整改不提前建立未来业务表。

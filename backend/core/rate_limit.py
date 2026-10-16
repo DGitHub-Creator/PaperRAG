@@ -22,6 +22,7 @@ from slowapi.util import get_remote_address
 from starlette.requests import Request
 
 from backend.core.config.auth import RATE_LIMIT, TRUST_PROXY_HEADERS, TRUSTED_PROXY_CIDRS
+from backend.core.config.database import REDIS_KEY_PREFIX
 
 
 def _resolve_storage_uri() -> str | None:
@@ -77,6 +78,7 @@ default_limits = _parse_default_limits(RATE_LIMIT)
 
 limiter = Limiter(
     key_func=rate_limit_key,
+    key_prefix=REDIS_KEY_PREFIX + ":http-rate",
     default_limits=default_limits,
     storage_uri=storage_uri,
     headers_enabled=True,  # 响应携带 X-RateLimit-* 头，便于前端与运维观察

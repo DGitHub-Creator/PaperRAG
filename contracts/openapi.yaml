@@ -630,10 +630,10 @@ components:
         password:
           type: string
         role:
-          allOf:
-            - $ref: "#/components/schemas/Role"
+          type: string
           nullable: true
           default: user
+          description: 仅 admin 进入邀请码校验；其他字符串、null 或缺省均作为 user 注册。
         admin_code:
           type: string
           nullable: true
@@ -723,9 +723,10 @@ components:
     RagTrace:
       type: object
       description: |
-        As-Is 在 backend/schemas/schemas.py:167 声明 41 个字段。本契约**只锁两个必有字段**，
-        其余允许透传：01 §6.3 记录的坑正是 REST 走 pydantic 白名单过滤、SSE/WS 直发原始 dict，
-        造成同一份数据两种形状。Go 的职责是原样转发，不做字段筛选。
+        由 backend/schemas/schemas.py 的 RagTrace 声明并投影，不保证未知字段透传。
+        新写入在保存前校验，REST、SSE 与持久化使用相同已声明字段。
+        历史消息的追踪无法解析时 rag_trace 返回 null、正文保留并记录警告；不伪造检索证据。
+        citations 保存 supported=true/false 的引用标签校验结果；标签存在不等同于语义接地。
       required: [tool_used, tool_name]
       properties:
         tool_used:
