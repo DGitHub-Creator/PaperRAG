@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: 前端构建（Vite → dist/）──────────────────────────────────
-FROM node:20-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 WORKDIR /build
 
 # 先装依赖（利用层缓存，仅 lockfile 变化时重建）

@@ -1034,9 +1034,8 @@
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
-    "note": "质量整改持续进行；追踪/契约/测试隔离、真实 HTTP 限流与 Go 库启动已修。ACL 存在性校验已补，索引与实际角色、索引恢复等未完成；阶段进度不变。",
-    "current_task": "R11 发布本批验收；随后继续 R06/R07/R08",
-    "published_commit": "2a44ad65",
+    "note": "代码检查点 355e504d 已发布；前端已知漏洞审计 10→0 且回归通过。Python 已安装环境审计 32 包/235 条记录待分组治理，不能宣称全仓安全或合规。",
+    "current_task": "R12 Python 依赖分组修复/适用性核对；R06/R07/R08 持续进行",
     "completed_tasks": [
       "R01",
       "R02",
@@ -1044,7 +1043,8 @@
       "R04",
       "R05",
       "R09",
-      "R10"
+      "R10",
+      "R11"
     ]
   }
 }

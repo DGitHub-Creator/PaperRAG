@@ -35,7 +35,7 @@
 
 ### 3.1 宿主工具
 
-需要 Git、运行中的 Docker Desktop、uv、Node.js/npm 以及 Go。
+需要 Git、运行中的 Docker Desktop、uv、Node.js/npm 以及 Go。前端默认使用 Node.js 24，受支持版本约束见 frontend/package.json。
 Python 解释器按 [.python-version](.python-version)，Go 按 [go.mod](server/go.mod)，依赖按锁文件安装。
 sqlc 只在生成数据访问代码时需要，版本由 dev.py gen 校验。
 
