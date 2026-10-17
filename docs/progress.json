@@ -1034,8 +1034,8 @@
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
-    "note": "代码检查点 355e504d 已发布；前端已知漏洞审计 10→0 且回归通过。Python 已安装环境审计 32 包/235 条记录待分组治理，不能宣称全仓安全或合规。",
-    "current_task": "R12 Python 依赖分组修复/适用性核对；R06/R07/R08 持续进行",
+    "note": "前端公告审计为 0；Python 上传解析/网络首组 8 个锁定包升级并回归，当前安装环境 176 包中 24 包/118 条公告仍待治理；667 passed / 48 skipped，不代表真实业务链路或全仓合规。",
+    "current_task": "R12 继续 Web/异步网络、加密与模型依赖；R06/R07/R08 持续进行",
     "completed_tasks": [
       "R01",
       "R02",

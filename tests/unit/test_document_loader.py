@@ -3,6 +3,22 @@
 from unittest.mock import patch
 
 
+def test_pypdf_fallback_extracts_real_pdf(tmp_path):
+    """验证真实 PDF 经 LangChain/PyPDF 兜底解析，避免 mock 掩盖依赖不兼容。"""
+    import fitz
+
+    from backend.rag.document_loader import _try_pypdf
+
+    path = tmp_path / "parser-compatibility.pdf"
+    expected = "ResearchPilot PDF dependency compatibility check."
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_text((72, 72), expected)
+        document.save(path)
+
+    assert expected in _try_pypdf(str(path))
+
+
 class TestParsePdfWithFallback:
     def test_first_parser_succeeds(self):
         text = "This is a valid academic paper content with more than fifty non-whitespace characters for testing purposes. " * 3
