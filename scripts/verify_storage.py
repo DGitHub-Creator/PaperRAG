@@ -15,9 +15,10 @@ from dotenv import dotenv_values
 from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
-def verify_http(environment: dict, temporary: str) -> int:
+def verify_http(environment: dict, temporary: str, credentials: dict) -> int:
     """在同一个隔离库启动两个真实源码进程，仅验认证/会话，不调用 LLM 或 Milvus。"""
     import httpx
 
@@ -34,10 +35,13 @@ def verify_http(environment: dict, temporary: str) -> int:
         "APP_ENV": "development", "PORT": str(ports[0]), "PYTHON_UPSTREAM": python_url,
         "CHAIN_GO_API_URL": go_url, "CHAIN_AI_CORE_URL": python_url,
         "REDIS_KEY_PREFIX": prefix, "CHAIN_REDIS_PREFIX": prefix,
-        "JWT_SECRET_KEY": secrets.token_urlsafe(32), "ADMIN_INVITE_CODE": "",
+        "JWT_SECRET_KEY": secrets.token_urlsafe(32),
+        "ADMIN_INVITE_CODE": secrets.token_urlsafe(32),
+        "USE_REDIS_JOB_MANAGER": "true",
         "TRUST_PROXY_HEADERS": "false", "TRUSTED_PROXY_CIDRS": "", "RATE_LIMIT": "",
         "LLM_API_KEY": "unused-by-auth-verification", "LLM_MODEL": "unused-by-auth-verification",
     })
+    environment["CHAIN_ADMIN_INVITE_CODE"] = environment["ADMIN_INVITE_CODE"]
     binary = Path(temporary) / ("api.exe" if os.name == "nt" else "api")
     subprocess.run(["go", "build", "-o", str(binary), "./cmd/api"], cwd=ROOT / "server", check=True)
     children, logs = [], []
@@ -46,8 +50,10 @@ def verify_http(environment: dict, temporary: str) -> int:
         for index, command in enumerate(commands):
             log = (Path(temporary) / f"http-{index}.log").open("w", encoding="utf-8")
             logs.append(log)
+            role, password = credentials["go" if index == 0 else "python"]
+            child_environment = {**environment, "DATABASE_URL": make_url(environment["DATABASE_URL"]).set(username=role, password=password).render_as_string(hide_password=False)}
             children.append(subprocess.Popen(
-                command, cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                command, cwd=ROOT, env=child_environment, stdout=log, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             ))
         deadline = time.monotonic() + 45
@@ -90,6 +96,8 @@ def main() -> int:
     environment = {**{k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}, **os.environ}
     url = make_url(environment.get("DATABASE_URL") or "postgresql://postgres:postgres@127.0.0.1:5432/langchain_app")
     name = "quality_" + uuid4().hex
+    credentials = {app: (name + "_" + app, secrets.token_urlsafe(32)) for app in ("go", "python")}
+    roles_created = False
 
     def sql(statement):
         subprocess.run(
@@ -106,6 +114,7 @@ def main() -> int:
             environment["REFACTOR_TEST_DATABASE_URL"] = url.set(drivername="postgresql+psycopg2", database=name).render_as_string(hide_password=False)
             environment["REFACTOR_TEST_REDIS_URL"] = environment.get("REDIS_URL", "redis://127.0.0.1:6379/0")
             environment["TEMP"] = environment["TMP"] = temporary
+            environment["REFACTOR_MIGRATE_BINARY"] = str(binary)
             for _ in range(2):
                 subprocess.run([str(binary), "-path", str(ROOT / "server/migrations"), "up"], env=environment, check=True)
             result = subprocess.run([
@@ -113,11 +122,22 @@ def main() -> int:
                 "tests/integration/test_conversation_postgres.py",
                 "tests/integration/test_execution_postgres.py",
                 "tests/integration/test_document_job_state.py",
+                "tests/integration/test_document_recovery.py",
             ], cwd=ROOT, env=environment).returncode
-            return verify_http(environment, temporary) if result == 0 and args.http else result
+            if result == 0 and args.http:
+                # 测试铺数仍用隔离库管理员；两个实际服务仅获得当前需要的表级权限。
+                from scripts.configure_database_roles import configure_roles
+                configure_roles(environment["DATABASE_URL"], credentials)
+                roles_created = True
+                return verify_http(environment, temporary, credentials)
+            return result
     finally:
         # 名称仅由本函数生成，只删除刚创建的隔离库，不接受外部传入数据库名。
         sql(f"DROP DATABASE {name};")
+        if roles_created:
+            for role, _ in credentials.values():
+                # 库删除后对象授权随之消失；角色只由本轮 UUID 创建。
+                sql(f"DROP ROLE {role};")
 
 
 if __name__ == "__main__":

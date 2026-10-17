@@ -1034,8 +1034,8 @@
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
-    "note": "Python 完整锁文件 210 个版本审计无公告，npm audit 为 0；Go 1.27.2/x-text 安全修复后 govulncheck 无发现。当前局部恢复与受限运行权限已真实验收；真实模型产品端到端仍未验证。",
-    "current_task": "依赖安全与兼容修复已验证，按关注点提交；存储恢复、部署配置和文档将同批收尾。",
+    "note": "最终离线 Python 696 passed / 68 skipped；真实存储/权限 29 项、受限 HTTP 26 项、浏览器 12 项通过。完整锁文件 210 个版本、Go govulncheck 与 npm audit 无发现；真实模型端到端仍未验证。",
+    "current_task": "依赖安全已提交；存储恢复、数据库约束和受限运行权限已验证并提交，剩部署配置与文档收尾。",
     "completed_tasks": [
       "R01",
       "R02",

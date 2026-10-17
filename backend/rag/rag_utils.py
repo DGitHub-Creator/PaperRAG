@@ -41,6 +41,8 @@ from backend.core.dependencies import (
     get_stepback_model,
 )
 from backend.core.logging_config import get_logger
+from backend.core.exceptions import RetrievalError
+from backend.services.document_jobs import read_document_index
 from backend.rag.citation_extractor import extract_citation_refs
 from backend.rag.formula_index import get_formula_lsh_index
 from backend.rag.formula_normalizer import extract_formulas, normalize_formula
@@ -367,8 +369,8 @@ def _expand_context(docs: list[dict]) -> tuple[list[dict], dict[str, Any]]:
     all_children: dict[str, dict] = {}
     for (filename, pi) in all_parents:
         try:
-            escaped = filename.replace('"', '\\"')
-            filter_expr = f'filename == "{escaped}" && parent_idx == {pi}'
+            filter_expr = f"filename == {json.dumps(filename, ensure_ascii=False)} && parent_idx == {pi}"
+
             rows = get_milvus_manager().query_all(
                 filter_expr=filter_expr,
                 output_fields=[
@@ -601,7 +603,7 @@ def _formula_search(query: str, top_k: int = 3) -> list[dict]:
 
             try:
                 rows = get_milvus_manager().query(
-                    filter_expr=f'chunk_id == "{chunk_id}"',
+                    filter_expr=f"chunk_id == {json.dumps(chunk_id, ensure_ascii=False)}",
                     output_fields=[
                         "text", "filename", "file_type", "page_number",
                         "chunk_id", "parent_chunk_id", "root_chunk_id",
@@ -714,7 +716,7 @@ def retrieve_documents(query: str, top_k: int = 5) -> dict[str, Any]:
         - Formula 检索无匹配 → 跳过公式路径
         - Hybrid 失败 → 自动降级为 Dense-only 检索
         - Rerank 失败/未配置 → 跳过精排，直接截断
-        - 全部失败 → 返回空结果 + 完整 meta
+        - 全部失败 → 抛出可观测异常，不把依赖故障伪装成无结果
 
     Args:
         query: 检索查询文本。
@@ -723,93 +725,65 @@ def retrieve_documents(query: str, top_k: int = 5) -> dict[str, Any]:
     Returns:
         {"docs": [...], "meta": {...}}，包含文档列表和完整检索元信息。
     """
-    candidate_k = max(top_k * 3, top_k)
-    filter_expr = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
+    with read_document_index():
+        candidate_k = max(top_k * 3, top_k)
+        filter_expr = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
 
-    # ── Formula 感知检索（查询含 LaTeX 时启用）────────────────────
-    formula_docs = _formula_search(query, top_k=top_k)
-    formula_match = len(formula_docs) > 0
+        # ── Formula 感知检索（查询含 LaTeX 时启用）────────────────────
+        formula_docs = _formula_search(query, top_k=top_k)
+        formula_match = len(formula_docs) > 0
 
-    # ── 文本检索（Hybrid 优先，Dense 降级）─────────────────────────
-    result: dict[str, Any] | None = None
-    try:
-        _es = get_embedding_service()
-        de = _es.get_embeddings([query])[0]
-        se = _es.get_sparse_embedding(query)
-        retrieved = get_milvus_manager().hybrid_retrieve(
-            dense_embedding=de, sparse_embedding=se,
-            top_k=candidate_k, filter_expr=filter_expr,
-        )
-        reranked, rm = _rerank_documents(query, retrieved, top_k)
-        merged, mm = _auto_merge_documents(reranked, top_k)
-        expanded, em = _expand_context(merged)
-        rm.update(mm or {})
-        rm.update(em or {})
-        rm["retrieval_mode"] = "hybrid"
-        rm["formula_match"] = formula_match
-        rm["formula_result_count"] = len(formula_docs)
-        result = {"docs": expanded, "meta": rm}
-    except Exception as e:
-        logger.warning("Hybrid 检索失败，降级为 Dense-only: %s", e)
-
-    if result is None:
+        # ── 文本检索（Hybrid 优先，Dense 降级）─────────────────────────
+        result: dict[str, Any] | None = None
         try:
             _es = get_embedding_service()
             de = _es.get_embeddings([query])[0]
-            retrieved = get_milvus_manager().dense_retrieve(
-                dense_embedding=de, top_k=candidate_k, filter_expr=filter_expr,
+            se = _es.get_sparse_embedding(query)
+            retrieved = get_milvus_manager().hybrid_retrieve(
+                dense_embedding=de, sparse_embedding=se,
+                top_k=candidate_k, filter_expr=filter_expr,
             )
             reranked, rm = _rerank_documents(query, retrieved, top_k)
             merged, mm = _auto_merge_documents(reranked, top_k)
             expanded, em = _expand_context(merged)
             rm.update(mm or {})
             rm.update(em or {})
-            rm["retrieval_mode"] = "dense_fallback"
+            rm["retrieval_mode"] = "hybrid"
             rm["formula_match"] = formula_match
             rm["formula_result_count"] = len(formula_docs)
             result = {"docs": expanded, "meta": rm}
-        except Exception as e2:
-            logger.error("Dense 检索也失败: %s", e2)
-            result = _empty_retrieve_result(candidate_k)
+        except Exception as e:
+            logger.warning("Hybrid 检索失败，降级为 Dense-only: %s", e)
 
-    # ── 融合 formula 结果到文本结果 ───────────────────────────────
-    if formula_match and result.get("docs"):
-        seen = {d.get("chunk_id") for d in result["docs"]}
-        for fd in formula_docs:
-            if fd.get("chunk_id") not in seen:
-                result["docs"].append(fd)
-        logger.debug("Formula 检索融合: +%d docs (共 %d)", len(formula_docs), len(result["docs"]))
+        if result is None:
+            try:
+                _es = get_embedding_service()
+                de = _es.get_embeddings([query])[0]
+                retrieved = get_milvus_manager().dense_retrieve(
+                    dense_embedding=de, top_k=candidate_k, filter_expr=filter_expr,
+                )
+                reranked, rm = _rerank_documents(query, retrieved, top_k)
+                merged, mm = _auto_merge_documents(reranked, top_k)
+                expanded, em = _expand_context(merged)
+                rm.update(mm or {})
+                rm.update(em or {})
+                rm["retrieval_mode"] = "dense_fallback"
+                rm["formula_match"] = formula_match
+                rm["formula_result_count"] = len(formula_docs)
+                result = {"docs": expanded, "meta": rm}
+            except Exception as e2:
+                logger.exception("Hybrid 与 Dense 检索均失败")
+                raise RetrievalError("知识库检索暂不可用") from e2
 
-    # ── 引文优先级提升 ───────────────────────────────────────────
-    result["docs"] = _citation_boost(result["docs"], query)
+        # ── 融合 formula 结果到文本结果 ───────────────────────────────
+        if formula_match and result.get("docs"):
+            seen = {d.get("chunk_id") for d in result["docs"]}
+            for fd in formula_docs:
+                if fd.get("chunk_id") not in seen:
+                    result["docs"].append(fd)
+            logger.debug("Formula 检索融合: +%d docs (共 %d)", len(formula_docs), len(result["docs"]))
 
-    return result
+        # ── 引文优先级提升 ───────────────────────────────────────────
+        result["docs"] = _citation_boost(result["docs"], query)
 
-
-def _empty_retrieve_result(candidate_k: int) -> dict[str, Any]:
-    """构建空检索结果的 meta（所有功能标记为未应用）。"""
-    return {
-        "docs": [],
-        "meta": {
-            "rerank_enabled": bool(
-                RERANK_MODEL and (RERANK_API_KEY or LOCAL_RERANKER)
-            ),
-            "rerank_applied": False,
-            "rerank_model": RERANK_MODEL or "BAAI/bge-reranker-v2-m3",
-            "rerank_endpoint": _get_rerank_endpoint() if not LOCAL_RERANKER else "local",
-            "rerank_error": "retrieve_failed",
-            "retrieval_mode": "failed",
-            "candidate_k": candidate_k,
-            "leaf_retrieve_level": LEAF_RETRIEVE_LEVEL,
-            "auto_merge_enabled": AUTO_MERGE_ENABLED,
-            "auto_merge_applied": False,
-            "auto_merge_threshold": AUTO_MERGE_THRESHOLD,
-            "auto_merge_replaced_chunks": 0,
-            "auto_merge_steps": 0,
-            "context_expansion_enabled": ENABLE_CONTEXT_EXPANSION,
-            "context_expansion_applied": False,
-            "candidate_count": 0,
-            "formula_match": False,
-            "formula_result_count": 0,
-        },
-    }
+        return result

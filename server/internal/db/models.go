@@ -26,6 +26,7 @@ type AiExecution struct {
 	EvidenceCandidates []byte
 	Usage              []byte
 	Errors             []byte
+	RequestPayload     []byte
 }
 
 type AlembicVersion struct {

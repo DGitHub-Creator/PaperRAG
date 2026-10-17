@@ -2,6 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from backend.core.exceptions import RetrievalError
+
+pytestmark = pytest.mark.usefixtures("mock_index_database")
+
 
 def _make_doc(**overrides) -> dict:
     base = {
@@ -105,16 +111,6 @@ class TestCitationBoost:
         assert result == []
 
 
-class TestEmptyRetrieveResult:
-    def test_structure(self):
-        from backend.rag.rag_utils import _empty_retrieve_result
-        result = _empty_retrieve_result(15)
-        assert "docs" in result
-        assert "meta" in result
-        assert result["docs"] == []
-        assert result["meta"]["retrieval_mode"] == "failed"
-
-
 class TestRetrieveDocuments:
     def test_hybrid_success(self):
         from backend.rag.rag_utils import retrieve_documents
@@ -168,7 +164,7 @@ class TestRetrieveDocuments:
             assert result["meta"]["retrieval_mode"] == "dense_fallback"
             milvus.dense_retrieve.assert_called_once()
 
-    def test_all_fail_returns_empty(self):
+    def test_all_fail_retains_original_failure_cause(self):
         from backend.rag.rag_utils import retrieve_documents
         embedding = MagicMock()
         embedding.get_embeddings.return_value = [[0.1] * 1024]
@@ -180,6 +176,6 @@ class TestRetrieveDocuments:
         with patch("backend.rag.rag_utils.get_embedding_service", return_value=embedding), \
              patch("backend.rag.rag_utils.get_milvus_manager", return_value=milvus), \
              patch("backend.rag.rag_utils._formula_search", return_value=[]):
-            result = retrieve_documents("test query")
-            assert result["docs"] == []
-            assert result["meta"]["retrieval_mode"] == "failed"
+            with pytest.raises(RetrievalError) as caught:
+                retrieve_documents("test query")
+            assert str(caught.value.__cause__) == "Dense also failed"

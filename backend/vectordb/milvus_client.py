@@ -212,6 +212,7 @@ class MilvusManager:
                 limit=min(limit, QUERY_MAX_LIMIT),
                 offset=offset,
                 timeout=MILVUS_OPERATION_TIMEOUT,
+                consistency_level="Strong",
             )
         )
 
@@ -222,6 +223,7 @@ class MilvusManager:
                 collection_name=self.collection_name, filter=filter_expr,
                 output_fields=output_fields or ["filename", "file_type"], batch_size=1000,
                 timeout=MILVUS_OPERATION_TIMEOUT,
+                consistency_level="Strong",
             )
             rows = []
             try:
@@ -343,6 +345,7 @@ class MilvusManager:
                 limit=top_k,
                 output_fields=self._RETRIEVAL_OUTPUT_FIELDS,
                 timeout=MILVUS_OPERATION_TIMEOUT,
+                consistency_level="Strong",
             )
         )
 
@@ -381,6 +384,7 @@ class MilvusManager:
                 output_fields=self._RETRIEVAL_OUTPUT_FIELDS,
                 filter=filter_expr,
                 timeout=MILVUS_OPERATION_TIMEOUT,
+                consistency_level="Strong",
             )
         )
 

@@ -368,3 +368,36 @@ class TestVerifyColumns:
         errs, notes = verify_columns(_migrations(tmp_path, up=up), _snapshots(_snapshot_rows()))
         assert errs == []
         assert any("ai_executions" in n for n in notes), notes
+
+
+def test_cleanup_allows_only_provably_redundant_pk_index_with_inverse(tmp_path):
+    up = "CREATE TABLE IF NOT EXISTS users (id INTEGER, CONSTRAINT users_pkey PRIMARY KEY (id));\nCREATE INDEX IF NOT EXISTS ix_users_id ON users (id);"
+    directory = _write(tmp_path, up=up)
+    _write(tmp_path, name="000004_cleanup", up="DROP INDEX IF EXISTS public.ix_users_id;", down="CREATE INDEX IF NOT EXISTS ix_users_id ON users (id);")
+    assert check_baseline(directory) == []
+    _write(tmp_path, name="000004_cleanup", up="DROP INDEX IF EXISTS public.ix_users_id;", down="SELECT 1;")
+    assert any("破坏性操作" in error for error in check_baseline(directory))
+
+
+def test_unique_business_index_cannot_be_removed_as_pk_duplicate(tmp_path):
+    directory = _write(tmp_path)
+    _write(tmp_path, name="000004_cleanup", up="DROP INDEX IF EXISTS public.ix_users_username;", down="CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username);")
+    assert any("破坏性操作" in error for error in check_baseline(directory))
+
+
+def test_live_snapshot_disposes_engine_when_a_query_fails(monkeypatch):
+    from unittest.mock import MagicMock
+    from scripts.audit_schema import collect_live
+
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value.execute.side_effect = RuntimeError("unavailable")
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda _: engine)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        collect_live("unused-test-dsn")
+    engine.dispose.assert_called_once()
+
+
+def test_additive_migration_column_participates_in_snapshot_comparison():
+    columns = parse_ddl_columns("ALTER TABLE ai_executions ADD COLUMN IF NOT EXISTS request_payload JSONB;")
+    assert columns["ai_executions"]["request_payload"]["type"] == "jsonb"
+    assert columns["ai_executions"]["request_payload"]["nullable"] is True

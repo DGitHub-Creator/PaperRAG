@@ -23,6 +23,11 @@
     init_db()
 """
 
+import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
+from threading import BoundedSemaphore
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -36,6 +41,12 @@ logger = get_logger(__name__)
 # 确保连接未被服务端断开（避免 "connection closed" 错误）。
 # pool_recycle=3600: 每小时回收连接，防止长连接被数据库断开。
 # pool_size / max_overflow: 连接池大小，通过环境变量配置。
+if DB_POOL_SIZE < 1 or DB_MAX_OVERFLOW < 0 or DB_POOL_SIZE + DB_MAX_OVERFLOW < 3:
+    raise ValueError("数据库连接池必须有界且至少容纳 3 个连接；检查 DB_POOL_SIZE / DB_MAX_OVERFLOW")
+
+_operation_slots = BoundedSemaphore((DB_POOL_SIZE + DB_MAX_OVERFLOW) // 3)
+_inside_operation: ContextVar[bool] = ContextVar("inside_database_operation", default=False)
+
 engine = create_engine(
     DATABASE_URL,
     pool_size=DB_POOL_SIZE,
@@ -59,6 +70,30 @@ SessionLocal = sessionmaker(
 # ── 声明式基类 ──────────────────────────────────────────────────────
 # 所有 ORM 模型类继承自此 Base，SQLAlchemy 据此发现和管理表映射。
 Base = declarative_base()
+
+
+@contextmanager
+def advisory_lock(resource: str, *, session_factory=None, shared=False, blocking=True, timeout_seconds=30):
+    """跨进程操作锁；一个操作最多占三条嵌套连接，先限并发再借连接，防止连接池互等。"""
+    if timeout_seconds <= 0:
+        raise ValueError("数据库锁超时必须为正数")
+    outermost = not _inside_operation.get()
+    if outermost and not _operation_slots.acquire(timeout=timeout_seconds):
+        raise TimeoutError("数据库操作并发已满，请稍后重试")
+    token = _inside_operation.set(True)
+    try:
+        key = int.from_bytes(hashlib.blake2b(resource.encode(), digest_size=8).digest(), signed=True)
+        with (session_factory or SessionLocal)() as db, db.begin():
+            db.execute(text("SELECT set_config('lock_timeout', :timeout, true)"), {"timeout": f"{timeout_seconds}s"})
+            function = "pg_advisory_xact_lock_shared" if shared else "pg_advisory_xact_lock"
+            if not blocking:
+                function = function.replace("pg_advisory", "pg_try_advisory")
+            result = db.execute(text(f"SELECT {function}(:key)"), {"key": key})
+            yield True if blocking else bool(result.scalar())
+    finally:
+        _inside_operation.reset(token)
+        if outermost:
+            _operation_slots.release()
 
 
 def get_db():
@@ -101,8 +136,8 @@ def init_db() -> None:
     with engine.connect() as connection:
         if connection.execute(text("SELECT to_regclass('public.schema_migrations')")).scalar() is not None:
             state = connection.execute(text("SELECT version, dirty FROM public.schema_migrations")).one_or_none()
-            # 三份既有 Go 迁移包含 Python 所需基线与执行表；不能在它们之后重放旧建表链。
-            if state is None or state.version < 3 or state.dirty:
+            # 最新执行面需要持久化重放输入；不能在 Go 迁移之后重放旧建表链。
+            if state is None or state.version < 5 or state.dirty:
                 raise RuntimeError("Go 数据库迁移尚未完成或处于 dirty 状态，请先运行 dev.py migrate-go")
             logger.info("Go 数据库迁移已就绪，跳过旧 Alembic 启动迁移")
             return

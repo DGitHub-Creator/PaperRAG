@@ -12,7 +12,7 @@ from pathlib import Path
 from backend.core.config import UPLOAD_DIR
 from backend.core.dependencies import get_document_loader
 from backend.core.logging_config import get_logger
-from backend.services.document_jobs import index_document
+from backend.services.document_jobs import index_document, validate_document_filename
 
 logger = get_logger(__name__)
 from backend.internal_api.schemas import ExecuteRequest, Usage
@@ -48,10 +48,10 @@ def _resolve_filename(payload: dict | None) -> str:
     """
     if not payload or not isinstance(payload.get("filename"), str) or not payload["filename"].strip():
         raise TaskError("INVALID_PAYLOAD", "payload.filename 必填（PARSE_PAPER/INDEX_PAPER 以文件名为引用）")
-    name = payload["filename"]
-    if Path(name).name != name or any(char in name for char in ("/", "\\", ":", "\x00")):
-        raise TaskError("INVALID_PAYLOAD", "filename 不得包含路径段")
-    return name
+    try:
+        return validate_document_filename(payload["filename"])
+    except ValueError as exc:
+        raise TaskError("INVALID_PAYLOAD", "filename 不得包含路径段或非法字符") from exc
 
 
 def _load(path: Path, filename: str) -> list[dict]:

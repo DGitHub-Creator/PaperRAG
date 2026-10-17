@@ -20,7 +20,7 @@ def legacy_database(_patch_database):
     return connection
 
 
-@pytest.mark.parametrize("state", [None, (2, False), (3, True)])
+@pytest.mark.parametrize("state", [None, (2, False), (3, True), (4, False)])
 def test_go_managed_database_never_falls_back_to_alembic(legacy_database, state):
     from types import SimpleNamespace
 

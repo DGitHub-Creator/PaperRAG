@@ -17,6 +17,8 @@ sql:
       - "migrations/000001_baseline.up.sql"
       - "migrations/000002_ai_executions.up.sql"
       - "migrations/000003_user_preferences.up.sql"
+      - "migrations/000004_index_constraints.up.sql"
+      - "migrations/000005_execution_replay.up.sql"
     queries:
       - "sql/queries"
     gen:

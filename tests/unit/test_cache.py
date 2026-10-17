@@ -1,9 +1,21 @@
 """Tests for backend.services.cache — SemanticCache (in-memory, no Redis required)."""
 
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from backend.services.cache import SemanticCache
+from backend.services.cache import RedisCache, SemanticCache
+
+
+def test_pattern_deletion_uses_bounded_scan_batches():
+    cache = RedisCache()
+    client = MagicMock()
+    client.scan_iter.return_value = (f"key-{index}" for index in range(251))
+    client.delete.side_effect = lambda *keys: len(keys)
+    cache._client = client
+    cache.delete_pattern("documents:*")
+    client.keys.assert_not_called()
+    assert [len(call.args) for call in client.delete.call_args_list] == [100, 100, 51]
+    client.scan_iter.assert_called_once_with(match=cache._key("documents:*"), count=100)
 
 
 class TestSemanticCacheNormalize:

@@ -1,8 +1,7 @@
 """
 测试共享 fixtures —— Mock 数据库、Mock Milvus、Test Client。
 
-重要：必须先 patch langchain_huggingface 再 import 任何 backend 模块，
-因为 backend.rag.embedding 的模块级代码会实例化 HuggingFaceEmbeddings。
+外部模型和存储通过 fixture 隔离；保留真实依赖导入，不在 sys.modules 伪造第三方包。
 """
 
 import os
@@ -49,6 +48,19 @@ def _patch_database():
     with patch("backend.core.database.engine"), \
          patch("backend.core.database.SessionLocal"):
         yield
+
+
+@pytest.fixture
+def mock_index_database(tmp_path, monkeypatch):
+    """检索单测只隔离实际 SQL 会话与状态文件，保留读保护和父块合并逻辑。"""
+    from backend.rag import parent_chunk_store
+    from backend.services import document_jobs
+
+    session = MagicMock()
+    session.__enter__.return_value.scalars.return_value.all.return_value = []
+    monkeypatch.setattr(document_jobs, "SessionLocal", lambda: session)
+    monkeypatch.setattr(parent_chunk_store, "SessionLocal", lambda: session)
+    monkeypatch.setattr(document_jobs, "_INGESTED_PATH", tmp_path / "ingested.json")
 
 
 # ── 在 import backend 模块之前拦截 HuggingFace 模型加载 ──
@@ -142,6 +154,9 @@ def client(app):
     """FastAPI TestClient（拦截启动时的数据库初始化和配置校验）。"""
     with (
         patch("backend.app.init_db"),
+        patch("backend.app.recover_pending_documents"),
+        patch("backend.app.recover_document_jobs"),
+        patch("backend.app.recover_executions"),
         patch("backend.app.validate_config"),
         patch("backend.app.validate_runtime_security"),
     ):

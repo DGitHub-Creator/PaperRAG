@@ -26,6 +26,7 @@ from backend.api.routes import router as api_router
 from backend.api.sessions import router as sessions_router
 from backend.api.ws import router as ws_router
 from backend.internal_api import internal_router
+from backend.internal_api.router import recover_executions
 from backend.core.config import (
     ALLOWED_ORIGINS,
     ensure_runtime_directories,
@@ -44,6 +45,7 @@ from backend.core.logging_config import request_trace_id, setup_root_logger
 from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
 from backend.core.rate_limit import default_limits, key_source, limiter, storage_backend
 from backend.core.stats import record_request
+from backend.services.document_jobs import recover_document_jobs, recover_pending_documents
 
 # ── 初始化日志系统 ──────────────────────────────────────────────────
 # 在应用启动前配置根 logger，后续所有模块的 logger 自动继承 handler
@@ -73,6 +75,9 @@ def create_app() -> FastAPI:
         validate_config()
         validate_runtime_security()
         await run_in_threadpool(init_db)
+        await run_in_threadpool(recover_pending_documents)
+        await run_in_threadpool(recover_document_jobs)
+        await run_in_threadpool(recover_executions)
         init_metrics()
         logger.info("数据库初始化完成")
         yield

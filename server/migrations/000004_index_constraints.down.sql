@@ -1,0 +1,10 @@
+BEGIN;
+DROP INDEX public.uq_workspace_member;
+CREATE INDEX IF NOT EXISTS ix_users_id ON users (id);
+CREATE INDEX IF NOT EXISTS ix_workspaces_id ON workspaces (id);
+CREATE INDEX IF NOT EXISTS ix_workspace_members_id ON workspace_members (id);
+CREATE INDEX IF NOT EXISTS ix_chat_sessions_id ON chat_sessions (id);
+CREATE INDEX IF NOT EXISTS ix_chat_messages_id ON chat_messages (id);
+CREATE INDEX IF NOT EXISTS ix_citation_edges_id ON citation_edges (id);
+CREATE INDEX IF NOT EXISTS ix_glossary_entries_id ON glossary_entries (id);
+COMMIT;

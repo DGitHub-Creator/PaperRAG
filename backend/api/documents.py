@@ -37,7 +37,7 @@ from backend.services.upload_jobs import (
 
 from backend.services.document_jobs import (
     _compute_file_hash, _load_ingested_state, _process_delete_job, _process_ingest_job, _process_upload_job,
-    index_document, remove_document,
+    index_document, remove_document, validate_document_filename,
 )
 
 logger = get_logger(__name__)
@@ -59,11 +59,10 @@ def _is_supported_document(filename: str) -> bool:
 
 
 def _normalize_document_filename(filename: str) -> str:
-    safe_name = Path(filename or "").name.strip()
-    if not safe_name:
-        raise HTTPException(status_code=400, detail="filename must not be empty")
-    if safe_name != filename or safe_name in {".", ".."} or any(char in safe_name for char in ("/", "\\", ":", "\x00")):
-        raise HTTPException(status_code=400, detail="filename must not contain path segments")
+    try:
+        safe_name = validate_document_filename(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not _is_supported_document(safe_name):
         raise HTTPException(status_code=400, detail="unsupported document type")
     return safe_name
@@ -123,11 +122,14 @@ def list_documents(_: User = Depends(require_admin)):
 @router.post("/documents/upload/async", response_model=DocumentUploadStartResponse)
 async def upload_document_async(background_tasks: BackgroundTasks, file: UploadFile = File(...), _: User = Depends(require_admin)):
     filename = _normalize_document_filename(file.filename or "")
-    job = upload_job_manager.create_job(filename)
     file_path = _staging_path(filename)
+    context = {"operation": "upload", "source": str(file_path), "destination": str(COMPUTED_UPLOAD_DIR / filename)}
+    job = upload_job_manager.create_job(filename, context=context)
     try:
         upload_job_manager.update_step(job["job_id"], "upload", 1, "running", "正在保存文件")
         await _save_upload_file(file, file_path)
+        context["hash"] = await run_in_threadpool(_compute_file_hash, file_path)
+        upload_job_manager.set_context(job["job_id"], context)
         upload_job_manager.complete_step(job["job_id"], "upload", "文件已暂存，等待解析")
     except HTTPException:
         upload_job_manager.fail_job(job["job_id"], "upload", "文件大小超过限制")
@@ -187,7 +189,7 @@ async def delete_document_async(
         steps=DELETE_STEPS,
         current_step="prepare",
         message="等待删除",
-        completion_step="parent_store",
+        completion_step="parent_store", context={"operation": "delete"},
     )
     delete_job_manager.update_step(job["job_id"], "prepare", 1, "running", "删除任务已提交")
     background_tasks.add_task(_process_delete_job, job["job_id"], filename)
@@ -271,6 +273,7 @@ def incremental_ingest(
         current_step="scan",
         message=f"发现 {len(to_process)} 个待处理文件",
         completion_step="bm25",
+        context={"operation": "ingest", "files": [(str(path), reason) for path, reason in to_process], "deleted": to_delete, "current": current},
     )
 
     background_tasks.add_task(

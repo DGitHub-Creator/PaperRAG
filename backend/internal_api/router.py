@@ -82,34 +82,46 @@ def _terminal_failure_response(row: Execution) -> JSONResponse:
     return _error_response(first.code, first.detail, first.trace_id)
 
 
-def _run(execution_id: str, req: ExecuteRequest) -> Execution | None:
-    spec = REGISTRY.get(req.task_type)
-    if spec is None:  # 提交时已挡过一次，这里挡的是"行存在但类型被摘掉"的竞态
-        return store.fail(execution_id, "UNSUPPORTED_TASK_TYPE", f"未注册的任务类型：{req.task_type}", trace_id=req.trace_id)
+def _run(execution_id: str, req: ExecuteRequest | None = None, *, recover: bool = False) -> Execution | None:
+    with store.run_lock(execution_id) as acquired:
+        if not acquired:
+            return store.get(execution_id)
+        current = store.get(execution_id)
+        if current is None or current.status in {"succeeded", "failed", "cancelled"}:
+            return current
+        try:
+            # 幂等重试必须执行首次已接受的输入，不能偷偷换成本次请求的 payload。
+            req = ExecuteRequest.model_validate(current.request_payload)
+        except ValueError:
+            return store.fail(execution_id, "INVALID_PAYLOAD", "执行缺少有效的恢复输入，请重新提交新任务", lease_token=current.lease_token)
+        lease_token = uuid4().hex
+        if store.start(execution_id, lease_token=lease_token, recover=recover) is None:
+            return store.get(execution_id)
+        spec = REGISTRY.get(req.task_type)
+        if spec is None:
+            return store.fail(execution_id, "UNSUPPORTED_TASK_TYPE", "任务类型未注册", trace_id=req.trace_id, lease_token=lease_token)
+        try:
+            outcome = spec.handler(req)
+        except TaskError as exc:
+            return store.fail(execution_id, exc.code, exc.detail, trace_id=req.trace_id, lease_token=lease_token)
+        except Exception:
+            logger.exception("内部执行失败: execution_id=%s, trace_id=%s", execution_id, req.trace_id)
+            return store.fail(execution_id, "INTERNAL", "内部执行失败，请按 trace_id 查询日志", trace_id=req.trace_id, lease_token=lease_token)
+        finished = store.succeed(
+            execution_id, result=outcome.result, proposed_tasks=outcome.proposed_tasks,
+            evidence_candidates=outcome.evidence_candidates, usage=outcome.usage, lease_token=lease_token,
+        )
+        return finished if finished is not None else store.get(execution_id)
 
-    lease_token = uuid4().hex
-    if store.start(execution_id, lease_token=lease_token) is None:
-        # 已经取消/过期/终态：不起跑，把当前真实状态还给调用方
-        return store.get(execution_id)
 
-    try:
-        outcome = spec.handler(req)
-    except TaskError as exc:
-        return store.fail(execution_id, exc.code, exc.detail, trace_id=req.trace_id, lease_token=lease_token)
-    except Exception:
-        logger.exception("内部执行失败: execution_id=%s, trace_id=%s", execution_id, req.trace_id)
-        return store.fail(execution_id, "INTERNAL", "内部执行失败，请按 trace_id 查询日志", trace_id=req.trace_id, lease_token=lease_token)
-
-    finished = store.succeed(
-        execution_id,
-        result=outcome.result,
-        proposed_tasks=outcome.proposed_tasks,
-        evidence_candidates=outcome.evidence_candidates,
-        usage=outcome.usage,
-        lease_token=lease_token,
-    )
-    # None 表示这一路结果被丢弃（执行已被取消），返回的是取消后的真实状态
-    return finished if finished is not None else store.get(execution_id)
+def recover_executions() -> int:
+    """启动时恢复本地已接受请求；PG 锁排除其他进程仍在执行的记录。"""
+    recovered = 0
+    for execution_id in store.pending_ids():
+        result = _run(execution_id, recover=True)
+        if result is not None and result.status in {"succeeded", "failed", "cancelled"}:
+            recovered += 1
+    return recovered
 
 
 def _pending_response(row: Execution) -> JSONResponse:

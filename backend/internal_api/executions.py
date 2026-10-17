@@ -1,6 +1,7 @@
 """AI 执行状态机：内存单测与 PostgreSQL 生产存储共用转换语义。"""
 
 import copy
+from contextlib import contextmanager
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ class Execution:
     deadline: datetime
     created_at: datetime
     updated_at: datetime
+    request_payload: dict | None = None
     run_id: str | None = None
     trace_id: str | None = None
     lease_token: str | None = None
@@ -46,7 +48,7 @@ def new_execution(req: ExecuteRequest) -> Execution:
     return Execution(
         execution_id=str(uuid.uuid4()), task_id=req.task_id, task_type=req.task_type,
         idempotency_key=req.idempotency_key, status="queued", deadline=req.deadline,
-        created_at=now, updated_at=now, run_id=req.run_id, trace_id=req.trace_id,
+        created_at=now, updated_at=now, run_id=req.run_id, trace_id=req.trace_id, request_payload=req.model_dump(mode="json"),
     )
 
 
@@ -58,6 +60,25 @@ class ExecutionStore:
         self._rows: dict[str, Execution] = {}
         self._by_idempotency: dict[tuple[str | None, str], str] = {}
         self._by_task_id: dict[str, str] = {}
+        self._active: set[str] = set()
+
+    @contextmanager
+    def run_lock(self, execution_id: str):
+        with self._lock:
+            acquired = execution_id not in self._active
+            if acquired:
+                self._active.add(execution_id)
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                with self._lock:
+                    self._active.discard(execution_id)
+
+    def pending_ids(self):
+        with self._lock:
+            identifiers = [row.execution_id for row in self._rows.values() if row.status not in TERMINAL]
+        yield from identifiers
 
     def reset(self) -> None:
         with self._lock:
@@ -92,9 +113,9 @@ class ExecutionStore:
             return row
         return self._mutate(execution_id, read)
 
-    def start(self, execution_id: str, lease_token: str | None = None) -> Execution | None:
+    def start(self, execution_id: str, lease_token: str | None = None, *, recover: bool = False) -> Execution | None:
         def change(row):
-            if row.status != "queued":
+            if row.status != "queued" and not (recover and row.status == "running"):
                 return None
             if row.deadline <= _now():
                 self._fail_locked(row, "MODEL_TIMEOUT", "deadline 已到，任务未起跑", Usage(calls=0, tokens=0, cost=0))

@@ -56,7 +56,7 @@ class User(Base):
     __tablename__ = "users"
 
     # 主键：自增整数 ID
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # 用户名：全局唯一，用于登录和 JWT sub 字段
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     # 密码哈希：PBKDF2-SHA256 格式字符串，最长 255 字符
@@ -94,7 +94,7 @@ class ChatSession(Base):
     __table_args__ = (UniqueConstraint("user_id", "session_id", name="uq_user_session"),)
 
     # 主键：自增整数 ID
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # 外键 → users.id，删除用户时级联删除其所有会话
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -151,7 +151,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     # 主键：自增整数 ID
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # 外键 → chat_sessions.id，删除会话时级联删除其所有消息
     session_ref_id: Mapped[int] = mapped_column(
         ForeignKey("chat_sessions.id", ondelete="CASCADE"),
@@ -183,16 +183,16 @@ class ParentChunk(Base):
     """父级文档分块模型 —— 存储文档的层级化分块信息。
 
     用于 Auto-merging 检索策略:
-      - 文档首先被切割为不同层级的分块（level 0 = 叶节点，level 1 = 父节点，...）。
+      - 当前分块约定：level 1 = 根块、level 2 = 章节父块、level 3 = 可检索叶子块。
       - 检索时从小分块（叶节点）召回，当同一父块下的召回数超过阈值时，
         自动将子分块替换为父分块（更大的上下文窗口）。
-      - 该表存储父块的全量文本，Milvus 向量库存储所有层级分块的向量，
+      - 该表存储父块的全量文本，Milvus 向量库存储可检索叶子块的向量，
         通过 chunk_id 进行关联。
 
-    chunk_level 层级示例:
-      0  → 最细粒度子分块（如 200 tokens）
-      1  → 合并后的父分块（如 600 tokens）
-      2  → 根级分块（如 2000 tokens）
+    chunk_level 层级约定:
+      1  → 文档根块
+      2  → 章节父块
+      3  → 可检索叶子块
 
     parent_chunk_id 和 root_chunk_id 构建树状层级关系，
     chunk_idx 用于同级别分块排序。
@@ -216,7 +216,7 @@ class ParentChunk(Base):
     parent_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default=sql_text("''::character varying"))
     # 最顶层根分块 ID（用于快速定位整棵分块树）
     root_chunk_id: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default=sql_text("''::character varying"))
-    # 分块层级: 0 = 叶节点, 1 = 父节点, 2+ = 更上层
+    # 分块层级: 1 = 章级父块, 2 = 段级父块, 3 = 叶子块
     chunk_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
     # 同层级内的顺序索引（用于保持原文顺序）
     chunk_idx: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
@@ -237,7 +237,7 @@ class Workspace(Base):
 
     __tablename__ = "workspaces"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, server_default=sql_text("now()"))
@@ -251,8 +251,9 @@ class WorkspaceMember(Base):
     """工作区成员模型 —— 用户与工作区的关联关系。"""
 
     __tablename__ = "workspace_members"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
@@ -283,7 +284,7 @@ class PaperNode(Base):
 
     __tablename__ = "paper_nodes"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     filename: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), default="", nullable=False, server_default=sql_text("''::character varying"))
     year: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=sql_text("0"))
@@ -318,7 +319,7 @@ class CitationEdge(Base):
 
     __tablename__ = "citation_edges"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(
         ForeignKey("paper_nodes.id", ondelete="CASCADE"),
         nullable=False,
@@ -347,7 +348,7 @@ class GlossaryEntry(Base):
 
     __tablename__ = "glossary_entries"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     paper_id: Mapped[int] = mapped_column(
         ForeignKey("paper_nodes.id", ondelete="CASCADE"),
         nullable=False,

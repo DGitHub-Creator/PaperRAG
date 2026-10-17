@@ -2,6 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from backend.core.exceptions import RetrievalError
+
+pytestmark = pytest.mark.usefixtures("mock_index_database")
+
 
 class TestGenerateHypotheticalDocument:
     def test_generates_document(self, mock_llm):
@@ -105,12 +111,13 @@ class TestRetrieveDocuments:
             result = retrieve_documents("test query")
         assert result["meta"]["retrieval_mode"] == "dense_fallback"
 
-    def test_both_fail_return_empty(self):
+    def test_both_fail_raises_instead_of_pretending_no_matches(self):
         patches = self._patch_deps()
         patches[2].hybrid_retrieve.side_effect = RuntimeError("Hybrid failed")
         patches[2].dense_retrieve.side_effect = RuntimeError("Dense also failed")
         with patches[0], patches[1]:
             from backend.rag.rag_utils import retrieve_documents
-            result = retrieve_documents("test query")
-        assert result["docs"] == []
-        assert result["meta"]["retrieval_mode"] == "failed"
+            with pytest.raises(RetrievalError) as caught:
+                retrieve_documents("test query")
+        assert isinstance(caught.value.__cause__, RuntimeError)
+        assert str(caught.value) == "知识库检索暂不可用"

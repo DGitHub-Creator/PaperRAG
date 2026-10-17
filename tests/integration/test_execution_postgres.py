@@ -69,3 +69,58 @@ def test_abandoned_running_execution_expires_persistently(isolated_pg_factory):
     assert status.status == "failed"
     assert status.errors[0].code == "MODEL_TIMEOUT"
     assert store.get(row.execution_id).status == "failed"
+
+
+def test_execution_owner_cannot_be_stolen_by_another_store(isolated_pg_factory):
+    first = PostgresExecutionStore(isolated_pg_factory)
+    second = PostgresExecutionStore(isolated_pg_factory)
+    row, _ = first.submit(request())
+    with first.run_lock(row.execution_id) as owned:
+        assert owned
+        with second.run_lock(row.execution_id) as stolen:
+            assert stolen is False
+    with second.run_lock(row.execution_id) as recovered:
+        assert recovered is True
+    first.cancel(row.execution_id)
+
+
+def test_process_crash_replays_accepted_request_from_postgresql(isolated_pg_factory, tmp_path, monkeypatch):
+    import fitz
+    from backend.internal_api import registry, router
+
+    path = tmp_path / "paper.pdf"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_textbox(fitz.Rect(40, 40, 550, 780), "Actual parsing recovery regression with substantive research methodology and verified results. " * 25, fontsize=10)
+        document.save(path)
+    store = PostgresExecutionStore(isolated_pg_factory)
+    req = request()
+    row, _ = store.submit(req)
+    environment = {**os.environ, "DATABASE_URL": os.environ["REFACTOR_TEST_DATABASE_URL"]}
+    script = """
+import os, sys
+from pathlib import Path
+from backend.internal_api import registry, router
+from backend.rag.document_loader import DocumentLoader
+registry.UPLOAD_DIR = Path(sys.argv[2])
+load = DocumentLoader.load_document
+def crash_after_real_parse(self, *arguments):
+    load(self, *arguments)
+    os._exit(17)
+DocumentLoader.load_document = crash_after_real_parse
+router._run(sys.argv[1])
+raise RuntimeError('fault point not reached')
+"""
+    child = subprocess.run([sys.executable, "-c", script, row.execution_id, str(tmp_path)], env=environment, capture_output=True, timeout=120)
+    assert child.returncode == 17, child.stderr.decode("utf-8", errors="replace")[-2000:]
+    assert store.get(row.execution_id).status == "running"
+    assert store.get(row.execution_id).request_payload["payload"] == req.payload
+    monkeypatch.setattr(registry, "UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(router, "store", PostgresExecutionStore(isolated_pg_factory))
+    assert router.recover_executions() >= 1
+    recovered = router.store.get(row.execution_id)
+    assert recovered.status == "succeeded"
+    assert recovered.result["parsed"] is True and recovered.result["chunk_count"] > 0
+    # A changed retry cannot replace the original request or rerun a terminal execution.
+    changed = req.model_copy(update={"payload": {"filename": "different.pdf"}})
+    assert router._run(row.execution_id, changed).result == recovered.result

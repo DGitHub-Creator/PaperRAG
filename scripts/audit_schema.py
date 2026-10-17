@@ -83,6 +83,29 @@ def _statements(sql: str) -> list[str]:
     return [s.strip() for s in _strip_comments(sql).split(";") if s.strip()]
 
 
+def _safe_redundant_index_removals(migrations_dir: Path, up: Path, down: Path | None) -> set[str]:
+    """Only allow removal of non-unique id indexes provably duplicated by baseline PKs.
+
+    Require an exact inverse in down; other destructive DDL remains forbidden.
+    """
+    baseline = migrations_dir / "000001_baseline.up.sql"
+    if not baseline.exists() or up == baseline or down is None:
+        return set()
+    statements = _statements(baseline.read_text(encoding="utf-8"))
+    tables = set()
+    for statement in statements:
+        match = re.match(r"CREATE TABLE IF NOT EXISTS (\w+)\s*\(", statement, re.I)
+        if match and re.search(r"PRIMARY KEY\s*\(id\)", statement, re.I):
+            tables.add(match[1])
+    reverse = {re.sub(r"\s+", " ", statement).lower() for statement in _statements(down.read_text(encoding="utf-8"))}
+    safe = set()
+    for statement in statements:
+        match = re.fullmatch(r"CREATE INDEX IF NOT EXISTS (\w+) ON (\w+) \(id\)", statement, re.I)
+        if match and match[2] in tables and re.sub(r"\s+", " ", statement).lower() in reverse:
+            safe.add(match[1])
+    return safe
+
+
 def check_baseline(migrations_dir: Path) -> list[str]:
     """返回违规条目列表；空列表 = 基线满足 05 §2 的非破坏 + 幂等纪律。"""
     errors: list[str] = []
@@ -95,7 +118,11 @@ def check_baseline(migrations_dir: Path) -> list[str]:
             errors.append(f"{ver}: 缺 {ver}{UP_SUFFIX}")
             continue
         text = up.read_text(encoding="utf-8")
+        safe_removals = _safe_redundant_index_removals(migrations_dir, up, down)
         for i, stmt in enumerate(_statements(text), 1):
+            drop = re.fullmatch(r"DROP INDEX IF EXISTS public\.(\w+)", stmt, re.I)
+            if drop and drop[1] in safe_removals:
+                continue
             for pat in DESTRUCTIVE_IN_UP:
                 if pat.search(stmt):
                     errors.append(f"{up.name} 第 {i} 句含破坏性操作 `{pat.pattern}`：基线只登记现有结构")
@@ -239,6 +266,8 @@ def parse_ddl_columns(sql: str) -> dict[str, dict[str, dict[str, Any]]]:
             name, rest = item.split(None, 1)
             cols[name.strip('"')] = _column_spec(rest)
         tables[m.group("name")] = cols
+    for match in re.finditer(r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s+([^;]+);", body, re.I):
+        tables.setdefault(match[1], {})[match[2]] = _column_spec(match[3])
     return tables
 
 
@@ -324,7 +353,22 @@ LIVE_SQL = {
         WHERE r.relnamespace = 'public'::regnamespace AND contype IN ('p','u','f','c')
         ORDER BY relname, conname
     """,
+    "connection_role": """
+        SELECT current_user AS role_name, rolsuper, rolcreatedb, rolcreaterole, rolbypassrls,
+               has_schema_privilege(current_user, 'public', 'CREATE') AS can_create_public_objects
+        FROM pg_roles WHERE rolname = current_user
+    """,
+    "effective_privileges": """
+        SELECT c.relname AS table_name,
+               has_table_privilege(current_user, c.oid, 'SELECT') AS can_select,
+               has_table_privilege(current_user, c.oid, 'INSERT') AS can_insert,
+               has_table_privilege(current_user, c.oid, 'UPDATE') AS can_update,
+               has_table_privilege(current_user, c.oid, 'DELETE') AS can_delete
+        FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
+        ORDER BY c.relname
+    """,
     "alembic_version": "SELECT version_num FROM alembic_version",
+    "schema_migrations": "SELECT version, dirty FROM schema_migrations",
     "session_timezone": "SHOW timezone",
     "log_timezone": "SHOW log_timezone",
     "server_version": "SHOW server_version",
@@ -346,24 +390,29 @@ def collect_live(database_url: str) -> dict[str, Any]:
 
     engine = create_engine(database_url)
     snapshot: dict[str, Any] = {}
-    with engine.connect() as conn:
-        for key, sql in LIVE_SQL.items():
-            if key == "alembic_version":
-                try:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SET TRANSACTION READ ONLY"))
+            for key, sql in LIVE_SQL.items():
+                if key == "alembic_version":
+                    exists = conn.execute(text("SELECT to_regclass('public.alembic_version')")).scalar() is not None
+                    snapshot[key] = [r[0] for r in conn.execute(text(sql))] if exists else None
+                    continue
+                if key == "schema_migrations":
+                    exists = conn.execute(text("SELECT to_regclass('public.schema_migrations')")).scalar() is not None
+                    snapshot[key] = [dict(row._mapping) for row in conn.execute(text(sql))] if exists else None
+                    continue
+                if key == "tables":
                     snapshot[key] = [r[0] for r in conn.execute(text(sql))]
-                except Exception:
-                    snapshot[key] = None
-                continue
-            if key == "tables":
-                snapshot[key] = [r[0] for r in conn.execute(text(sql))]
-                continue
-            if key in ("session_timezone", "log_timezone", "server_version"):
-                snapshot[key] = conn.execute(text(sql)).scalar()
-                continue
-            snapshot[key] = [dict(m._mapping) for m in conn.execute(text(sql))]
-    snapshot["state"] = alembic_state(snapshot["alembic_version"])
-    engine.dispose()
-    return snapshot
+                    continue
+                if key in ("session_timezone", "log_timezone", "server_version"):
+                    snapshot[key] = conn.execute(text(sql)).scalar()
+                    continue
+                snapshot[key] = [dict(m._mapping) for m in conn.execute(text(sql))]
+        snapshot["state"] = alembic_state(snapshot["alembic_version"])
+        return snapshot
+    finally:
+        engine.dispose()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -418,12 +467,15 @@ def main(argv: list[str] | None = None) -> int:
             "source": "live-postgres",
             "tables": live["tables"],
             "alembic": live["state"],
+            "schema_migrations": live["schema_migrations"],
             "session_timezone": live["session_timezone"],
             "log_timezone": live["log_timezone"],
             "server_version": live["server_version"],
             # 列清单是 --verify-columns 的比对基准。缺了它，基线 DDL 的类型长度与 NOT NULL
             # 就只能靠人读（12-known-code-issues C1）。
             "columns": live["columns"],
+            "connection_role": live["connection_role"],
+            "effective_privileges": live["effective_privileges"],
             "indexes": live["indexes"],
             "constraints": live["constraints"],
             "column_diff": diff_columns(live["columns"], orm_column_specs()),

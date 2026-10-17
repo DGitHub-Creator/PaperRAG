@@ -1,4 +1,4 @@
-"""上传/删除任务状态：两种实际存储复用同一套状态转换；Redis 只恢复状态，不恢复执行。"""
+"""上传/删除任务状态：两种实际存储复用同一套状态转换；Redis 保存可重放输入，进程启动时恢复未完成的局部文档任务。"""
 
 from collections.abc import Callable
 from copy import deepcopy
@@ -56,7 +56,7 @@ class UploadJobManager:
         with self._lock:
             self._jobs[job["job_id"]] = deepcopy(job)
 
-    def create_job(self, filename: str, *, steps=None, current_step="upload", message="等待上传", completion_step="vector_store") -> dict:
+    def create_job(self, filename: str, *, steps=None, current_step="upload", message="等待上传", completion_step="vector_store", context: dict | None = None) -> dict:
         steps = DEFAULT_STEPS if steps is None else steps
         keys = [key for key, _ in steps]
         if len(set(keys)) != len(keys) or current_step not in keys or completion_step not in keys:
@@ -65,12 +65,18 @@ class UploadJobManager:
         job = {
             "job_id": uuid4().hex, "filename": filename, "status": "pending",
             "current_step": current_step, "completion_step": completion_step, "message": message,
+            "context": deepcopy(context),
             "total_chunks": 0, "processed_chunks": 0, "error": None,
             "created_at": now, "updated_at": now,
             "steps": [{"key": key, "label": label, "percent": 0, "status": "pending", "message": ""} for key, label in steps],
         }
         self._insert(job)
         return deepcopy(job)
+
+    def set_context(self, job_id: str, context: dict) -> dict | None:
+        def change(job):
+            job["context"] = deepcopy(context)
+        return self._mutate(job_id, change)
 
     def get_job(self, job_id: str) -> dict | None:
         with self._lock:

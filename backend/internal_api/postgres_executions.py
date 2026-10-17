@@ -6,7 +6,7 @@ from threading import Lock
 from sqlalchemy import MetaData, Table, null, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from backend.core.database import SessionLocal
+from backend.core.database import SessionLocal, advisory_lock
 from backend.internal_api.executions import Execution, ExecutionStore, new_execution
 from backend.internal_api.schemas import ErrorDetail, Usage
 
@@ -47,6 +47,22 @@ class PostgresExecutionStore(ExecutionStore):
                     # 反射实际迁移结果，禁止 ORM 静默 create_all 或在这里复制一套 DDL。
                     self._table = Table("ai_executions", MetaData(), autoload_with=db.connection())
         return self._table
+
+    def run_lock(self, execution_id: str):
+        return advisory_lock("execution:" + execution_id, session_factory=self._session, blocking=False)
+
+    def pending_ids(self):
+        cursor = ""
+        while True:
+            with self._session() as db:
+                table = self._get_table(db)
+                identifiers = list(db.scalars(select(table.c.execution_id).where(
+                    table.c.status.in_(["queued", "running"]), table.c.execution_id > cursor,
+                ).order_by(table.c.execution_id).limit(100)))
+            if not identifiers:
+                return
+            yield from identifiers
+            cursor = identifiers[-1]
 
     def reset(self):
         raise RuntimeError("生产执行记录不能通过测试 reset 清空")

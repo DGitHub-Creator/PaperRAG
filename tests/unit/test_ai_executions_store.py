@@ -85,3 +85,28 @@ def test_read_returns_snapshot_not_the_live_row():
     again = store.get(row.execution_id)
     assert again.status == "succeeded"
     assert again.result == {"chunks": [{"page": 1}]}
+
+
+def test_execution_retains_first_request_when_retried_with_other_payload():
+    store = ExecutionStore()
+    first = make_req()
+    first.payload = {"filename": "first.pdf"}
+    row, replayed = store.submit(first)
+    assert replayed is False
+    changed = first.model_copy(update={"payload": {"filename": "replacement.pdf"}})
+    retried, replayed = store.submit(changed)
+    assert replayed is True and retried.execution_id == row.execution_id
+    assert retried.request_payload["payload"]["filename"] == "first.pdf"
+
+
+def test_recovered_lease_fences_result_from_interrupted_attempt():
+    store = ExecutionStore()
+    row, _ = store.submit(make_req())
+    store.start(row.execution_id, lease_token="old")
+    with store.run_lock(row.execution_id) as acquired:
+        assert acquired
+        with store.run_lock(row.execution_id) as duplicate:
+            assert duplicate is False
+        assert store.start(row.execution_id, lease_token="new", recover=True) is not None
+        assert store.succeed(row.execution_id, result={"stale": True}, lease_token="old") is None
+        assert store.succeed(row.execution_id, result={"fresh": True}, lease_token="new").status == "succeeded"

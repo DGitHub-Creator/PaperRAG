@@ -228,7 +228,7 @@ class SemanticCache:
 class RedisCache:
     """Redis JSON 缓存封装 + 可选的语义缓存代理 + 熔断降级。
 
-    所有 Redis 操作带有 try-except 保护，Redis 不可用时静默降级。
+    Redis 仅保存可丢弃缓存，失败记录诊断并返回未命中；不用于业务真相或任务状态。
     连续失败达阈值后自动熔断，避免雪崩。
     """
 
@@ -270,7 +270,7 @@ class RedisCache:
             self._client = redis.Redis.from_url(
                 self.redis_url, decode_responses=True
             )
-            logger.debug("Redis 客户端已连接: %s", self.redis_url)
+            logger.debug("Redis 客户端已初始化")
         return self._client
 
     def _key(self, key: str) -> str:
@@ -326,11 +326,18 @@ class RedisCache:
             return
         try:
             full_pattern = self._key(pattern)
-            keys = self._get_client().keys(full_pattern)
-            if keys:
-                self._get_client().delete(*keys)
+            client = self._get_client()
+            deleted = 0
+            batch = []
+            for key in client.scan_iter(match=full_pattern, count=100):
+                batch.append(key)
+                if len(batch) == 100:
+                    deleted += client.delete(*batch)
+                    batch.clear()
+            if batch:
+                deleted += client.delete(*batch)
             self._on_success()
-            logger.debug("Redis 按模式删除: pattern=%s, 删除 %d 个键", pattern, len(keys))
+            logger.debug("Redis 按模式删除: pattern=%s, 删除 %d 个键", pattern, deleted)
         except Exception:
             self._on_failure()
             logger.debug("Redis 按模式删除失败: pattern=%s", pattern, exc_info=True)
