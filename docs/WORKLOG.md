@@ -42,6 +42,27 @@
 - 最终复验：Python **666 passed / 48 skipped**；进度生成物停止变动后全绿。Ruff 与全部仓库/契约/路由/前端/设计/拓扑/基线/golden 门禁通过。Docker 查询隔离库剩余 **0**；本轮 PG/Redis 已停止，无常用应用端口监听，数据卷保留。
 - 新增 --http 已接入存储 CI job；未据本机通过推定远端 Actions 已通过。未解决项继续见台账与 TODO。
 
+## 2026-10-17 · 第二十一轮 —— G01 批准后开工：P1-0 收口，并把它的空判据补实
+
+**一句话**：环境核验后按依赖顺序先收 P1-0（它是 P1-1 的前置），结果发现它的判据
+`pytest -m chain -k proxy` **一条代理行为都没测到**——补了 6 条才算数。
+
+- **环境核验**：Docker 引擎 29.8.2（`docker desktop start` 起，GUI exe 仍归用户手动路径）；
+  `up postgres redis` → 两容器 healthy；`dev.py migrate-go version` → **5 clean**
+  （`000004/000005` 是远端新增，`init_db` 现在要求 version ≥ 5 才肯启动 Python，
+  所以"拉完代码先 migrate-go"是硬前置，不是可选步骤）。
+- **P1-0 的判据是空的**：`-k proxy` 当时只命中 `test_rate_limit_login_twenty_first_request_and_spoofed_proxy`
+  两条——它们名字里有 proxy 是因为**伪造 X-Forwarded-For**，测的是限流，不是转发。
+  命令能跑、用例能绿、结论却什么也没证明，这正是本仓库反复登记的那类错（C22 的 `rc 恒为 1`、
+  C31 的"契约声明了但服务侧无机检"同一族）。
+- **补的 6 条**（`tests/chain/test_go_proxy.py`，真栈）：路径与 query 原样到达上游、Bearer 透传后
+  经 Go 与直连 Python 拿到逐字相同 JSON、未鉴权信封两侧一致、**追踪号单值且入站值被沿用**
+  （C38 的修复在这里第一次有了运行证据）、通配转发不遮蔽 Go 原生探针、未接管面不被提前 404。
+- **读数**：`-m chain -k proxy` = 6 passed / 2 skipped（那 2 条要 `verify_storage.py --http` 的隔离栈，
+  按设计不抢共享环境）；全链层 **34 passed / 16 skipped**。完成度 31%，8/25 退出标准通过。
+- **状态变化**：P1-0 `done(real)`；P1-1 `in_progress`（依赖规则"已开工不得有 pending 前置"由此成立）；
+  schedule 的 T0前 → 已完成、W1–W7 → 进行中。`check_design_review.py` 在 approved 状态下仍绿，
+  而 `--check` 会拦任何"没批准就开工"的卡——这条门禁今天第一次真的在放行而不是在拦。
 ## 2026-10-17 · 第二十轮 —— CI 两条红分别修掉；顺带把 C37 的口径同步进审查文档
 
 **一句话**：拉进远端的模块全景与依赖整改后，CI 仍红两条，**两条都不是"发现漏洞/发现缺陷"，而是判据自己站不住**。

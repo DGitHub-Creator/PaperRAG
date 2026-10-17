@@ -345,20 +345,20 @@
         {
           "id": "P1-0",
           "title": "Go 反向代理（阶段 1）：透传 Python + 鉴权 + trace_id 注入",
-          "status": "pending",
-          "evidence": "none",
+          "status": "done",
+          "evidence": "real",
           "requires": "real",
           "hours": 6,
           "deps": [
             "P0-9"
           ],
           "verify": "uv run pytest -m chain -k proxy",
-          "note": ""
+          "note": "Go 门面：透传 + 鉴权头 + trace 注入。判据 `-k proxy` 原本只命中两条限流用例（名字带 proxy 是因为伪造 X-Forwarded-For），代理本身一条没测——已由 tests/chain/test_go_proxy.py 补 6 条：路径与 query 原样、Bearer 透传后两侧逐字同 JSON、未鉴权信封一致、trace 单值且入站沿用、通配不遮蔽 Go 原生面、未接管面不提前 404。⚠️ 该选择器另有 2 条限流用例需 `verify_storage.py --http` 的隔离栈才跑（本轮 skip，按设计）。"
         },
         {
           "id": "P1-1",
           "title": "Go 接管读接口：/auth/me /sessions /sessions/{id} /documents",
-          "status": "pending",
+          "status": "in_progress",
           "evidence": "none",
           "requires": "real",
           "hours": 10,
@@ -826,14 +826,14 @@
       "dates": "设计已批准；环境就绪待本轮执行核验",
       "goal": "G01：五维设计已按用户授权批准；待执行 agent 核验环境就绪后确认 T0",
       "phase": "设计准备；M17",
-      "status": "planned"
+      "status": "已完成（设计 approved + 环境核验：version 5 clean、PG/Redis healthy）"
     },
     {
       "id": "W1–W7",
       "dates": "相对 T0 第 1–7 周预留窗口",
       "goal": "G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段",
       "phase": "P1；M1/M6/M8/M17/M19",
-      "status": "planned"
+      "status": "进行中"
     },
     {
       "id": "W8–W17",

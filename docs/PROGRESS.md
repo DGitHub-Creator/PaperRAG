@@ -5,20 +5,20 @@
 
 ## 一句话现状
 
-- **完成了多少**：30%（按工时加权；118/394 小时，任务完成 14/40，验收 8/25 通过）
+- **完成了多少**：31%（按工时加权；124/394 小时，任务完成 15/40，验收 8/25 通过）
 - **现在在哪**：2026-10-17 用户授权按推荐方案完成 P1 五维设计确认，contracts/p1-design-review.md 已 approved。设计门禁已解除，但本轮仅文档交接，未核验执行环境，不自动宣称 T0 已到或功能已开工。
 
 下一 agent 先读全局计划及审查 §8，核验环境/迁移/隔离验收条件，再按正式依赖更新任务与 schedule。G02 首个候选为会话详情 GET 的 Go 原生接管；C33/C34/C35 已修复，不重复安排。
 
 日程唯一来源仍为 schedule；P1/P2/P3 任务、工时与阶段依赖不变，产品进度不因设计批准增加。
-- **还差多少**：待办 26 项 / 276 小时（约 13.8-18.4 周），进行中 0 项；可立即开工：P1-0
+- **还差多少**：待办 24 项 / 260 小时（约 13.0-17.3 周），进行中 1 项；可立即开工：无
 
 ## 阶段进度
 
 | 阶段 | 目标 | 状态 | 完成度 | 验收 | 工时 | 周次 |
 | --- | --- | --- | --- | --- | --- | --- |
 | **P0** 架构与契约 | 搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me） | 完成 | █████ 100% | 8/8 | 118/118h | 历史基线：已验收，不重排 |
-| **P1** 后端迁移与最小原型 | Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go | 待办 | ░░░░░ 0% | 0/6 | 0/80h | T0 后 W1–W7 |
+| **P1** 后端迁移与最小原型 | Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go | 待办 | ░░░░░ 8% | 0/6 | 6/80h | T0 后 W1–W7 |
 | **P2** 功能拓展与数据可信化 | 正文真相进 PG、公式检索真实生效、事件可续传、预算持久化、引用可回溯到 PDF 位置 | 待办 | ░░░░░ 0% | 0/6 | 0/114h | T0 后 W8–W17；P1 验收后 |
 | **P3** 多 Agent 自主探索 | ResearchRun + Frontier + Planner/Discovery/Reader/Writer，产出可信带引用报告且崩溃可恢复 | 待办 | ░░░░░ 0% | 0/5 | 0/82h | T0 后 W18–W24；P2 验收后 |
 
@@ -60,7 +60,7 @@
 
 **本阶段不做**：不迁移其余 12 条业务接口（P1）· 不做 chunk 可信化与 paper_chunks（P2）· 不做 Frontier/ResearchRun（P3）· 不 git mv backend → ai-core（决策 Q2）· 不改前端框架，不改 backend/rag 算法实现
 
-## P1 — 后端迁移与最小原型（0%）
+## P1 — 后端迁移与最小原型（8%）
 
 **可演示状态**：上传一篇 PDF → 进度到 completed → 提问 → 流式回答带 [Source 1] 与 citations 列表；前端不再直连 Python
 
@@ -79,8 +79,8 @@
 
 | # | 任务 | 状态 | 证据 | 工时 | 依赖 | 验收命令 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P1-0 | Go 反向代理（阶段 1）：透传 Python + 鉴权 + trace_id 注入 | 待办 | 未验证（要求 real） | 6h | P0-9 | `uv run pytest -m chain -k proxy` |  |
-| P1-1 | Go 接管读接口：/auth/me /sessions /sessions/{id} /documents | 待办 | 未验证（要求 real） | 10h | P1-0 | `uv run pytest -m chain -k go_read` | 保持无分页全量列表形状 |
+| P1-0 | Go 反向代理（阶段 1）：透传 Python + 鉴权 + trace_id 注入 | 完成 | 真实链路（要求 real） | 6h | P0-9 | `uv run pytest -m chain -k proxy` | Go 门面：透传 + 鉴权头 + trace 注入。判据 `-k proxy` 原本只命中两条限流用例（名字带 proxy 是因为伪造 X-Forwarded-For），代理本身一条没测——已由 tests/chain/test_go_proxy.py 补 6 条：路径与 query 原样、Bearer 透传后两侧逐字同 JSON、未鉴权信封一致、trace 单值且入站沿用、通配不遮蔽 Go 原生面、未接管面不提前 404。⚠️ 该选择器另有 2 条限流用例需 `verify_storage.py --http` 的隔离栈才跑（本轮 skip，按设计）。 |
+| P1-1 | Go 接管读接口：/auth/me /sessions /sessions/{id} /documents | 进行中 | 未验证（要求 real） | 10h | P1-0 | `uv run pytest -m chain -k go_read` | 保持无分页全量列表形状 |
 | P1-2 | Go 接管写接口：/auth/register /login /sessions DELETE /documents/delete/* | 待办 | 未验证（要求 real） | 10h | P1-1 | `uv run pytest -m chain -k go_write` | 单写者原则：切换窗口内该接口只允许单边写 |
 | P1-3 | 上传编排移到 Go（任务状态持久化 PG，取代 upload_jobs 进程内存态） | 待办 | 未验证（要求 real） | 14h | P1-2、P0-7 | `uv run pytest -m chain -k upload_orchestration` |  |
 | P1-4 | 流式接管：/chat/stream SSE + /ws/chat WS 的 Go 门面 | 待办 | 未验证（要求 real） | 14h | P1-3、P0-7 | `uv run pytest -m chain -k sse_shape` | X-Accel-Buffering 语义与 rag_trace 两种形状必须逐字节对齐 |
@@ -155,8 +155,8 @@
 
 | 周 | 日期 | 目标 | 阶段 | 状态 |
 | --- | --- | --- | --- | --- |
-| T0前 | 设计已批准；环境就绪待本轮执行核验 | G01：五维设计已按用户授权批准；待执行 agent 核验环境就绪后确认 T0 | 设计准备；M17 | planned |
-| W1–W7 | 相对 T0 第 1–7 周预留窗口 | G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段 | P1；M1/M6/M8/M17/M19 | planned |
+| T0前 | 设计已批准；环境就绪待本轮执行核验 | G01：五维设计已按用户授权批准；待执行 agent 核验环境就绪后确认 T0 | 设计准备；M17 | 已完成（设计 approved + 环境核验：version 5 clean、PG/Redis healthy） |
+| W1–W7 | 相对 T0 第 1–7 周预留窗口 | G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段 | P1；M1/M6/M8/M17/M19 | 进行中 |
 | W8–W17 | P1 收口后；相对窗口随实际完成顺延 | G05/G07→G06、G08、G09：PG 正文、学术结构/定位、事件/用量、导入/书架与科研回归 | P2；M1–M9/M17/M18/M23 | planned |
 | W18–W24 | P2 收口后；相对窗口随实际完成顺延 | G10→G11：Run/Frontier/worker、固定研究闭环、恢复与 PARTIAL 报告；不提前做双图 | P3；M8/M13/M15/M17 | planned |
 | W25+基础扩展 | P3 收口并完成各包设计后滚动重估 | G12/G13/G14/G18/G20：项目精读、比较/书目版本、双图证据、首个受控工具与模型治理 | 后续规划；M2/M5/M7/M8/M10/M16/M18/M19/M20/M23 | planned |
