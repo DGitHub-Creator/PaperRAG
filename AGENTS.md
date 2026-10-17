@@ -152,6 +152,8 @@ uv run python scripts/audit_schema.py --verify-columns --out docs/reference/sche
 ```
 
 依赖变更或交付前另运行 `scripts/check_repository.py --audit-dependencies` 与 `npm audit`，不得忽略公告制造绿灯。
-Go 在 server 目录运行 `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...`，同时检查实际调用涉及的标准库与模块。
+Go 在 server 目录运行 `go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...`，同时检查实际调用涉及的标准库与模块。
+钉版要跟着 `server/go.mod` 的 `go` 指令走：go 1.27 之后旧版 govulncheck 的 x/tools 会在 **linux 目标**上
+panic（CI 红的是工具不是漏洞，本机 windows 目标复现不出来——**判据跨平台跑一遍再定版本**）。
 按修改范围运行 pytest、Go vet/test、前端 typecheck/build 与 Playwright；全量检查在一个批次收尾只跑一次。
 脚本通过仅证明其检查项通过，不能据此宣称全仓安全、真实数据库或产品端到端均已验证。

@@ -42,6 +42,32 @@
 - 最终复验：Python **666 passed / 48 skipped**；进度生成物停止变动后全绿。Ruff 与全部仓库/契约/路由/前端/设计/拓扑/基线/golden 门禁通过。Docker 查询隔离库剩余 **0**；本轮 PG/Redis 已停止，无常用应用端口监听，数据卷保留。
 - 新增 --http 已接入存储 CI job；未据本机通过推定远端 Actions 已通过。未解决项继续见台账与 TODO。
 
+## 2026-10-17 · 第二十轮 —— CI 两条红分别修掉；顺带把 C37 的口径同步进审查文档
+
+**一句话**：拉进远端的模块全景与依赖整改后，CI 仍红两条，**两条都不是"发现漏洞/发现缺陷"，而是判据自己站不住**。
+
+- **红一条：后端 `Run tests`**（#53/#54 红，根因同 #44 一族）。
+  `tests/unit/test_websocket.py` 直接调 `create_access_token`，它读模块级 `JWT_SECRET_KEY`——
+  也就是**读开发机的 `.env`**。CI 没有 `.env` → 空密钥 → pyjwt 抛 `InvalidKeyError`。
+  本机永远有 `.env`，所以本地 696 全绿而 CI 红。
+  修法照仓库既有做法（`test_auth.py` 已经用 `patch.multiple(..., JWT_SECRET_KEY=TEST_SECRET)`），不另立约定；
+  **patch 必须同时罩住签发与验证**，只罩签那半，失败会伪装成"令牌无效"，看不出根因。
+  取证：**把 `.env` 改名再跑全量**（与 CI 同条件）= 696 passed / 68 skipped，跑完复验 `.env` 在位。
+- **红二条：`Audit reachable Go vulnerabilities`。** 它不是报漏洞，是**工具在 CI 的目标平台上崩**：
+  `7b8e705` 把 `server/go.mod` 的 `go` 指令提到 **1.27.2**，而钉死的 `govulncheck@v1.1.4` 里的
+  `x/tools v0.29.0` 在建 SSA 时 `panic: unexpected expr: *ast.KeyValueExpr`。
+  关键教训是**复现方式**：本机默认目标（windows/amd64）扫同一棵树报 "No vulnerabilities found"，
+  看起来"我这儿是绿的"——**换成 `GOOS=linux GOARCH=amd64` 扫才复现 panic**。
+  处置：CI 与 `AGENTS §9` 的钉版一起升到 `v1.9.0`（同一条 linux 目标扫描 → `No vulnerabilities found.`），
+  并把"钉版要跟着 go 指令走、判据要跨平台跑一遍"写进 AGENTS。
+- **C37 口径同步**：远端 `0eafe02` 已补 `PostgresExecutionStore`（`internal_api/router.py:36` 装配，
+  带 advisory lock 与两个幂等轴，落库证据在 `tests/integration/test_execution_postgres.py`，
+  需 `REFACTOR_TEST_DATABASE_URL`，本机 skip、CI 真跑）。台账由远端更新，我把
+  `contracts/p1-design-review.md` 数据所有权一节里"零写入方"那句改成已闭——**审查文档留着一条已作废的缺陷当依据，比没写更糟**。
+- **读了新全局计划**（`docs/plans/14-feature-modules.md`，24 模块 / G01–G21 任务包 / T0 = 五维设计审查批准 + 环境就绪）。
+  它明写"不能自动把 proposed 改成 approved"与"命令绿本身不算批准"，与我上轮建的门禁语义一致；
+  所以 **T0 现在唯一挡着的就是 §6 那五个 `☐`**。
+- **副作用记一笔**：拉取改了依赖锁，`uv run` 自动重装环境（含 torch 118 MB）；C 盘已 90% 满、剩约 11 GB。
 ## 2026-10-16 · 实质重构与文档治理（持续进行）
 
 - 根因整改：会话按轮事务追加，不再覆盖历史；移除跨服务会话缓存。AIExecution 改用既有 PG 表，修复幂等、租约、终态与过期；持久记录不代表崩溃后执行恢复。

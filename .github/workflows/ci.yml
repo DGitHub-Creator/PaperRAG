@@ -102,7 +102,11 @@ jobs:
         run: go test ./...
 
       - name: Audit reachable Go vulnerabilities
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        # 版本必须跟得上 go.mod 的 go 指令：`7b8e705` 把它提到 1.27.2 之后，
+        # v1.1.4 里那枚 x/tools v0.29.0 的 SSA 构建器在 **linux 目标**上 panic
+        # （`unexpected expr: *ast.KeyValueExpr`），于是这一步红的是工具、不是漏洞。
+        # 本机 GOOS=windows 扫同一棵树不 panic，所以只有 CI 会暴露——换目标才看得见的差异。
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   progress:
     name: Progress (plan/schedule sync gate)
