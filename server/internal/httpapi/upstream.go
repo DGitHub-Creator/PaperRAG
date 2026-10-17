@@ -29,6 +29,18 @@ func NewUpstreamProxy(target *url.URL, logger *slog.Logger) http.Handler {
 		// 新生成的追踪号也必须到达 Python，不能只出现在 Go 的响应头里。
 		r.Header.Set(observability.TraceIDHeader, observability.TraceID(r.Context()))
 	}
+	// 响应侧归一：Python 的 _trace_middleware 也会回写这个头，而 ReverseProxy 是
+	// **逐值 Add**，Go 先前 Set 的那一份不会被覆盖——2026-10-17 真栈实测
+	// `curl -D - :8080/metrics` 看到同一行出现两次（台账 C38）。
+	//
+	// 这里**删掉上游那份**而不是覆盖：Trace 中间件在进代理之前就已经把权威值 Set 进
+	// w.Header()，代理再 Add 一次才是重复的来源；把 ModifyResponse 写成 Set 只把
+	// 上游的 2 个值收成 1 个，总量仍是 2（第一版就是这么错的，被单测当场抓住）。
+	// 上游的回写本来就是同一值的重复表达，删掉不丢信息；追踪号由 Go 单点决定。
+	proxy.ModifyResponse = func(res *http.Response) error {
+		res.Header.Del(observability.TraceIDHeader)
+		return nil
+	}
 	// 信封只能有一处形状（01 §6.3）：上游不可达/超时时给 {"detail": ...}，
 	// 与其余错误同形，前端的 detailFromJson 不必为这一条单独分支。
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

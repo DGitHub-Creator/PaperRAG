@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
 
 // upstreamDeps 造一个挂了反代的 Deps，其余与 testDeps 一致（同一包的 helper）。
@@ -100,5 +102,40 @@ func TestNoUpstreamKeepsJSON404(t *testing.T) {
 	rec := do(t, h, http.MethodGet, "/api/v1/sessions", nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("无上游时期望 404，得到 %d", rec.Code)
+	}
+}
+
+// 追踪号在响应里只能出现一次（台账 C38）。
+//
+// 2026-10-17 真栈实测：`curl -D - http://127.0.0.1:8080/metrics` 给出两行相同的
+// X-Trace-Id——Go 的 Trace 中间件先 Set，ReverseProxy 把上游同名头逐值 Add 上来。
+// 值相同所以语义没坏，但"一个头两个值"会让前端 headers[...] 读到拼接串、
+// APM 采集出现重复关联键。这条用例钉的是**只有一个值**，不是"值相等"。
+func TestUpstreamEmitsExactlyOneTraceHeader(t *testing.T) {
+	const inbound = "probe-abc-123"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get(observability.TraceIDHeader)
+		if got != inbound {
+			t.Errorf("上游收到的追踪号应沿用入站值，得到 %q", got)
+		}
+		// 故意用 Add：真实 Python 侧的回写就是往响应里加这个头，
+		// 若上游写的是别的值（直连时它自己生成的形态），也必须由边缘丢弃它、只留 Go 的那一份。
+		w.Header().Add(observability.TraceIDHeader, got)
+		w.Header().Add(observability.TraceIDHeader, "python-self-generated-32hex")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/unhandled", nil)
+	req.Header.Set(observability.TraceIDHeader, inbound)
+	rec := httptest.NewRecorder()
+	NewRouter(upstreamDeps(t, upstream.URL)).ServeHTTP(rec, req)
+
+	values := rec.Header().Values(observability.TraceIDHeader)
+	if len(values) != 1 {
+		t.Fatalf("响应头必须只有一个值，得到 %d 个：%v", len(values), values)
+	}
+	if values[0] != inbound {
+		t.Fatalf("边缘值必须以 Go 的为准，得到 %q", values[0])
 	}
 }

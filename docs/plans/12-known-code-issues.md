@@ -23,8 +23,21 @@
   两端现在确实各自实现：Go 的 `Trace` 中间件生成/沿用并写响应头，`upstream.go` 的 Director 把它带给 Python；
   Python 的 `_trace_middleware` 读头绑进 contextvar 并回写响应头 | 已把该注释改成实话（不宣称已锁定）。
   待办两条：①在 G01 设计审查批准后把请求头与响应头正式写进 `contracts/openapi.yaml`，让"锁定"成真；
-  ②**复验经 Go 代理时该头是否出现两个相同值**——Go 先 `Set`、ReverseProxy 再 `Add` 上游同名头，
-  语义无害但形状不对；需要真栈（`dev.py up postgres redis` + `serve --no-reload` + `go-serve`）实测，本机当前未跑 |
+  ②**已复验并修掉（同日）**：真栈 `curl -D - :8080/metrics` 确实给出两行相同的 `X-Trace-Id`
+  （中间件 Set + ReverseProxy 逐值 Add）。修法在 `upstream.go` 的 `ModifyResponse` 里
+  **丢弃上游那份**（Go 边缘那份才是权威），并在 `TestUpstreamEmitsExactlyOneTraceHeader` 钉住
+  "只有一个值"而不是"值相等"。修后实测四条路径各 1 个值，入站自带 id 也照常沿用。
+  ⚠️ 第一版把 ModifyResponse 写成 `Set`，只把上游 2 值收成 1 值，**总数仍是 2**——被自己新加的单测当场抓住。
+  ③仍未决：**两端生成的 id 长度不同**（Go 16 位 hex，Python 直连时 `uuid4().hex` 32 位）。
+  经 Go 时值相同看不出来，但直连 Python 调试或内部调用方会拿到另一种形态。
+  统一成哪一种属契约级决定，随 G01 设计审查批准后与①一起写进 `openapi.yaml` |
+| C39 | `go-api` 在 dev 监听 **`0.0.0.0:8080`**（`config.Load` 的 `Addr` 默认 `:8080`），
+  于是本机局域网可直连公开入口，而它带着 `/internal/*` 的反代前缀（`router.go` 的四个通配之一）。
+  实测：`netstat` 显示 `0.0.0.0:8080` 与 `[::]:8080` 都在听。内部面本身无令牌一律 401，
+  所以不是"内部面裸奔"，但**dev 的入口不该对局域网开放**（同一条要求已用在 Python 侧：
+  `dev.py serve` 默认已改回 `127.0.0.1`） | 不能简单把默认改成回环——prod 里 go-api 在 compose 网络内，
+  nginx 要能连上它，绑回环会直接断链。正确做法是**监听地址由环境给**：dev 由 `dev.py go-serve` 注入
+  `127.0.0.1:8080`，prod compose 显式给 `0.0.0.0:8080`。属部署形态决定，需拍后与 P1 门禁一起落 | 
 | Q5 | 最终 uv.lock 全平台/可选组 210 个版本审计未报告公告；PyJWT 替代 python-jose，无调用方且存在未修复公告的可选 ChromaDB 已移除 | CI 持续联网审计；无公告不证明未知漏洞不存在。真实模型质量及 langchain-community 后续迁移仍需独立验证 |
 | Q1 | 没有跨存储原子事务；已实现 durable pending、读写互斥与启动恢复，真实进程退出专项通过 | P2 的 PG 文档真相/版本切换仍未实现；原文丢失时明确拒绝恢复，不自动丢标记 |
 | Q2 | SSE 当前为完整答案事件，非逐 token 输出 | 确认产品要求后实现与验证首 token 延迟、取消、存储失败语义，保持对外口径准确 |

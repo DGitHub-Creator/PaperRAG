@@ -67,6 +67,28 @@
 - **读了新全局计划**（`docs/plans/14-feature-modules.md`，24 模块 / G01–G21 任务包 / T0 = 五维设计审查批准 + 环境就绪）。
   它明写"不能自动把 proposed 改成 approved"与"命令绿本身不算批准"，与我上轮建的门禁语义一致；
   所以 **T0 现在唯一挡着的就是 §6 那五个 `☐`**。
+- **续：C38 的第二条复验成立并修掉了，另外登记 C39。**
+  真栈（`up postgres redis` + `migrate-go` 补应用 `000004/000005` → `version: 5 clean` + `serve --no-reload` + `go-serve`）
+  实测 `curl -D - :8080/metrics` 给出**两行相同的 `X-Trace-Id`**。
+  修法在 `upstream.go` 的 `ModifyResponse` **丢弃上游那份**（边缘才是权威），单测
+  `TestUpstreamEmitsExactlyOneTraceHeader` 钉"只有一个值"而不是"值相等"。
+  **过程里我自己错了一次**：第一版把 `ModifyResponse` 写成 `Set`，以为覆盖即可——实际只把上游的
+  2 个值收成 1 个，中间件先前 Set 的那份仍在，总数还是 2；是新加的单元测试把它抓住的（不是真栈）。
+  修后四条路径（直连、经 Go、入站自带 id、经 Go 打未接管业务面）各只有一个值，入站 id 照常沿用。
+  **仍未决的两条**（都写进 C38，不塞进本轮）：①`X-Trace-Id` 还没进 `openapi.yaml`；
+  ②两端生成的 id **长度不同**（Go 16 hex / Python 直连 32 hex），经 Go 时被覆盖所以看不出来——
+  统一成哪种属契约级，随 G01 批准一起定。
+- **C39（新登记，未修）**：`go-api` 在 dev 监听 `0.0.0.0:8080`（`config.Load` 默认 `:8080`），
+  局域网可直连公开入口，而它带 `/internal/*` 反代前缀。不能简单改成回环——prod 里 nginx 要连得上去。
+  正确做法是监听地址由环境给（dev 由 `dev.py go-serve` 注入回环，prod compose 显式给 `0.0.0.0`），
+  属部署形态决定，**要拍**，所以登记而不是顺手改。
+- **chain 层在真栈上的读数是 28 passed / 16 skipped**（skip 的那批要 Milvus 与显式隔离 URI），
+  我的代理改动没破跨语言对拍；中途一次 11 条红是**我重启 serve 时漏了 `AICORE_INTERNAL_TOKEN`**，
+  服务端按设计拒绝一切内部请求所致——不是回归，但值得记：这条红在 CI 上永远看不见（那边 chain 全 skip）。
+- **远端把 `dev.py serve` 的启动加了库侧门禁**：`init_db` 现在要求 `schema_migrations.version >= 5` 且不 dirty，
+  否则拒绝启动（不再回退 `create_all`）。这条与我本轮"迁移必须先显式跑"的定案一致，
+  但它意味着**拉完代码要先 `dev.py migrate-go`**，否则 Python 起不来——写进 C38 之外的操作事实。
+
 - **副作用记一笔**：拉取改了依赖锁，`uv run` 自动重装环境（含 torch 118 MB）；C 盘已 90% 满、剩约 11 GB。
 ## 2026-10-16 · 实质重构与文档治理（持续进行）
 
