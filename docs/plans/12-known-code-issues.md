@@ -18,6 +18,13 @@
 
 | C36 | 注册 role、Unicode 密码、有效/错误邀请码、重复用户与非法入参已真实对拍 | 证据见 test_go_auth_cross_validation.py；旧 Python 认证面仍按阶段接管，不能仅凭本批对拍删除 |
 | C37 | 局部 AIExecution 已持久化首次输入并支持崩溃后重放、互斥与新租约 fencing | Go 全局任务投递、周期调度与预算记账尚待 P1/P3；不以局部恢复替代全局能力 |
+| C38 | `X-Trace-Id` 只在代码里约定，**契约里一次都没出现**（`grep -c X-Trace-Id contracts/openapi.yaml` = 0），
+  而 `server/internal/observability/trace.go` 从前写"该名字由 P0-4 写进 openapi.yaml 锁定"——**注释替实现撒了谎**。
+  两端现在确实各自实现：Go 的 `Trace` 中间件生成/沿用并写响应头，`upstream.go` 的 Director 把它带给 Python；
+  Python 的 `_trace_middleware` 读头绑进 contextvar 并回写响应头 | 已把该注释改成实话（不宣称已锁定）。
+  待办两条：①在 G01 设计审查批准后把请求头与响应头正式写进 `contracts/openapi.yaml`，让"锁定"成真；
+  ②**复验经 Go 代理时该头是否出现两个相同值**——Go 先 `Set`、ReverseProxy 再 `Add` 上游同名头，
+  语义无害但形状不对；需要真栈（`dev.py up postgres redis` + `serve --no-reload` + `go-serve`）实测，本机当前未跑 |
 | Q5 | 最终 uv.lock 全平台/可选组 210 个版本审计未报告公告；PyJWT 替代 python-jose，无调用方且存在未修复公告的可选 ChromaDB 已移除 | CI 持续联网审计；无公告不证明未知漏洞不存在。真实模型质量及 langchain-community 后续迁移仍需独立验证 |
 | Q1 | 没有跨存储原子事务；已实现 durable pending、读写互斥与启动恢复，真实进程退出专项通过 | P2 的 PG 文档真相/版本切换仍未实现；原文丢失时明确拒绝恢复，不自动丢标记 |
 | Q2 | SSE 当前为完整答案事件，非逐 token 输出 | 确认产品要求后实现与验证首 token 延迟、取消、存储失败语义，保持对外口径准确 |

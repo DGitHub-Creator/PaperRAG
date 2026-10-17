@@ -7,8 +7,11 @@ import (
 	"encoding/hex"
 )
 
-// TraceIDHeader 是跨进程传递请求追踪号的头。Go 注入后透传给 Python，
-// 两端日志用同一个 id 关联；该名字由 P0-4 写进 contracts/openapi.yaml 锁定。
+// TraceIDHeader 是跨进程传递请求追踪号的头。Go 在边缘生成或沿用，注入后透传给 Python，
+// 两端日志因此能按同一个 id 关联。
+// ⚠️ 这个名字目前只是**两端代码里的共同约定**，还没进 contracts/openapi.yaml
+// （原先注释写"由 P0-4 写进契约锁定"是假的，grep 得到 0 次命中）。补进契约是
+// G01 设计审查批准后的动作，差距登记在台账 C38——别把"打算锁定"读成"已锁定"。
 const TraceIDHeader = "X-Trace-Id"
 
 type traceIDKey struct{}
