@@ -1,16 +1,16 @@
 # 进度报告
 
 > 本文件由 `scripts/sync_progress.py` 从 [`progress.json`](progress.json) 生成，**请勿手改**。
-> 数据截止 2026-10-16 · 基线 `106f17dd` · 投入 15-20 小时/周
+> 数据截止 2026-10-17 · 基线 `106f17dd` · 投入 15-20 小时/周
 
 ## 一句话现状
 
 - **完成了多少**：30%（按工时加权；118/394 小时，任务完成 14/40，验收 8/25 通过）
-- **现在在哪**：P0 已按既有验收收口；产品阶段状态以本文件任务卡与退出标准为准，不按代码整改数量增加完成度。当前执行全仓质量重构，尚未完成最终验收。
+- **现在在哪**：P0 按既有验收收口；本批质量整改已实现并完成针对性验收，正分关注点提交与收尾。产品阶段、退出标准与任务卡仍以本文件为准，不按质量修复数量增加完成度。
 
-本轮已修复会话覆盖/缓存不一致、AIExecution 记录内存态、工具执行与追踪、上传任务状态及前端流式状态等问题，证据与边界见 docs/WORKLOG.md；未决项见 docs/plans/12-known-code-issues.md 与 docs/plans/repository-standardization.md。
+本轮修复覆盖依赖安全、JWT/模型兼容、父块与 BM25、一致性失败恢复、执行重放、当前运行权限和文档治理；证据见 docs/WORKLOG.md，能力边界见 docs/reference/13-frontend-backend-architecture.md。
 
-P1 接管开工仍受 contracts/p1-design-review.md 的设计门禁约束；该审查仍为 proposed，本轮不改变依赖、不把质量修复记为 P1 完成。当前实现说明见 docs/reference/13-frontend-backend-architecture.md，历史阶段实跑见 docs/archive/2026-10-15-p0-worklog.md。
+P1 接管仍受 contracts/p1-design-review.md 门禁约束；proposed 不代表批准，质量修复不计为 P1 产品完成。
 - **还差多少**：待办 26 项 / 276 小时（约 13.8-18.4 周），进行中 0 项；可立即开工：P1-0
 
 ## 阶段进度

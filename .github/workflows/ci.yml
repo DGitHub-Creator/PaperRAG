@@ -28,7 +28,7 @@ jobs:
         run: uv run python scripts/check_contracts.py
 
       - name: Check repository conventions
-        run: uv run python scripts/check_repository.py
+        run: uv run python scripts/check_repository.py --audit-dependencies
 
       # P1 设计审查的准入门禁：结构与依据可追 + 接管卡开工必须 approved。
       # 放 CI 而不是只写进文档清单，是因为"记得跑"这件事本身不可依赖。
@@ -79,6 +79,8 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -90,11 +92,17 @@ jobs:
       - name: Check gofmt
         run: test -z "$(gofmt -l .)"
 
+      - name: Scan reachable Git history for secrets
+        run: go run github.com/zricethezav/gitleaks/v8@v8.24.3 git .. --config ../.gitleaks.toml --log-opts=HEAD --redact
+
       - name: Vet
         run: go vet ./...
 
       - name: Test
         run: go test ./...
+
+      - name: Audit reachable Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
   progress:
     name: Progress (plan/schedule sync gate)
@@ -154,3 +162,6 @@ jobs:
 
       - name: Build nginx image
         run: docker build --target nginx -t researchpilot-nginx .
+
+      - name: Build Go API and migration image
+        run: docker build -t researchpilot-go-api ./server

@@ -28,3 +28,15 @@ def test_migrations_reject_missing_pairs_and_duplicate_versions(tmp_path):
     for name in ["000001_first.up.sql", "000001_first.down.sql", "000001_second.up.sql"]:
         (migrations / name).touch()
     assert len(repository.check_migrations(tmp_path)) == 2
+
+
+def test_lock_audit_covers_alternative_platform_versions_without_conflicting_requirements():
+    lock = {"package": [
+        {"name": "library", "version": "1.0", "source": {"registry": "https://pypi.org/simple"}},
+        {"name": "library", "version": "2.0", "source": {"registry": "https://pypi.org/simple"}},
+        {"name": "other", "version": "3.0", "source": {"registry": "https://pypi.org/simple"}},
+        {"name": "researchpilot", "version": "0.2", "source": {"editable": "."}},
+    ]}
+    batches = repository.lock_audit_batches(lock)
+    assert {pin for batch in batches for pin in batch} == {"library==1.0", "library==2.0", "other==3.0"}
+    assert all(len(batch) == len({pin.split("==")[0] for pin in batch}) for batch in batches)

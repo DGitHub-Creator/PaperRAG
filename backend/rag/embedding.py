@@ -23,10 +23,14 @@ BM25 参数:
 
 import json
 import math
+import os
 import re
 import threading
 from collections import Counter
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+from filelock import FileLock
 
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -55,7 +59,8 @@ def _create_dense_embedder() -> HuggingFaceEmbeddings:
     logger.info("加载嵌入模型 '%s' (device=%s, cache=%s)", model_name, device, HF_HOME)
     return HuggingFaceEmbeddings(
         model_name=model_name,
-        model_kwargs={"device": device, "cache_folder": HF_HOME},
+        cache_folder=HF_HOME,
+        model_kwargs={"device": device, "trust_remote_code": False},
         encode_kwargs={"normalize_embeddings": True},
     )
 
@@ -79,6 +84,8 @@ class EmbeddingService:
         self._embedder = _create_dense_embedder()
         self._state_path = Path(state_path or BM25_STATE_PATH or _DEFAULT_STATE_PATH)
         self._lock = threading.Lock()
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._file_lock = FileLock(str(self._state_path) + ".lock", timeout=30)
 
         # BM25 超参数 —— 经验值，适用于学术论文等中长文本
         self.k1 = 1.5       # 词频饱和参数
@@ -111,7 +118,7 @@ class EmbeddingService:
     def _load_state(self) -> None:
         """从 bm25_state.json 加载 BM25 统计状态。
 
-        文件不存在或损坏时静默跳过，后续入库会自动重建。
+        只有文件不存在时使用空统计；损坏不能重置词表，否则旧稀疏向量的维度含义会改变。
         版本号检查保证向后兼容。
         """
         path = self._state_path
@@ -120,12 +127,10 @@ class EmbeddingService:
             return
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            logger.warning("BM25 状态文件损坏，将使用空统计: %s", path)
-            return
-        if raw.get("version") != 1:
-            logger.warning("BM25 状态版本不兼容，将使用空统计")
-            return
+        except (json.JSONDecodeError, OSError) as exc:
+            raise ValueError("BM25 状态无法读取，拒绝覆盖已有词表") from exc
+        if not isinstance(raw, dict) or raw.get("version") != 1:
+            raise ValueError("BM25 状态版本不兼容，拒绝覆盖已有词表")
         self._vocab = {str(k): int(v) for k, v in raw.get("vocab", {}).items()}
         self._doc_freq = Counter({str(k): int(v) for k, v in raw.get("doc_freq", {}).items()})
         self._total_docs = int(raw.get("total_docs", 0))
@@ -149,17 +154,43 @@ class EmbeddingService:
             "vocab": self._vocab,
             "doc_freq": dict(self._doc_freq),
         }
-        tmp = self._state_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self._state_path)
+        temporary = None
+        try:
+            with NamedTemporaryFile(mode="w", encoding="utf-8", dir=self._state_path.parent, delete=False) as output:
+                temporary = Path(output.name)
+                json.dump(payload, output, ensure_ascii=False)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, self._state_path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         logger.debug("BM25 状态已持久化: N=%d, vocab=%d", self._total_docs, len(self._vocab))
 
-    def _persist(self) -> None:
-        """线程安全的持久化入口。"""
-        with self._lock:
-            self._persist_unlocked()
-
     # ── 增量统计更新 ──────────────────────────────────────────────
+
+    def _add_statistics_unlocked(self, texts: list[str]) -> None:
+        for text in texts:
+            tokens = self.tokenize(text)
+            doc_len = len(tokens)
+            self._sum_token_len += doc_len
+            self._total_docs += 1
+            # 用 set 去重：BM25 的 df 统计每个词在多少个文档中出现
+            for token in set(tokens):
+                if token not in self._vocab:
+                    self._vocab[token] = self._vocab_counter
+                    self._vocab_counter += 1
+                self._doc_freq[token] += 1
+
+    def replace_documents(self, texts: list[str]) -> None:
+        """从实际索引重建计数，永久保留已分配词表维度。"""
+        with self._lock, self._file_lock:
+            self._load_state()
+            self._doc_freq = Counter()
+            self._total_docs = self._sum_token_len = 0
+            self._add_statistics_unlocked(texts)
+            self._recompute_avg_len()
+            self._persist_unlocked()
 
     def increment_add_documents(self, texts: list[str]) -> None:
         """入库时增量增加 BM25 统计。
@@ -173,18 +204,9 @@ class EmbeddingService:
         """
         if not texts:
             return
-        with self._lock:
-            for text in texts:
-                tokens = self.tokenize(text)
-                doc_len = len(tokens)
-                self._sum_token_len += doc_len
-                self._total_docs += 1
-                # 用 set 去重：BM25 的 df 统计每个词在多少个文档中出现
-                for token in set(tokens):
-                    if token not in self._vocab:
-                        self._vocab[token] = self._vocab_counter
-                        self._vocab_counter += 1
-                    self._doc_freq[token] += 1
+        with self._lock, self._file_lock:
+            self._load_state()
+            self._add_statistics_unlocked(texts)
             self._recompute_avg_len()
             self._persist_unlocked()
             logger.debug(
@@ -203,7 +225,8 @@ class EmbeddingService:
         """
         if not texts:
             return
-        with self._lock:
+        with self._lock, self._file_lock:
+            self._load_state()
             for text in texts:
                 tokens = self.tokenize(text)
                 doc_len = len(tokens)
@@ -336,7 +359,8 @@ class EmbeddingService:
         Returns:
             {维度下标: BM25分数} 字典，可直接作为 Milvus SPARSE_FLOAT_VECTOR 使用。
         """
-        with self._lock:
+        with self._lock, self._file_lock:
+            self._load_state()
             sparse_vector, vocab_changed = self._sparse_vector_for_text_unlocked(text)
             if vocab_changed:
                 self._persist_unlocked()
@@ -353,7 +377,8 @@ class EmbeddingService:
         """
         if not texts:
             return []
-        with self._lock:
+        with self._lock, self._file_lock:
+            self._load_state()
             out: list[dict] = []
             any_new_vocab = False
             for text in texts:

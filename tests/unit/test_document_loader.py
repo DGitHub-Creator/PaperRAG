@@ -78,3 +78,32 @@ class TestDocumentLoader:
         from backend.rag.document_loader import DocumentLoader
         with pytest.raises(Exception):
             DocumentLoader().load_document("/nonexistent/file.pdf", "test.pdf")
+
+
+def test_real_excel_upload_extracts_cells_without_missing_optional_dependencies(tmp_path):
+    from openpyxl import Workbook
+    from backend.rag.document_loader import DocumentLoader
+
+    path = tmp_path / "research.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["Method", "Metric"])
+    worksheet.append(["ResearchPilot compatibility", 42])
+    workbook.save(path)
+    workbook.close()
+    docs = DocumentLoader().load_document(str(path), path.name)
+    assert docs
+    assert any("ResearchPilot compatibility" in doc["text"] for doc in docs)
+    assert any("42" in doc["text"] for doc in docs)
+
+
+def test_real_docx_upload_extracts_paragraphs(tmp_path):
+    from docx import Document
+    from backend.rag.document_loader import DocumentLoader
+
+    path = tmp_path / "research.docx"
+    document = Document()
+    document.add_paragraph("ResearchPilot actual DOCX compatibility regression.")
+    document.save(path)
+    docs = DocumentLoader().load_document(str(path), path.name)
+    assert any("actual DOCX compatibility" in doc["text"] for doc in docs)

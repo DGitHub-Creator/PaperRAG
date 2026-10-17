@@ -45,7 +45,7 @@ type Config struct {
 	// 两侧读同一份 .env，同一个键在两个进程里必须得到同一个值，否则切换窗口内
 	// Go 签的 token Python 验不过（或反过来）。
 
-	// JWTSecretKey 是令牌签名密钥。**没有安全兜底值**：空密钥 python-jose 会静默接受，
+	// JWTSecretKey 是令牌签名密钥。**没有安全兜底值**：缺失时无法安全签名，
 	// 比可猜测的默认值更危险，所以缺失一律拒绝启动（见 ValidateAuth）。
 	JWTSecretKey string
 	// JWTAlgorithm 默认 HS256。Go 侧只接受这一个值：允许配置成别的等于打开算法混淆的口子。
@@ -70,7 +70,7 @@ var leakedInviteCodes = map[string]struct{}{
 }
 
 // jwtSecretPlaceholder 是 .env.example 里的占位值，照着抄就是等于没有密钥。
-const jwtSecretPlaceholder = "replace-with-strong-random-secret"
+const jwtSecretPlaceholder = "replace-with-"
 
 // ValidateAuth 是认证面的 fail-fast，对齐 backend/core/config/__init__.py:validate_runtime_security。
 // 分两档，与 Python 一致：
@@ -86,11 +86,14 @@ func (c Config) ValidateAuth() error {
 	if !c.IsProduction() {
 		return nil
 	}
-	if c.JWTSecretKey == jwtSecretPlaceholder {
+	if strings.HasPrefix(c.JWTSecretKey, jwtSecretPlaceholder) {
 		return fmt.Errorf("生产环境不安全配置：JWT_SECRET_KEY 仍是 .env.example 的占位值")
 	}
 	if _, ok := leakedInviteCodes[c.AdminInviteCode]; ok {
 		return fmt.Errorf("生产环境不安全配置：ADMIN_INVITE_CODE 仍是已泄露的默认值")
+	}
+	if strings.HasPrefix(c.AdminInviteCode, "replace-with-") {
+		return fmt.Errorf("生产环境不安全配置：ADMIN_INVITE_CODE 仍是占位值")
 	}
 	return nil
 }

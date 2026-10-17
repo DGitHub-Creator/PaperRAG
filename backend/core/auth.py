@@ -28,7 +28,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
 # 统一配置
@@ -270,7 +271,7 @@ def get_user_from_bearer_token(token: str, db: Session) -> User | None:
     """
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except InvalidTokenError:
         logger.warning("JWT 解码失败或已过期")
         return None
 
@@ -311,14 +312,18 @@ def get_current_user(
     Raises:
         HTTPException(401): token 无效、过期、类型不符或用户不存在。
     """
-    user = get_user_from_bearer_token(token, db)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效或过期的认证令牌",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
+    # 身份查询结束就释放只读事务，长时间模型调用不应占住认证连接。
+    try:
+        user = get_user_from_bearer_token(token, db)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="无效或过期的认证令牌",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+    finally:
+        db.close()
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:

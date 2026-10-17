@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from jose import jwt
+import jwt
 from sqlalchemy import text
 
 pytestmark = pytest.mark.chain
@@ -87,7 +87,7 @@ def test_forged_signature_rejected_by_both(http, chain_endpoints, chain_seed):
             "iat": now,
             "exp": now + timedelta(minutes=5),
         },
-        "chain-layer-wrong-secret",
+        "chain-layer-wrong-secret-only-for-tests",
         algorithm="HS256",
     )
     headers = {"Authorization": f"Bearer {forged}"}
@@ -112,3 +112,57 @@ def test_role_is_resolved_from_db_not_from_claims(http, chain_endpoints, go_toke
         assert http.get(chain_endpoints.py("/api/v1/auth/me"), headers=headers).json()["role"] == "admin"
     finally:
         set_role("user")
+
+
+@pytest.mark.parametrize("fields,expected", [
+    ({"password": "a１２３４５６７８"}, 200),
+    ({"password": "short"}, 400),
+    ({"password": "abcdefghijk"}, 400),
+    ({"username": "  "}, 400),
+    ({"password": None}, 400),
+    ({"role": 12}, 400),
+    ({"admin_code": []}, 400),
+])
+def test_register_validation_parity(http, chain_endpoints, chain_pg, chain_rate_scope, fields, expected):
+    from uuid import uuid4
+
+    names = ["qv_" + uuid4().hex[:12] for _ in range(2)]
+    responses = []
+    try:
+        for endpoint, name in zip((chain_endpoints.go, chain_endpoints.py), names, strict=True):
+            response = http.post(endpoint("/api/v1/auth/register"), json={"username": name, "password": "Quality2026case", **fields})
+            assert response.status_code == expected, response.text
+            responses.append(response.json())
+        if expected != 200:
+            assert responses[0] == responses[1]
+    finally:
+        with chain_pg.begin() as connection:
+            connection.execute(text("DELETE FROM users WHERE username IN (:a, :b)"), {"a": names[0], "b": names[1]})
+
+
+@pytest.mark.parametrize("valid", [False, True])
+def test_register_admin_invite_and_duplicate_parity(http, chain_endpoints, chain_pg, chain_rate_scope, valid):
+    import os
+    from uuid import uuid4
+
+    invite = os.getenv("CHAIN_ADMIN_INVITE_CODE")
+    if not invite:
+        pytest.skip("需要隔离验证器注入本轮管理员邀请码")
+    names = ["qa_" + uuid4().hex[:12] for _ in range(2)]
+    try:
+        responses = []
+        for endpoint, name in zip((chain_endpoints.go, chain_endpoints.py), names, strict=True):
+            body = {"username": name, "password": "Quality2026case", "role": "admin", "admin_code": invite if valid else "wrong-invite"}
+            response = http.post(endpoint("/api/v1/auth/register"), json=body)
+            assert response.status_code == (200 if valid else 403), response.text
+            responses.append(response.json())
+            if valid:
+                assert response.json()["role"] == "admin"
+                duplicate = http.post(endpoint("/api/v1/auth/register"), json={**body, "admin_code": "wrong-invite"})
+                assert duplicate.status_code == 409
+                assert duplicate.json() == {"detail": "Username already exists"}
+        if not valid:
+            assert responses[0] == responses[1]
+    finally:
+        with chain_pg.begin() as connection:
+            connection.execute(text("DELETE FROM users WHERE username IN (:a, :b)"), {"a": names[0], "b": names[1]})

@@ -117,11 +117,12 @@ class TestOracleBinding:
 
         否则它测的是"某种失败"，不是"密钥不匹配"。
         """
-        from jose import JWTError, jwt
+        import jwt
+        from jwt import InvalidTokenError
 
         token = vector(doc, "wrong-secret")["token"]
         # 用文件里的 secret 验 → 失败
-        with pytest.raises(JWTError):
+        with pytest.raises(InvalidTokenError):
             jwt.decode(token, SECRET, algorithms=[ALGORITHM])
         # 用那把"错的"钥匙验 → 成功（证明差别只在密钥）
         claims = jwt.decode(token, WRONG_SECRET, algorithms=[ALGORITHM])
@@ -148,7 +149,7 @@ class TestLayerAttribution:
         带 sub、type=access，令牌层三项全过；它被拒只因为桩库里没有这个用户。
         Go 侧据此把它交给 service 层用例断言，而不是塞进 ParseAccessToken 的用例里。
         """
-        from jose import jwt
+        import jwt
 
         from scripts.export_jwt_golden import _production_auth
 
@@ -171,10 +172,10 @@ class TestLayerAttribution:
 class TestClaimsRecorded:
     def test_claims_match_the_token_payload(self, doc):
         """文件记的 claims 必须与 token 里的逐字一致，否则 Go 侧对的是错的参照。"""
-        from jose import jwt
+        import jwt
 
         for v in doc["vectors"]:
-            actual = jwt.get_unverified_claims(v["token"])
+            actual = jwt.decode(v["token"], options={"verify_signature": False})
             for key in ("sub", "role", "type", "exp"):
                 assert v["claims"][key] == actual.get(key), f"{v['vector_id']}.{key}"
 
@@ -190,9 +191,9 @@ class TestClaimsRecorded:
 
     def test_legacy_vector_really_has_no_type_claim(self, doc):
         """"历史令牌不带 type"那条必须真的不带——带了就测不到 None 等同 access 这条规则。"""
-        from jose import jwt
+        import jwt
 
-        payload = jwt.get_unverified_claims(vector(doc, "no-type-legacy")["token"])
+        payload = jwt.decode(vector(doc, "no-type-legacy")["token"], options={"verify_signature": False})
         assert "type" not in payload
         assert vector(doc, "no-type-legacy")["expect_accept"] is True
 
@@ -258,17 +259,7 @@ class TestDivergences:
 
 
 class TestSignaturePaddingBitsAgreeWithGo:
-    """HS256 签名 32 字节 → base64url 43 字符，末字符只承载 4 个有效位，低 2 位是填充位。
-
-    只改填充位，解出来的签名字节一个都没变，于是**两侧都照常接受**。这不是漏洞，
-    是 base64 的正常语义。2026-10-12 两侧实跑核对过（Go 侧对应用例
-    `TestNonCanonicalSignatureTrailingBits`），这里把 Python 那一半也钉住，
-    免得将来有人以为"Go 太宽松"而去改它。
-
-    踩过的坑值得留在代码里：导出脚本的第一版把 tampered-signature 造成
-    "末字符按字母表挪一位"，结果生产裁判判它**通过**、导出被顶回来——
-    一个自以为在测"签名校验有效"的向量，实际测的是"我会不会改错地方"。
-    """
+    """与 Go 一致：拒绝非规范 base64url 填充位，保留正常签名互验。"""
 
     def variant(self, token: str, delta: int) -> str:
         head, payload, signature = token.split(".")
@@ -276,10 +267,10 @@ class TestSignaturePaddingBitsAgreeWithGo:
         assert idx & 3 == 0, "规范编码下末字符的低 2 位应是 0（填充位）"
         return f"{head}.{payload}.{signature[:-1]}{B64URL_ALPHABET[idx ^ delta]}"
 
-    def test_padding_bit_only_changes_are_accepted(self, doc):
+    def test_noncanonical_padding_bits_are_rejected(self, doc):
         token = vector(doc, "access-user")["token"]
         for delta in (1, 2, 3):
-            assert judge(self.variant(token, delta)) is True, f"末字符 ^{delta} 只动填充位，应被接受"
+            assert judge(self.variant(token, delta)) is False, f"末字符 ^{delta} 非规范填充位，应被拒绝"
 
     def test_significant_bit_changes_are_rejected(self, doc):
         token = vector(doc, "access-user")["token"]

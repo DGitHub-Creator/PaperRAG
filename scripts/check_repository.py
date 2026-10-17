@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import subprocess
 import sys
 import tomllib
+import tempfile
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -117,10 +119,60 @@ def run(root: Path = ROOT) -> tuple[int, list[str]]:
     return len(paths), errors
 
 
+def lock_audit_batches(lock: dict) -> list[list[str]]:
+    """Audit every locked PyPI version, including mutually exclusive platform pins."""
+    batches: list[dict[str, str]] = []
+    for package in lock["package"]:
+        if "registry" not in package.get("source", {}):
+            continue
+        name, version = package["name"], package["version"]
+        for batch in batches:
+            if name not in batch or batch[name] == version:
+                batch[name] = version
+                break
+        else:
+            batches.append({name: version})
+    return [[f"{name}=={version}" for name, version in sorted(batch.items())] for batch in batches]
+
+
+def audit_locked_dependencies(root: Path) -> list[str]:
+    errors = []
+    lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory(prefix="researchpilot-audit-") as directory:
+        for number, batch in enumerate(lock_audit_batches(lock), 1):
+            requirements = Path(directory) / "requirements.txt"
+            report = Path(directory) / "report.json"
+            requirements.write_text("\n".join(batch) + "\n", encoding="utf-8")
+            report.unlink(missing_ok=True)
+            # No resolver/install: uv.lock already supplies exact versions and installation hashes.
+            result = subprocess.run([
+                "uv", "tool", "run", "--from", "pip-audit==2.10.1", "pip-audit",
+                "-r", str(requirements), "--no-deps", "--disable-pip",
+                "--progress-spinner", "off", "--timeout", "10", "--format", "json", "--output", str(report),
+                "--cache-dir", str(Path(directory) / "cache"),
+            ], cwd=root, capture_output=True, text=True, timeout=300)
+            if result.returncode not in {0, 1} or not report.is_file():
+                errors.append(f"依赖审计批次 {number} 未完成（退出码 {result.returncode}）")
+                continue
+            dependencies = json.loads(report.read_text(encoding="utf-8"))["dependencies"]
+            if len(dependencies) != len(batch) or any("skip_reason" in item for item in dependencies):
+                errors.append(f"依赖审计批次 {number} 存在未覆盖或跳过的包")
+            for package in dependencies:
+                for vulnerability in package.get("vulns", []):
+                    errors.append(f"{package['name']}=={package['version']}: {vulnerability['id']}")
+            print(f"[repository] 依赖审计批次 {number}: {len(dependencies)} 个锁定版本")
+    return errors
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--audit-dependencies", action="store_true", help="联网审计 uv.lock 全部 PyPI 版本，含其他平台和可选组")
+    args = parser.parse_args()
     try:
         count, errors = run()
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+        if args.audit_dependencies:
+            errors.extend(audit_locked_dependencies(ROOT))
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         print(f"[repository] 无法完成检查：{type(exc).__name__}", file=sys.stderr)
         return 2
     for error in errors:

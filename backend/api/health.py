@@ -45,8 +45,8 @@ def _check_db() -> tuple[bool, str]:
         db.execute(text("SELECT 1"))
         return True, "connected"
     except Exception as e:
-        logger.warning("数据库健康检查失败: %s", e)
-        return False, f"disconnected: {e}"
+        logger.warning("数据库健康检查失败: %s", type(e).__name__)
+        return False, "unavailable"
     finally:
         db.close()
 
@@ -62,8 +62,8 @@ def _check_redis() -> tuple[bool, str]:
         client.ping()
         return True, "connected"
     except Exception as e:
-        logger.warning("Redis 健康检查失败: %s", e)
-        return False, f"disconnected: {e}"
+        logger.warning("Redis 健康检查失败: %s", type(e).__name__)
+        return False, "unavailable"
 
 
 def _check_milvus() -> tuple[bool, str]:
@@ -85,8 +85,8 @@ def _check_milvus() -> tuple[bool, str]:
         client.list_collections(timeout=READY_CHECK_TIMEOUT)
         return True, "connected"
     except Exception as e:
-        logger.warning("Milvus 健康检查失败: %s", e)
-        return False, f"disconnected: {e}"
+        logger.warning("Milvus 健康检查失败: %s", type(e).__name__)
+        return False, "unavailable"
 
 
 @router.get("/health")
@@ -114,8 +114,8 @@ async def _run_check(check) -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, f"timeout after {READY_CHECK_TIMEOUT:.0f}s"
     except Exception as e:  # 防御：线程内未预期异常不应拖垮探针
-        logger.warning("健康检查执行异常: %s", e)
-        return False, f"error: {e}"
+        logger.warning("健康检查执行异常: %s", type(e).__name__)
+        return False, "check failed"
 
 
 @router.get("/ready")

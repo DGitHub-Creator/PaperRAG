@@ -45,7 +45,7 @@ ALGORITHM = "HS256"
 
 # 合成密钥。写进文件是**故意的**：它是公开的、只用于本清单，拿到它只能验通一批
 # 指向不存在用户的令牌。真密钥永不入仓库（AGENTS.md §7）。
-SECRET = "ResearchPilot golden jwt secret"
+SECRET = "ResearchPilot golden jwt secret public-only"
 WRONG_SECRET = SECRET + "-wrong"
 
 # 桩库里唯一的用户。"token 有效但用户已不在库里"那条向量靠它判出来。
@@ -60,7 +60,7 @@ POSITIVE_EXPIRE_MINUTES = 5256000
 DIVERGENCES = [
     {
         "axis": "缺 exp 的令牌",
-        "python": "python-jose 只在 exp 存在时校验，所以缺 exp 的令牌会被**接受**"
+        "python": "PyJWT 只在 exp 存在时校验，所以缺 exp 的令牌会被**接受**"
         "（get_user_from_bearer_token 也不额外要求 exp）",
         "go": "一律要求 exp（jwt.WithExpirationRequired），缺 exp 即拒绝",
         "why_not_in_vectors": "两侧结论相反的向量放进同一份清单，会让「逐条一致」这个判据自相矛盾。"
@@ -168,9 +168,9 @@ def judge(token: str) -> bool:
 
 def _claims(token: str) -> dict[str, Any]:
     """不验签地取出 claims，只为把它们记进文件（Go 侧要逐字段对上）。"""
-    from jose import jwt
+    import jwt
 
-    payload = jwt.get_unverified_claims(token)
+    payload = jwt.decode(token, options={"verify_signature": False})
     return {
         "sub": payload.get("sub"),
         "role": payload.get("role"),
@@ -190,11 +190,11 @@ def _issue(kind: str, username: str, role: str, secret: str = SECRET,
 
 
 def _raw_encode(payload: dict[str, Any], secret: str = SECRET) -> str:
-    """直接调 jose 签发。只用于生产函数**发不出来的形状**（缺 type、缺 sub）——
+    """直接调 PyJWT 签发。只用于生产函数**发不出来的形状**（缺 type、缺 sub）——
     这两条恰恰是历史令牌与攻击面，必须有向量，但不能假装是生产函数产的：
     `produced_by` 字段如实写 raw_encode。
     """
-    from jose import jwt
+    import jwt
 
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
@@ -209,7 +209,7 @@ def _tamper_signature(token: str) -> str:
       2. 动**首字符**而不是末字符：HS256 的签名是 32 字节 → base64url 43 字符，
          末字符只承载 4 个有效位，低 2 位是填充位。把末字符按字母表挪一位
          （例如 `A`→`B`，000000→000001）改的正好是填充位，**解出来的签名字节一个都没变**，
-         python-jose 于是照常接受。第一版就是这么写的，被生产裁判顶了回来
+         PyJWT 于是照常接受。第一版就是这么写的，被生产裁判顶了回来
          （"期望 False，实得 True"）——这条向量当时测的是"我会不会改错地方"，不是"签名校验有没有效"。
     """
     head, payload, signature = token.rsplit(".", 2)
@@ -329,7 +329,7 @@ def build_vectors() -> list[dict[str, Any]]:
             "expect_accept": False,
             "note": "claims 与 access-user 逐字相同，只有签名首字符被换成另一个合法 base64url 字符。"
             "两处刻意：保持字符集合法（测「签名对不上」而不是「base64 解不开」）、动首字符而不是末字符"
-            "（末字符低 2 位是填充位，挪一位解出来的签名字节不变，python-jose 会照常接受——"
+            "（末字符低 2 位是填充位，挪一位解出来的签名字节不变，PyJWT 会照常接受——"
             "第一版就这么写错了，被生产裁判顶回来）",
         },
     ]

@@ -78,9 +78,79 @@ class TestEmbeddingServiceBM25:
         tmp = _tmp_state()
         s1 = _make_service(state_path=tmp)
         s1.increment_add_documents(["test document one", "test document two"])
-        s1._persist()
 
         s2 = _make_service(state_path=tmp)
-        s2._load_state()
         assert s2._total_docs == 2
         assert "test" in s2._vocab
+
+
+def test_independent_instances_preserve_statistics_and_vocabulary(tmp_path):
+    path = tmp_path / "bm25.json"
+    first = _make_service(path)
+    second = _make_service(path)
+    first.increment_add_documents(["alpha beta"])
+    second.increment_add_documents(["gamma delta"])
+    first.get_sparse_embedding("newword")
+    second.get_sparse_embedding("anotherword")
+    reloaded = _make_service(path)
+    assert reloaded._total_docs == 2
+    assert set(reloaded._vocab) == {"alpha", "beta", "gamma", "delta", "newword", "anotherword"}
+    assert len(set(reloaded._vocab.values())) == 6
+    second.increment_remove_documents(["alpha beta"])
+    assert _make_service(path)._total_docs == 1
+
+
+def test_corrupt_bm25_never_resets_existing_dimensions(tmp_path):
+    import pytest
+
+    path = tmp_path / "bm25.json"
+    service = _make_service(path)
+    service.increment_add_documents(["existing document"])
+    path.write_text("broken-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="拒绝覆盖"):
+        service.increment_add_documents(["replacement"])
+    assert path.read_text(encoding="utf-8") == "broken-json"
+
+
+def test_real_huggingface_wrapper_passes_model_options_once(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import sentence_transformers
+    from langchain_huggingface.embeddings.huggingface import HuggingFaceEmbeddings
+    from backend.rag import embedding
+
+    observed = {}
+
+    def construct(model_name, *, cache_folder, device, trust_remote_code):
+        observed.update(model_name=model_name, cache_folder=cache_folder, device=device, trust_remote_code=trust_remote_code)
+        return MagicMock()
+
+    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", construct)
+    monkeypatch.setattr(embedding, "HuggingFaceEmbeddings", HuggingFaceEmbeddings)
+    embedding._create_dense_embedder()
+    assert observed["cache_folder"] == embedding.HF_HOME
+    assert observed["trust_remote_code"] is False
+
+
+def test_local_tiny_model_runs_real_updated_embedding_stack(tmp_path, monkeypatch):
+    """真实运行依赖栈的 CPU 前向；随机小模型仅验兼容性，不代表 BGE 检索质量。"""
+    import math
+
+    from transformers import BertConfig, BertModel, BertTokenizer
+    from sentence_transformers import SentenceTransformer
+    from sentence_transformers.sentence_transformer.modules import Transformer, Pooling
+    from langchain_huggingface.embeddings.huggingface import HuggingFaceEmbeddings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    base = tmp_path / "tiny-bert"
+    BertModel(BertConfig(vocab_size=8, hidden_size=16, num_hidden_layers=1, num_attention_heads=2, intermediate_size=32)).save_pretrained(base)
+    vocabulary = {word: index for index, word in enumerate(["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]", "hello", "world", "research"])}
+    BertTokenizer(vocab=vocabulary).save_pretrained(base)
+    transformer = Transformer(str(base), model_args={"local_files_only": True})
+    target = tmp_path / "tiny-sentence-model"
+    SentenceTransformer(modules=[transformer, Pooling(16)]).save(str(target))
+    embedder = HuggingFaceEmbeddings(model_name=str(target), model_kwargs={"device": "cpu", "local_files_only": True}, encode_kwargs={"normalize_embeddings": True})
+    vectors = embedder.embed_documents(["hello world", "research"])
+    assert len(vectors) == 2
+    assert all(len(vector) == 16 and all(math.isfinite(value) for value in vector) for vector in vectors)
+    assert all(abs(sum(value * value for value in vector) - 1.0) < 1e-5 for vector in vectors)

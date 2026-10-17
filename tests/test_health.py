@@ -77,3 +77,21 @@ class TestHealthEndpoint:
         assert elapsed < 8  # 远小于慢检查的 10s
         data = resp.json()
         assert "timeout" in data["detail"]["checks"]["milvus"]["detail"]
+
+
+def test_readiness_does_not_expose_database_connection_details(client, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from backend.api import health
+
+    database = MagicMock()
+    database.execute.side_effect = RuntimeError("postgresql://admin:private-password@internal-host/database")
+    monkeypatch.setattr(health, "SessionLocal", lambda: database)
+    monkeypatch.setattr(health, "_check_redis", lambda: (True, "connected"))
+    monkeypatch.setattr(health, "_check_milvus", lambda: (True, "connected"))
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert "private-password" not in response.text
+    assert "internal-host" not in response.text
+    assert response.json()["detail"]["checks"]["database"]["detail"] == "unavailable"
+    database.close.assert_called_once()

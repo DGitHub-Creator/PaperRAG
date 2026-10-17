@@ -167,7 +167,7 @@ func TestLoadAuthInvalidIntsFallBackToSafeDefaults(t *testing.T) {
 
 // JWT_SECRET_KEY 缺失在**所有**环境下都拒绝启动，对齐
 // backend/core/config/__init__.py:validate_runtime_security：
-// 空密钥 python-jose 会静默接受，比可猜测的默认值更危险，所以没有开发环境豁免。
+// 缺失签名密钥没有安全兜底，所以没有开发环境豁免。
 func TestValidateAuthRequiresSecretInEveryEnvironment(t *testing.T) {
 	for _, env := range []string{"development", "production"} {
 		t.Run(env, func(t *testing.T) {
@@ -188,6 +188,8 @@ func TestValidateAuthRejectsUnsafeValuesOnlyInProduction(t *testing.T) {
 		cfg  Config
 	}{
 		{"占位密钥", Config{JWTSecretKey: "replace-with-strong-random-secret"}},
+		{"生产模板密钥", Config{JWTSecretKey: "replace-with-a-long-random-production-secret"}},
+		{"生产模板邀请码", Config{JWTSecretKey: "s", AdminInviteCode: "replace-with-a-private-admin-invite-code"}},
 		{"旧项目名的泄露邀请码", Config{JWTSecretKey: "s", AdminInviteCode: "paperrag-admin-2026"}},
 		{"新项目名的泄露邀请码", Config{JWTSecretKey: "s", AdminInviteCode: "researchpilot-admin-2026"}},
 	}

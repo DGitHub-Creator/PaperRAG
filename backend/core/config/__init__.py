@@ -170,7 +170,7 @@ def validate_runtime_security() -> None:
     """Validate security-sensitive runtime settings.
 
     ``JWT_SECRET_KEY`` 缺失在**所有**环境下都拒绝启动：令牌签名密钥没有安全的
-    兜底值可用（空密钥 python-jose 会静默接受，比可猜测的默认值更危险）。
+    兜底值可用（空密钥 PyJWT 会静默接受，比可猜测的默认值更危险）。
     其余项在生产环境拒绝启动，在开发环境只告警。
     """
     if TRUST_PROXY_HEADERS and not TRUSTED_PROXY_CIDRS:
@@ -182,18 +182,22 @@ def validate_runtime_security() -> None:
         )
 
     issues = []
-    if JWT_SECRET_KEY == "replace-with-strong-random-secret":
+    if JWT_SECRET_KEY.startswith("replace-with-"):
         issues.append("JWT_SECRET_KEY is still using the default placeholder")
     # 两个都要拒：旧项目名的弱默认值在既有部署里可能已经写进 .env，
     # 只删旧值等于把"已经暴露过的口令"重新变成可用口令。
     if ADMIN_INVITE_CODE in {"paperrag-admin-2026", "researchpilot-admin-2026"}:
         issues.append("ADMIN_INVITE_CODE is still using the leaked default value")
+    if ADMIN_INVITE_CODE.startswith("replace-with-"):
+        issues.append("ADMIN_INVITE_CODE is still using a placeholder")
     if ALLOWED_ORIGINS == ["*"]:
         issues.append("ALLOWED_ORIGINS allows every origin")
     if is_production() and not USE_REDIS_JOB_MANAGER:
         issues.append("USE_REDIS_JOB_MANAGER should be enabled for production job recovery")
     if is_production() and not AICORE_INTERNAL_TOKEN:
         issues.append("AICORE_INTERNAL_TOKEN 未配置，/internal/v1/ai 会拒绝一切请求（02 §3.5）")
+    if AICORE_INTERNAL_TOKEN.startswith("replace-with-"):
+        issues.append("AICORE_INTERNAL_TOKEN is still using a placeholder")
 
     if not issues:
         if not ADMIN_INVITE_CODE:

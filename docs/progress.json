@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "project": "ResearchPilot",
-  "as_of": "2026-10-16",
+  "as_of": "2026-10-17",
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0 已按既有验收收口；产品阶段状态以本文件任务卡与退出标准为准，不按代码整改数量增加完成度。当前执行全仓质量重构，尚未完成最终验收。\n\n本轮已修复会话覆盖/缓存不一致、AIExecution 记录内存态、工具执行与追踪、上传任务状态及前端流式状态等问题，证据与边界见 docs/WORKLOG.md；未决项见 docs/plans/12-known-code-issues.md 与 docs/plans/repository-standardization.md。\n\nP1 接管开工仍受 contracts/p1-design-review.md 的设计门禁约束；该审查仍为 proposed，本轮不改变依赖、不把质量修复记为 P1 完成。当前实现说明见 docs/reference/13-frontend-backend-architecture.md，历史阶段实跑见 docs/archive/2026-10-15-p0-worklog.md。",
+  "current": "P0 按既有验收收口；本批质量整改已实现并完成针对性验收，正分关注点提交与收尾。产品阶段、退出标准与任务卡仍以本文件为准，不按质量修复数量增加完成度。\n\n本轮修复覆盖依赖安全、JWT/模型兼容、父块与 BM25、一致性失败恢复、执行重放、当前运行权限和文档治理；证据见 docs/WORKLOG.md，能力边界见 docs/reference/13-frontend-backend-architecture.md。\n\nP1 接管仍受 contracts/p1-design-review.md 门禁约束；proposed 不代表批准，质量修复不计为 P1 产品完成。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -1034,17 +1034,19 @@
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
-    "note": "前端公告审计为 0；Python 上传解析/网络首组 8 个锁定包升级并回归，当前安装环境 176 包中 24 包/118 条公告仍待治理；667 passed / 48 skipped，不代表真实业务链路或全仓合规。",
-    "current_task": "R12 继续 Web/异步网络、加密与模型依赖；R06/R07/R08 持续进行",
+    "note": "Python 完整锁文件 210 个版本审计无公告，npm audit 为 0；Go 1.27.2/x-text 安全修复后 govulncheck 无发现。当前局部恢复与受限运行权限已真实验收；真实模型产品端到端仍未验证。",
+    "current_task": "依赖安全与兼容修复已验证，按关注点提交；存储恢复、部署配置和文档将同批收尾。",
     "completed_tasks": [
       "R01",
       "R02",
       "R03",
       "R04",
       "R05",
-      "R09",
+      "R06",
+      "R07",
+      "R08",
       "R10",
-      "R11"
+      "R12"
     ]
   }
 }

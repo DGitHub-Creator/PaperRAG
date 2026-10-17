@@ -1,0 +1,22 @@
+title = "ResearchPilot secrets scan"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "jwt"
+[[rules.allowlists]]
+description = "Public synthetic JWT vectors; real credentials remain forbidden"
+condition = "AND"
+paths = ['^contracts/jwt_golden\.json$']
+regexTarget = "line"
+regexes = ['"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.']
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Same synthetic JWT vectors, when also matched as generic tokens"
+condition = "AND"
+paths = ['^contracts/jwt_golden\.json$']
+regexTarget = "line"
+regexes = ['"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.']

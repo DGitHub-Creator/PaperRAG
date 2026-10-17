@@ -2,7 +2,7 @@
 # go-api 与 go-worker 共用一个镜像，靠 compose 的 command 区分进程（02 §2 是两个进程、一份代码）。
 # 构建上下文是 server/：docker compose 里写 build: {context: ./server, dockerfile: Dockerfile}。
 
-FROM golang:1.25-alpine AS build
+FROM golang:1.27.2-alpine3.24 AS build
 WORKDIR /src
 
 # 中国大陆网络下 proxy.golang.org 不可达（本机实测超时）。默认走官方源，
@@ -16,13 +16,15 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/go-api ./cmd/api \
- && CGO_ENABLED=0 go build -o /out/go-worker ./cmd/worker
+ && CGO_ENABLED=0 go build -o /out/go-worker ./cmd/worker \
+ && CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
 
-FROM alpine:3.20
+FROM alpine:3.24.2
 RUN apk add --no-cache ca-certificates \
  && adduser -D -u 10001 app
 WORKDIR /app
-COPY --from=build /out/go-api /out/go-worker /app/
+COPY --from=build /out/go-api /out/go-worker /out/migrate /app/
+COPY migrations/ /app/migrations/
 USER app
 EXPOSE 8080
 # 用 CMD 而不是 ENTRYPOINT，go-worker 服务直接覆盖 command 即可

@@ -25,7 +25,7 @@ const AlgorithmHS256 = "HS256"
 // 不直接收 config.Config：本包不该知道"配置从环境变量来"，单测也才能逐条构造边界值
 // （负有效期用来测过期，空密钥用来测 fail-fast）。
 type TokenConfig struct {
-	// Secret 是 HMAC 密钥。空密钥会被 Issue/Parse 直接拒绝——python-jose 对空密钥是
+	// Secret 是 HMAC 密钥。空密钥会被 Issue/Parse 直接拒绝——PyJWT 对空密钥是
 	// **静默接受**的，那比可猜测的默认值更危险，所以 Go 侧不给这个口子。
 	Secret string
 	// ExpireMinutes 是 access token 的有效期，对齐 JWT_EXPIRE_MINUTES（默认 60）。
@@ -50,7 +50,7 @@ var (
 // 逐字段一致：sub（用户名）、role、type=access、exp。
 //
 // 字段名与类型都不能改：Python 侧要能验 Go 签的令牌（X4 的另一半），
-// 而 python-jose 认的是 `exp` 这个数字时间戳。
+// 而 PyJWT 认的是 `exp` 这个数字时间戳。
 func IssueAccessToken(cfg TokenConfig, username, role string) (string, error) {
 	return issue(cfg, username, role, TokenTypeAccess, time.Duration(cfg.ExpireMinutes)*time.Minute)
 }
@@ -90,7 +90,7 @@ func issue(cfg TokenConfig, username, role, tokenType string, ttl time.Duration)
 // （避免降级/改名后旧令牌继续持有旧权限）。这里连取值的机会都不给，比"返回了但注明别用"可靠。
 //
 // ⚠️ 与 Python 的一处已知分歧（记在 contracts/jwt_golden.json 的 divergences 里）：
-// python-jose 只在 `exp` 存在时校验，缺 exp 的令牌会被接受；这里用
+// PyJWT 只在 `exp` 存在时校验，缺 exp 的令牌会被接受；这里用
 // WithExpirationRequired 一律要求 exp。生产的两个签发函数总会写 exp，所以碰不到真实令牌，
 // 方向是更严（拒绝而不是误接受）。
 func ParseAccessToken(cfg TokenConfig, tokenStr string) (string, error) {
@@ -113,6 +113,7 @@ func ParseAccessToken(cfg TokenConfig, tokenStr string) (string, error) {
 		},
 		jwt.WithValidMethods([]string{AlgorithmHS256}),
 		jwt.WithExpirationRequired(),
+		jwt.WithStrictDecoding(),
 	)
 	if err != nil {
 		return "", classifyParseError(err)

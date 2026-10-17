@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 # uv 用于从 lockfile 可复现安装依赖
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /usr/local/bin/
 
 # 先装依赖（仅 pyproject/lock 变化时重建该层）
 COPY pyproject.toml uv.lock ./

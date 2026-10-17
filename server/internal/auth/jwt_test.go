@@ -205,7 +205,7 @@ func TestIssueAndParseRoundTrip(t *testing.T) {
 }
 
 // TestIssuedClaimsMatchPythonShape 逐字段对齐 create_access_token 的载荷：
-// sub / role / type / exp 四项，exp 是数字时间戳（python-jose 认的就是这个）。
+// sub / role / type / exp 四项，exp 是数字时间戳（PyJWT 使用同一 JWT 数字时间戳）。
 // 多一项少一项都会让 Python 侧验不过或读不到角色。
 func TestIssuedClaimsMatchPythonShape(t *testing.T) {
 	cfg := TokenConfig{Secret: "shape-secret", ExpireMinutes: 60, RefreshExpireDays: 30}
@@ -235,7 +235,7 @@ func TestIssuedClaimsMatchPythonShape(t *testing.T) {
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok {
-		t.Fatalf("exp 应是数字时间戳（Python 侧 datetime 被 jose 转成 int），实得 %T=%v", claims["exp"], claims["exp"])
+		t.Fatalf("exp 应是数字时间戳（Python 侧 datetime 被 PyJWT 转成 int），实得 %T=%v", claims["exp"], claims["exp"])
 	}
 	gotExp := time.Unix(int64(exp), 0).UTC()
 	wantExp := before.Add(60 * time.Minute)
@@ -317,7 +317,7 @@ func TestRejectsAlgorithmConfusion(t *testing.T) {
 
 // TestRequiresExpClaim 是 jwt_golden.json 的 divergences 第 1 条的 Go 侧那一半。
 // 2026-10-12 两侧实跑核对过：同一枚缺 exp 的令牌，Python 的生产函数**接受**
-// （python-jose 只在 exp 存在时校验），Go 拒绝。方向是更严，且生产签发函数总会写 exp，
+// （PyJWT 只在 exp 存在时校验），Go 拒绝。方向是更严，且生产签发函数总会写 exp，
 // 所以碰不到真实令牌——但这条分歧必须写下来，否则将来有人拿 Python 的行为当基准，
 // 会以为 Go 这边坏了。
 func TestRequiresExpClaim(t *testing.T) {
@@ -334,14 +334,7 @@ func TestRequiresExpClaim(t *testing.T) {
 	}
 }
 
-// TestNonCanonicalSignatureTrailingBits 记录一条**两侧一致**的细节，它很容易写错：
-// HS256 的签名是 32 字节 → base64url 43 字符，末字符只承载 4 个有效位，低 2 位是填充位。
-// 只改填充位，解出来的签名字节一个都没变，于是**两侧都照常接受**——这不是漏洞，
-// 是 base64 的正常语义（2026-10-12 实跑核对：Go 接受，Python 的生产函数也接受）。
-//
-// 这条踩过的坑值得留在代码里：export_jwt_golden.py 的第一版把 tampered-signature
-// 造成"末字符按字母表挪一位"，结果生产裁判判它**通过**，导出被顶回来。
-// 也就是说，一个自以为在测"签名校验有效"的向量，实际测的是"我会不会改错地方"。
+// TestNonCanonicalSignatureTrailingBits verifies strict base64url decoding in both runtimes.
 func TestNonCanonicalSignatureTrailingBits(t *testing.T) {
 	doc := loadJWTGolden(t)
 	cfg := TokenConfig{Secret: doc.Secret, ExpireMinutes: 60}
@@ -376,10 +369,10 @@ func TestNonCanonicalSignatureTrailingBits(t *testing.T) {
 	replaceLast := func(idx int) string {
 		return parts[0] + "." + parts[1] + "." + signature[:len(signature)-1] + string(alphabet[idx])
 	}
-	// 只动填充位（低 2 位）→ 签名字节不变 → 接受
+	// 非零填充位也是非规范编码，与 PyJWT 一致拒绝。
 	for _, delta := range []int{1, 2, 3} {
-		if _, err := ParseAccessToken(cfg, replaceLast(last^delta)); err != nil {
-			t.Errorf("只改填充位（末字符 ^%d）不该影响签名，却被拒: %v", delta, err)
+		if _, err := ParseAccessToken(cfg, replaceLast(last^delta)); err == nil {
+			t.Errorf("非规范填充位（末字符 ^%d）应被拒: %v", delta, err)
 		}
 	}
 	// 动到有效位（第 3 位起）→ 签名字节变了 → 拒绝
@@ -408,7 +401,7 @@ func TestParseAccessTokenRejectsDegenerateInputs(t *testing.T) {
 	}
 }
 
-// TestEmptySecretIsRefusedOnBothEnds 钉住"空密钥"这条路：python-jose 对空密钥是静默接受的，
+// TestEmptySecretIsRefusedOnBothEnds 钉住"空密钥"这条路：缺失签名密钥没有安全兜底，
 // 那比可猜测的默认值更危险（backend/core/config/__init__.py:validate_runtime_security 的注释
 // 就是这么写的），所以 Go 侧签发与校验都不给这个口子。
 func TestEmptySecretIsRefusedOnBothEnds(t *testing.T) {

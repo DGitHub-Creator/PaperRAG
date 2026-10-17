@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "algorithm": "HS256",
-  "secret": "ResearchPilot golden jwt secret",
-  "secret_rule": "secret = \"ResearchPilot golden jwt secret\"（合成值，公开写在文件里）；signed_with=\"secret-wrong\" 的那条用 \"ResearchPilot golden jwt secret-wrong\" 签发，校验时一律用 secret",
+  "secret": "ResearchPilot golden jwt secret public-only",
+  "secret_rule": "secret = \"ResearchPilot golden jwt secret public-only\"（合成值，公开写在文件里）；signed_with=\"secret-wrong\" 的那条用 \"ResearchPilot golden jwt secret public-only-wrong\" 签发，校验时一律用 secret",
   "warning": "本文件的 secret 与用户名都是合成的，不是任何环境的凭据；生产 JWT_SECRET_KEY 只经环境变量，永不入仓库（AGENTS.md §7）。",
   "judge": "backend.core.auth.get_user_from_bearer_token（生产函数本体，用只认 \"golden-user\" 一个用户的桩 db 跑），expect_accept 就是它是否返回非 None。四项校验（签名/过期、sub 存在、type 语义、用户仍在库里）因此都在判据里。",
   "reproducibility": "token 的 exp = 签发时刻 + expire_minutes，所以**本文件不能逐字节重建**（与 pbkdf2_golden.json 不同，那份的盐由 vector_id 派生，可逐字重建）。--check 因此是语义校验：把每条已提交的 token 重新交给生产裁判，结论与 claims 都必须仍与文件一致。正向向量的有效期钉成 10 年，到期前不必重导。",
@@ -11,7 +11,7 @@
   "vectors": [
     {
       "vector_id": "access-user",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzE0NjQyMX0.OYMG84oFxTkUcxO6YuAT9jHOhRhkr-3kKS2bGVClT8g",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzU1ODY1MH0._kOtHD1iRl2hGSg5tiYD5pURQzFFOdPcVdAPqZ-OrOM",
       "produced_by": "create_access_token",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -21,13 +21,13 @@
         "sub": "golden-user",
         "role": "user",
         "type": "access",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": null
     },
     {
       "vector_id": "access-admin",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJhZG1pbiIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDcxNDY0MjF9.GQgviDnZ1IYMkkFzF8DPWuql3Sk88hDeRex4OwAOIHM",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJhZG1pbiIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDc1NTg2NTB9.SCvo6zO2nEd6RpTZUyCj8WiK_tEPRB9kSQqGLGPTBkI",
       "produced_by": "create_access_token",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -37,13 +37,13 @@
         "sub": "golden-user",
         "role": "admin",
         "type": "access",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": null
     },
     {
       "vector_id": "refresh-as-access",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6InJlZnJlc2giLCJleHAiOjIxMDcxNDY0MjF9.IHMyJbKWgwf36r7QWjKcqRqKAmWIdT2e60X4lYISd8I",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6InJlZnJlc2giLCJleHAiOjIxMDc1NTg2NTB9.2a7RJoWFZsdhnjbaJIVPIIMup22uydoG3nmUitVijGc",
       "produced_by": "create_refresh_token",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -53,13 +53,13 @@
         "sub": "golden-user",
         "role": "user",
         "type": "refresh",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": "token"
     },
     {
       "vector_id": "no-type-legacy",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwiZXhwIjoyMTA3MTQ2NDE5fQ.8MkxWVDd564dGiIkIbsi9eBZd2IdgEnrGS8JG-U3aco",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwiZXhwIjoyMTA3NTU4NjQ4fQ.5bxeUiXjO9gU6tzNPNI41Dg_7d9IdKnSwANDFTDeHOc",
       "produced_by": "raw_encode",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -69,13 +69,13 @@
         "sub": "golden-user",
         "role": "user",
         "type": null,
-        "exp": 2107146419
+        "exp": 2107558648
       },
       "rejected_by": null
     },
     {
       "vector_id": "expired-access",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MTc4NjM2MX0.AHMv9N3m3Ip5qtQS2pbrnYeZbeyZUJHVMMZ2ZdYaZS0",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjE5ODU5MH0.PXCNKCnNO791uhl_m79bLqafTXhhPwxqR7Vg5Wk5hUU",
       "produced_by": "create_access_token",
       "signed_with": "secret",
       "expire_minutes": -1,
@@ -85,13 +85,13 @@
         "sub": "golden-user",
         "role": "user",
         "type": "access",
-        "exp": 1791786361
+        "exp": 1792198590
       },
       "rejected_by": "token"
     },
     {
       "vector_id": "wrong-secret",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzE0NjQyMX0.breIL-mL2qRKS56LB5i7QfsySxpKp42m0mB6aVAnZYc",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzU1ODY1MH0.dMj8nMhlFN_wCaGBlpYGcfmk6jycNJludw0Bgx-OP8I",
       "produced_by": "create_access_token",
       "signed_with": "secret-wrong",
       "expire_minutes": 5256000,
@@ -101,13 +101,13 @@
         "sub": "golden-user",
         "role": "user",
         "type": "access",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": "token"
     },
     {
       "vector_id": "missing-sub",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoidXNlciIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDcxNDY0MTl9.Xp9XETQYQ1mF6gnxC5EKfzRkxs1ndkIQR1_4houyw0U",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoidXNlciIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDc1NTg2NDh9.QE9PTGu9vjyR6O3c2oMwiENLqBzJGdPSHnW5xTIjnns",
       "produced_by": "raw_encode",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -117,13 +117,13 @@
         "sub": null,
         "role": "user",
         "type": "access",
-        "exp": 2107146419
+        "exp": 2107558648
       },
       "rejected_by": "token"
     },
     {
       "vector_id": "unknown-user",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJub3QtaW4tdGhlLXN0dWItZGIiLCJyb2xlIjoidXNlciIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDcxNDY0MjF9.k2K8y_VbtgcuO7Iaep6azU2pgclVSf9RvH253JaACpU",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJub3QtaW4tdGhlLXN0dWItZGIiLCJyb2xlIjoidXNlciIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjIxMDc1NTg2NTB9.yxvfd5ksDW1jPUpdAPj9iL8gwsnL3Dcs8u0U3Yq12_s",
       "produced_by": "create_access_token",
       "signed_with": "secret",
       "expire_minutes": 5256000,
@@ -133,23 +133,23 @@
         "sub": "not-in-the-stub-db",
         "role": "user",
         "type": "access",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": "database"
     },
     {
       "vector_id": "tampered-signature",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzE0NjQyMX0.PYMG84oFxTkUcxO6YuAT9jHOhRhkr-3kKS2bGVClT8g",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJnb2xkZW4tdXNlciIsInJvbGUiOiJ1c2VyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MjEwNzU1ODY1MH0.AkOtHD1iRl2hGSg5tiYD5pURQzFFOdPcVdAPqZ-OrOM",
       "produced_by": "create_access_token+篡改签名段首字符",
       "signed_with": "secret",
       "expire_minutes": 5256000,
       "expect_accept": false,
-      "note": "claims 与 access-user 逐字相同，只有签名首字符被换成另一个合法 base64url 字符。两处刻意：保持字符集合法（测「签名对不上」而不是「base64 解不开」）、动首字符而不是末字符（末字符低 2 位是填充位，挪一位解出来的签名字节不变，python-jose 会照常接受——第一版就这么写错了，被生产裁判顶回来）",
+      "note": "claims 与 access-user 逐字相同，只有签名首字符被换成另一个合法 base64url 字符。两处刻意：保持字符集合法（测「签名对不上」而不是「base64 解不开」）、动首字符而不是末字符（末字符低 2 位是填充位，挪一位解出来的签名字节不变，PyJWT 会照常接受——第一版就这么写错了，被生产裁判顶回来）",
       "claims": {
         "sub": "golden-user",
         "role": "user",
         "type": "access",
-        "exp": 2107146421
+        "exp": 2107558650
       },
       "rejected_by": "token"
     }
@@ -157,7 +157,7 @@
   "divergences": [
     {
       "axis": "缺 exp 的令牌",
-      "python": "python-jose 只在 exp 存在时校验，所以缺 exp 的令牌会被**接受**（get_user_from_bearer_token 也不额外要求 exp）",
+      "python": "PyJWT 只在 exp 存在时校验，所以缺 exp 的令牌会被**接受**（get_user_from_bearer_token 也不额外要求 exp）",
       "go": "一律要求 exp（jwt.WithExpirationRequired），缺 exp 即拒绝",
       "why_not_in_vectors": "两侧结论相反的向量放进同一份清单，会让「逐条一致」这个判据自相矛盾。生产 create_access_token / create_refresh_token **总会**写 exp，所以这条分歧碰不到真实令牌；方向是 Go 更严（拒绝而不是误接受）。Go 侧由 jwt_test.go 单独钉住。"
     },

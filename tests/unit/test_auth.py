@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from jose import jwt
+import jwt
 
 from backend.core.auth import (
     authenticate_user,
@@ -20,7 +20,7 @@ from backend.core.auth import (
     verify_password,
 )
 
-TEST_SECRET = "test-secret-for-testing"
+TEST_SECRET = "test-secret-for-testing-at-least-32-bytes"
 
 
 def _patch_auth():
@@ -281,3 +281,19 @@ class TestResolveRole:
                 resolve_role("admin", "guessed-code")
         for call in mock_logger.warning.call_args_list:
             assert "guessed-code" not in str(call)
+
+
+async def test_register_concurrent_unique_conflict_is_409_and_rolls_back():
+    from types import SimpleNamespace
+    from sqlalchemy.exc import IntegrityError
+    from backend.api.auth import register
+    from backend.schemas.auth import RegisterRequest
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    db.commit.side_effect = IntegrityError("INSERT users", {}, SimpleNamespace(pgcode="23505"))
+    with pytest.raises(HTTPException) as caught:
+        await register.__wrapped__(request=MagicMock(), response=MagicMock(), body=RegisterRequest(username="quality-user", password="Quality2026case"), db=db)
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "Username already exists"
+    db.rollback.assert_called_once()

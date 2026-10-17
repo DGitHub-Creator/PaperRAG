@@ -24,12 +24,23 @@ class TestRuntimeSecurityFailFast:
             with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
                 validate_runtime_security()
 
-    def test_leftover_placeholder_secret_is_still_flagged(self):
+    @pytest.mark.parametrize("secret", ["replace-with-strong-random-secret", "replace-with-a-long-random-production-secret"])
+    def test_leftover_placeholder_secret_is_still_flagged(self, secret):
         with (
-            patch("backend.core.config.JWT_SECRET_KEY", "replace-with-strong-random-secret"),
+            patch("backend.core.config.JWT_SECRET_KEY", secret),
             patch("backend.core.config.is_production", return_value=True),
         ):
             with pytest.raises(RuntimeError, match="placeholder"):
+                validate_runtime_security()
+
+    @pytest.mark.parametrize("setting", ["ADMIN_INVITE_CODE", "AICORE_INTERNAL_TOKEN"])
+    def test_production_template_credentials_are_rejected(self, setting):
+        with (
+            patch("backend.core.config.JWT_SECRET_KEY", "configured-signing-key"),
+            patch(f"backend.core.config.{setting}", "replace-with-a-random-value"),
+            patch("backend.core.config.is_production", return_value=True),
+        ):
+            with pytest.raises(RuntimeError, match=setting):
                 validate_runtime_security()
 
     @pytest.mark.parametrize("leaked", ["paperrag-admin-2026", "researchpilot-admin-2026"])

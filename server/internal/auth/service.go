@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -156,10 +157,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*AuthResult, 
 	if s.MinPasswordLength > 0 && utf8.RuneCountInString(password) < s.MinPasswordLength {
 		return nil, PasswordTooShortError{Min: s.MinPasswordLength}
 	}
-	// 字符类别同样只在 ASCII 三类里数（生产侧是 re.search(r"[a-z]") / [A-Z] / \d）。
-	// 注意 \d 在 Python 的 re 里默认匹配 Unicode 数字，但这里数的是"至少两类"，
-	// 而 [a-z]/[A-Z] 是纯 ASCII，所以差异只在"全 Unicode 数字 + 一个 ASCII 字母"这类边角上；
-	// 刻意与生产侧同构：ASCII 数字才算 digit。
+	// 与 Python 的 [a-z]/[A-Z]/\d 一致，数字类别包含 Unicode Nd。
 	if s.MinPasswordLength > 0 && passwordCategories(password) < 2 {
 		return nil, ErrPasswordTooSimple
 	}
@@ -375,13 +373,13 @@ func (s *Service) issue(username, role string) (*AuthResult, error) {
 // 对齐生产侧那三个 re.search。生产侧要求至少两类（且只在 MIN_PASSWORD_LENGTH > 0 时生效）。
 func passwordCategories(password string) int {
 	var lower, upper, digit bool
-	for i := 0; i < len(password); i++ {
-		switch c := password[i]; {
+	for _, c := range password {
+		switch {
 		case c >= 'a' && c <= 'z':
 			lower = true
 		case c >= 'A' && c <= 'Z':
 			upper = true
-		case c >= '0' && c <= '9':
+		case unicode.IsDigit(c):
 			digit = true
 		}
 	}

@@ -3,8 +3,10 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from backend.core.auth import (
     authenticate_user,
@@ -71,7 +73,13 @@ async def register(
     role = resolve_role(body.role, body.admin_code)
     user = User(username=username, password_hash=get_password_hash(password), role=role)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if getattr(exc.orig, "pgcode", None) == "23505":
+            raise HTTPException(status_code=409, detail="Username already exists") from exc
+        raise
 
     access_token = create_access_token(username=username, role=role)
     refresh_token = create_refresh_token(username=username, role=role)
@@ -127,7 +135,7 @@ async def refresh_token(
         if not username or not role:
             logger.warning("Refresh token is missing sub or role")
             raise credentials_exception
-    except JWTError:
+    except InvalidTokenError:
         logger.warning("Refresh token decode failed or token expired")
         raise credentials_exception from None
 

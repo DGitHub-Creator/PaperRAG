@@ -26,6 +26,7 @@ from langchain_community.document_loaders import (
     Docx2txtLoader,
     PyPDFLoader,
     UnstructuredExcelLoader,
+    UnstructuredWordDocumentLoader,
 )
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -545,6 +546,20 @@ class DocumentLoader:
             # 父块内递归切分子块
             children = child_splitter.split_text(parent_text)
             num_children = len(children)
+            if not children:
+                continue
+            # 叶子长期引用这个章节父块，必须实际产出并持久化，不能只有悬空 ID。
+            parent_id = f"{filename}_p{p_idx}"
+            all_docs.append({
+                "text": parent_text, "chunk_id": parent_id,
+                "parent_chunk_id": "", "root_chunk_id": parent_id,
+                "chunk_level": 2, "chunk_idx": global_idx,
+                "filename": filename, "file_path": "", "file_type": "PDF",
+                "page_number": 0, "parser": parser, "parent_idx": p_idx,
+                "num_children": num_children, "chapter_path": chapter_path,
+                "has_theorem_in_parent": has_theorem, "has_proof_in_parent": has_proof,
+            })
+            global_idx += 1
 
             for c_idx, child_text in enumerate(children):
                 chunk_id = f"{filename}_p{p_idx}_c{c_idx}"
@@ -583,7 +598,7 @@ class DocumentLoader:
                 })
                 global_idx += 1
 
-        logger.info("  [%s] → %d 子块 (%s)", filename, len(all_docs), parser)
+        logger.info("  [%s] → %d 子块 (%s)", filename, sum(doc["chunk_level"] == 3 for doc in all_docs), parser)
         return all_docs
 
     # ── PDF 加载（多解析器降级 + 学术清洗 + 分块）─────────────────────
@@ -670,9 +685,12 @@ class DocumentLoader:
             return self._load_pdf(file_path, filename)
 
         # Word 文档: 提取纯文本后走标准三层分块
-        if file_lower.endswith((".docx", ".doc")):
+        if file_lower.endswith(".docx"):
             doc_type = "Word"
             loader = Docx2txtLoader(file_path)
+        elif file_lower.endswith(".doc"):
+            doc_type = "Word"
+            loader = UnstructuredWordDocumentLoader(file_path)
         # Excel 文档: 提取内容后走标准三层分块
         elif file_lower.endswith((".xlsx", ".xls")):
             doc_type = "Excel"

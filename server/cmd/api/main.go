@@ -31,7 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 	// 认证面 fail-fast：JWT_SECRET_KEY 缺失时**拒绝启动**（所有环境）。
-	// 空密钥 python-jose 是静默接受的，Go 若不拦就成了整条链路上最弱的一环。
+	// 缺失签名密钥没有安全兜底，两侧均须在启动时拒绝。
 	if err := cfg.ValidateAuth(); err != nil {
 		slog.Error("auth_config_invalid", "error", err)
 		os.Exit(1)
