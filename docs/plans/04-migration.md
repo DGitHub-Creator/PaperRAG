@@ -2,6 +2,7 @@
 
 > 路线：**P0 架构与契约 → P1 后端迁移与最小原型 → P2 功能拓展与数据可信化 → P3 多 Agent 自主探索**（双图属 P4 展望）。
 > 最高约束见 [08-principles-and-conventions.md](../rules/08-principles-and-conventions.md)；进度与日程见 [../progress.json](../progress.json)（生成物 [PROGRESS.md](../PROGRESS.md) / [progress.html](../progress.html)）。
+> 当前模块和 agent 分工见[全局开发计划](14-feature-modules.md)，日程以 progress.json 的相对 T0 排期为准；下文旧估时与六周讨论保留为历史推导，不作为当前承诺。
 > 排期前提（决策 Q8）：solo，每周 15–20 小时。
 
 ## 0. 路线为什么改版（2026-10-09）
@@ -175,7 +176,7 @@ C33–C37 的归属与验收条件已在台账 **A-2** 定稿，被审查文档�
 
 ---
 
-## 7. 日程与压缩选项
+## 7. 日程与压缩选项（历史推导，已由相对排期取代）
 
 **周历**（起始 2026-10-12，solo 15–20h/周）：
 

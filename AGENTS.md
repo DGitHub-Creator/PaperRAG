@@ -5,6 +5,9 @@
 适用于 ResearchPilot 仓库自有代码、脚本、数据库迁移、配置和现行文档。
 用户本轮指令优先；不要把历史记录中的建议当成当前要求。
 
+所有 agent 开工前必须先阅读[全局开发计划](docs/plans/14-feature-modules.md)，了解完整模块、依赖、日程及交接要求；
+再核对 progress.json、现状和对应契约，认领明确任务。模块范围确认不替代阶段设计批准。
+
 - 优先最简单、直接、最少改动的实现，先检查已有函数和类型。
 - 只有多个真实实现、调用方或重复逻辑才引入抽象；不要提前增加 Manager、Service、Factory、Adapter 等层。
 - 按故障根因重构，保留已有能力与对外契约；不能靠吞异常、空返回或修改测试掩盖缺陷。
@@ -17,7 +20,8 @@
 | 原则、阶段顺序、证据与任务卡 | [最高约束 08](docs/rules/08-principles-and-conventions.md) |
 | 工程进度 | [progress.json](docs/progress.json)，生成页面不手改 |
 | 对外接口、跨语言消息、数据归属 | [contracts/](contracts)，以实现和契约检查核实差异 |
-| 阶段计划与产品模块 | [plans/](docs/plans)，计划不是完成证据 |
+| 全局模块、日程与 agent 交接 | [全局开发计划](docs/plans/14-feature-modules.md)，开工必读；日程与任务状态以 progress.json 为源 |
+| 阶段实施方案 | [plans/](docs/plans)，计划不是完成证据 |
 | 当前实现与已知限制 | [架构现状 13](docs/reference/13-frontend-backend-architecture.md)、[问题台账 12](docs/plans/12-known-code-issues.md) |
 | 文档分类与维护 | [docs/README.md](docs/README.md) |
 | 历史过程与当时读数 | [WORKLOG](docs/WORKLOG.md)、reference 中注明日期的快照、archive |
@@ -37,7 +41,7 @@ ResearchPilot 是 AI 科研工作台，产品愿景见 [11](docs/rules/11-produc
 
 ## 4. 开工与变更方式
 
-1. 检查 Git 工作区、相关实现、契约、当前任务状态和适用目录规则，保留已有未提交改动。
+1. 先读全局开发计划并核对任务包与前置门禁，再检查 Git 工作区、相关实现、契约、当前任务状态和适用目录规则，保留已有未提交改动。
 2. 说明具体故障、修复范围和验收方法；架构或对外行为改变先更新对应设计与契约。
 3. 按根因修改生产代码，补能复现故障的测试；mock 只隔离外部依赖，不替换被测核心。
 4. 修复后更新现状、台账及质量清单；过程证据写 WORKLOG，阶段状态写 progress.json。

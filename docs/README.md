@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 接手仓库、修改代码 | [AGENTS.md](../AGENTS.md) | 稳定开发规则与操作禁区 |
 | 原则、阶段顺序、证据等级 | [08 原则](rules/08-principles-and-conventions.md) | 最高项目约束，用户指令优先 |
+| 全局模块、排期与 agent 任务交接 | [全局开发计划](plans/14-feature-modules.md) | 后续 agent 开工必读；范围确认不等于能力已实现 |
 | 已完成多少、当前阶段 | [progress.json](progress.json) | 唯一进度源；[PROGRESS](PROGRESS.md) 与 [页面](progress.html) 是生成物 |
 | 代码现在怎么运行 | [13 架构现状](reference/13-frontend-backend-architecture.md) | 可维护现状，对照列出的实现和测试复核 |
 | 还有什么故障 | [12 问题台账](plans/12-known-code-issues.md)、[规范化清单](plans/repository-standardization.md) | 分清已修、待验证和未解决 |
@@ -39,7 +40,7 @@
 - [03 差距分析](plans/03-gap-analysis.md)、[04 迁移路线](plans/04-migration.md)：规划依据；其中早期现状描述需对照 13。
 - [05 数据库迁移](plans/05-database-migration.md)、[07 E2E 方案](plans/07-e2e-test-plan.md)：实施与验收方案。
 - [09 P0 任务卡](plans/09-milestone-p0.md)：卡片定义与退出标准；状态从 progress.json 读取。
-- [12 问题台账](plans/12-known-code-issues.md)、[14 功能规划](plans/14-feature-modules.md)：质量缺口与模块计划。
+- [12 问题台账](plans/12-known-code-issues.md)、[14 全局开发计划](plans/14-feature-modules.md)：质量缺口，以及已确认的模块、依赖、任务包与交接计划。
 - [环境复现](plans/p0-environment.md)、[P0 演示](plans/p0-demo.md)：运行参考，历史实跑只证明当时结果。
 - [规范化 TODO](plans/repository-standardization.md)：本轮全仓质量整改范围与未决项。
 

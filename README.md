@@ -10,7 +10,8 @@
 - 当前实现及限制：[架构现状](docs/reference/13-frontend-backend-architecture.md)。
 - 进度：[progress.json](docs/progress.json)，[可视化](docs/progress.html)由它生成。
 - 本轮整改：[规范化 TODO](docs/plans/repository-standardization.md)、[问题台账](docs/plans/12-known-code-issues.md)。
-- 目标与计划：[产品愿景](docs/rules/11-product-vision.md)、[迁移路线](docs/plans/04-migration.md)、[功能模块](docs/plans/14-feature-modules.md)。
+- 接手开发先读：[全局开发计划](docs/plans/14-feature-modules.md)（模块、依赖、相对日程、agent 任务包与交接）。
+- 目标与路线：[产品愿景](docs/rules/11-product-vision.md)、[迁移路线](docs/plans/04-migration.md)。
 - 跨服务约定：[contracts/](contracts/)；历史过程：[WORKLOG](docs/WORKLOG.md)。
 
 不要把历史测试数量、旧命令记录或未来规划当作当前能力。

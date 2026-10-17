@@ -4,8 +4,8 @@
   "as_of": "2026-10-17",
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
-  "schedule_start": "2026-10-12",
-  "current": "P0 按既有验收收口；本批质量整改与现行文档整理已完成，按依赖安全、存储恢复、部署文档分关注点交付。产品阶段、退出标准与任务卡仍以本文件为准，不按质量修复数量增加完成度。\n\n本轮修复覆盖依赖安全、JWT/模型兼容、父块与 BM25、一致性失败恢复、执行重放、当前运行权限和文档治理；证据见 docs/WORKLOG.md，能力边界见 docs/reference/13-frontend-backend-architecture.md。\n\nP1 接管仍受 contracts/p1-design-review.md 门禁约束；proposed 不代表批准，质量修复不计为 P1 产品完成。",
+  "schedule_start": "T0：P1 设计审查批准且验收环境就绪",
+  "current": "全局开发计划已按用户确认的 24 个模块整理，入口为 docs/plans/14-feature-modules.md；后续 agent 开工先读模块、依赖、相对日程与任务交接要求。\n\nP0 与质量整改沿用既有验收；P1/P2/P3 正式任务状态和依赖保持不变。下一步先完成 P1 五维设计人工确认，再按 G02/G03/G04 推进 Go 接管与最小研究链路。模块范围确认不自动将 proposed 改为 approved。\n\n当前 schedule 取代旧六周公历：T0 为设计批准且环境就绪，采用每周 15–20 小时容量假设及集成缓冲；后续研究、Lab 与协作按依赖滚动重估，不承诺完整 Research OS 在前 24 周完成。产品完成度不因计划文档增加。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -18,7 +18,7 @@
       "title": "架构与契约",
       "goal": "搭起目标架构骨架与契约，跑通第一条垂直切片（浏览器 → Go 注册/登录/me）",
       "status": "done",
-      "weeks": "W1–W2",
+      "weeks": "历史基线：已验收，不重排",
       "demo": "docker compose up → 前端注册 → 登录 → 侧栏显示用户名 → curl Go /api/v1/auth/me 返回同一用户；ai-core 只内网可达",
       "exits": [
         {
@@ -282,7 +282,7 @@
       "title": "后端迁移与最小原型",
       "goal": "Go 接管前端实际调用的 13 条接口，跑通上传→解析→索引→问答→引用的窄链路，全程只经 Go",
       "status": "pending",
-      "weeks": "W3–W6",
+      "weeks": "T0 后 W1–W7",
       "demo": "上传一篇 PDF → 进度到 completed → 提问 → 流式回答带 [Source 1] 与 citations 列表；前端不再直连 Python",
       "exits": [
         {
@@ -470,7 +470,7 @@
       "title": "功能拓展与数据可信化",
       "goal": "正文真相进 PG、公式检索真实生效、事件可续传、预算持久化、引用可回溯到 PDF 位置",
       "status": "pending",
-      "weeks": "W7 起（预计超 6 周日程）",
+      "weeks": "T0 后 W8–W17；P1 验收后",
       "demo": "点击某条引用 → 显示 PG 里的完整 chunk 正文（无 2000 字截断）与 PDF 页码/章节路径；Monitor 页断线后按 Last-Event-ID 续传",
       "exits": [
         {
@@ -673,7 +673,7 @@
       "title": "多 Agent 自主探索",
       "goal": "ResearchRun + Frontier + Planner/Discovery/Reader/Writer，产出可信带引用报告且崩溃可恢复",
       "status": "pending",
-      "weeks": "P2 之后（未排具体周次）",
+      "weeks": "T0 后 W18–W24；P2 验收后",
       "demo": "输入研究问题 → Run RUNNING → Frontier 多轮派发 → 中途强杀 worker → 重启后从租约过期处继续 → 产出带引用报告与未解决问题清单",
       "exits": [
         {
@@ -822,53 +822,60 @@
   ],
   "schedule": [
     {
-      "id": "W1",
-      "dates": "10/12–10/18",
-      "goal": "骨架：统一命令入口 + Go 服务 + compose + 契约目录 + marker 注册",
-      "phase": "P0-0…P0-4",
+      "id": "T0前",
+      "dates": "待 P1 设计批准与环境就绪",
+      "goal": "G01：核对全局模块与五维设计，形成可认领任务；模块确认不自动批准设计",
+      "phase": "设计准备；M17",
       "status": "planned"
     },
     {
-      "id": "W2",
-      "dates": "10/19–10/25",
-      "goal": "契约锁定与跨语言测试 + 认证垂直切片 + ai-core 内部面",
-      "phase": "P0-5…P0-9",
+      "id": "W1–W7",
+      "dates": "相对 T0 第 1–7 周预留窗口",
+      "goal": "G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段",
+      "phase": "P1；M1/M6/M8/M17/M19",
       "status": "planned"
     },
     {
-      "id": "W3",
-      "dates": "10/26–11/01",
-      "goal": "最小原型：Go 接管读/写接口，窄链路端到端跑通",
-      "phase": "P1-0…P1-4",
+      "id": "W8–W17",
+      "dates": "P1 收口后；相对窗口随实际完成顺延",
+      "goal": "G05/G07→G06、G08、G09：PG 正文、学术结构/定位、事件/用量、导入/书架与科研回归",
+      "phase": "P2；M1–M9/M17/M18/M23",
       "status": "planned"
     },
     {
-      "id": "W4",
-      "dates": "11/02–11/08",
-      "goal": "流式与上传编排、前端基址切换、E2E 全绿",
-      "phase": "P1-5…P1-7",
+      "id": "W18–W24",
+      "dates": "P2 收口后；相对窗口随实际完成顺延",
+      "goal": "G10→G11：Run/Frontier/worker、固定研究闭环、恢复与 PARTIAL 报告；不提前做双图",
+      "phase": "P3；M8/M13/M15/M17",
       "status": "planned"
     },
     {
-      "id": "W5",
-      "dates": "11/09–11/15",
-      "goal": "前端产品化骨架、弃用接口收口",
-      "phase": "P1-8 + P2 前端项",
+      "id": "W25+基础扩展",
+      "dates": "P3 收口并完成各包设计后滚动重估",
+      "goal": "G12/G13/G14/G18/G20：项目精读、比较/书目版本、双图证据、首个受控工具与模型治理",
+      "phase": "后续规划；M2/M5/M7/M8/M10/M16/M18/M19/M20/M23",
       "status": "planned"
     },
     {
-      "id": "W6",
-      "dates": "11/16–11/22",
-      "goal": "回归与发布：P1 退出标准全绿、文档口径复核",
-      "phase": "P1 收口",
+      "id": "后续研究增强",
+      "dates": "相关工作区、比较和证据前置验收后再排具体周次",
+      "goal": "G15/G16/G17：候选问题/假设、Critic/动态路线、接地写作与 Radar/Knowledge Diff",
+      "phase": "后续规划；M11/M13/M14/M15/M21/M22",
       "status": "planned"
     },
     {
-      "id": "W7+",
-      "dates": "11/23 起",
-      "goal": "P2 数据可信化与功能拓展（chunk 真相层、公式索引、回归集）",
-      "phase": "P2",
-      "status": "overtime_expected"
+      "id": "后续Lab",
+      "dates": "G18/G12/G14 验收与 Lab 方案确认后滚动排期",
+      "goal": "G19：先完成一个实际形式化或复现实验纵向链，再扩展其他学科",
+      "phase": "后续规划；M12/M19/M20",
+      "status": "planned"
+    },
+    {
+      "id": "后续协作部署",
+      "dates": "单用户研究能力稳定且权限/部署设计确认后排期",
+      "goal": "G21：团队共享/审核、机构隔离、安装升级和备份恢复；不提前做计费",
+      "phase": "后续规划；M8/M17/M24",
+      "status": "planned"
     }
   ],
   "risks": [
@@ -1050,5 +1057,13 @@
       "R11",
       "R12"
     ]
+  },
+  "global_plan": {
+    "path": "docs/plans/14-feature-modules.md",
+    "scope_confirmed_on": "2026-10-17",
+    "scope": "M1–M24，模块分类与任务包，不代表已完成或自动解锁设计门禁",
+    "schedule_anchor": "T0 为依赖事件，尚未确定公历日期",
+    "capacity_basis": "沿用每周 15–20 小时集成负责人假设；现有 P1/P2/P3 卡片估时另预留约 20% 集成复验缓冲，执行前重新核对剩余量",
+    "later_waves": "W25+ 后续能力为滚动规划，未新设正式阶段或增加完成度分母"
   }
 }
