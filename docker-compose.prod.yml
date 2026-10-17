@@ -87,6 +87,8 @@ services:
       MINIO_REGION: us-east-1
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
     volumes:
       - milvus_data:/var/lib/milvus
     healthcheck:
@@ -97,6 +99,7 @@ services:
       retries: 3
     depends_on:
       - "etcd"
+      - "minio"
     restart: unless-stopped
 
   backend:
@@ -110,7 +113,12 @@ services:
       - .env.production
     environment:
       # 容器内服务地址（覆盖 .env.production 中的本地地址）
-      - DATABASE_URL=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD}@postgres:5432/langchain_app
+      - DATABASE_URL=postgresql+psycopg2://${PYTHON_DB_USER:-researchpilot_python}:${PYTHON_DB_PASSWORD:?PYTHON_DB_PASSWORD is required}@postgres:5432/langchain_app
+      # env_file 不应把管理员或另一个运行账号的凭据交给应用。
+      - POSTGRES_PASSWORD=
+      - GO_DB_PASSWORD=
+      - MINIO_ACCESS_KEY=
+      - MINIO_SECRET_KEY=
       - REDIS_URL=redis://redis:6379/0
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
@@ -150,7 +158,12 @@ services:
     environment:
       # Go 用 pgx，连接串是 postgres:// 方案；Python 那边是 postgresql+psycopg2://。
       # 同一个库、两种写法是刻意的：dev 形态由 dev.py go-serve 做归一化，这里直接写对。
-      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/langchain_app?sslmode=disable
+      - DATABASE_URL=postgres://${GO_DB_USER:-researchpilot_go}:${GO_DB_PASSWORD:?GO_DB_PASSWORD is required}@postgres:5432/langchain_app?sslmode=disable
+      - POSTGRES_PASSWORD=
+      - PYTHON_DB_PASSWORD=
+      - MINIO_ACCESS_KEY=
+      - MINIO_SECRET_KEY=
+      - LLM_API_KEY=
       - REDIS_URL=redis://redis:6379/0
       - PYTHON_UPSTREAM=http://backend:8000
       - PORT=8080
@@ -174,6 +187,36 @@ services:
       backend:
         condition: service_started
     restart: unless-stopped
+
+  # 两个工具只有显式 run 才执行；不进入应用启动路径或取得公开端口。
+  migrate:
+    profiles: [tools]
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    command: ["/app/migrate", "-path", "/app/migrations", "up"]
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/langchain_app?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  database-roles:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    command: ["python", "scripts/configure_database_roles.py"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/langchain_app
+      GO_DB_USER: ${GO_DB_USER:-researchpilot_go}
+      GO_DB_PASSWORD: ${GO_DB_PASSWORD:?GO_DB_PASSWORD is required}
+      PYTHON_DB_USER: ${PYTHON_DB_USER:-researchpilot_python}
+      PYTHON_DB_PASSWORD: ${PYTHON_DB_PASSWORD:?PYTHON_DB_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   nginx:
     container_name: researchpilot-nginx

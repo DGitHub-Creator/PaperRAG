@@ -64,7 +64,8 @@ uv run python scripts/dev.py go-serve
 ```
 
 chat/索引验收另需 Milvus 及其依赖和实际模型配置；内部执行面还需 AICORE_INTERNAL_TOKEN。
-只起 PG/Redis 不能据此宣称完整 RAG 可用。验证命令见 §9；真实存储专项使用 `scripts/verify_storage.py`。
+只起 PG/Redis 不能据此宣称完整 RAG 可用。Go 迁移须在 Python 启动前显式执行，最低版本由 init_db 校验。
+真实存储专项使用 `scripts/verify_storage.py --http`；索引故障专项须显式设置本机隔离 REFACTOR_TEST_MILVUS_URI。
 
 ## 7. 保留能力与禁区
 
@@ -105,6 +106,8 @@ Go 遵循 gofmt/vet 与标准库惯例，Python 遵循 PEP 8 与 Ruff，Vue/Type
 - HTTP 对外不泄露凭据、连接串、堆栈和内部路径；诊断细节只进受控日志，日志不记录 token、密码或全文。
 - 每个请求的日志含 trace_id，跨服务透传；日志文件必须轮转。JSON 与文本日志由统一入口配置。
 - 文件、数据库会话、临时目录和连接必须在异常路径也释放；禁止固定临时文件名和无上限重试。
+- 跨存储写入先持久化可恢复意图，成功后清除；失败不得放行部分索引。恢复只重放首次已接受输入，用操作锁和租约隔离重复执行。
+- 锁等待前限制并发，给嵌套数据库操作保留连接；不得让所有连接被等待者占满。缓存批量操作用有界 SCAN，不使用全库 KEYS。
 - HTTP 包装器必须保留 flush、hijack、取消等底层能力；验证首帧到达和连接升级，不能只测最终响应。
 - 等长数据配对使用 `zip(..., strict=True)`；允许截短必须显式 `strict=False` 并解释业务原因。
 
@@ -112,8 +115,10 @@ Go 遵循 gofmt/vet 与标准库惯例，Python 遵循 PEP 8 与 Ruff，Vue/Type
 
 - 用户、模型、检索原文均视为不可信输入；所有最终 HTML 在进入 v-html 前统一净化，不自行编写正则净化器。
 - 文件名不得含路径段、反斜杠、NUL 或 Windows 数据流分隔符；数据库查询参数化，Milvus 字符串使用合法转义。
-- 密钥只来自运行环境，示例不得包含真实密钥；禁止关闭 TLS 校验和执行不可信字符串。
+- 密钥只来自运行环境，示例不得包含真实密钥；生产启动拒绝模板占位值，日志不输出带凭据的 URL。
+- 禁止关闭 TLS 校验和执行不可信字符串；开发中间件宿主端口仅绑定回环，外部访问需明确配置。
 - PostgreSQL 为唯一业务真相；表有主键，业务唯一性由约束保证，索引依据实际查询设计，不为形式批量添加。
+- 生产应用使用受限运行账号，管理员仅用于显式迁移/角色配置。授权随真实调用调整；不得按未来目标提前撤销现有必需权限，也不得将管理员密码注入应用。
 - 新时间列用 TIMESTAMPTZ 与 UTC；既有时间语义变更必须先取证，不能直接把 naive 时间解释为本地时间。
 - 已发布迁移不原地改写，结构修复使用新迁移；up/down 配对，验证空库与存量库、重复执行及失败恢复。
 - 数据变更前保存可恢复备份；验收优先用隔离数据库，不能用重建的新库冒充原库证据。
@@ -139,8 +144,10 @@ uv run python scripts/check_route_ownership.py
 uv run python scripts/check_design_review.py
 uv run python scripts/check_nginx_routes.py
 uv run python scripts/audit_schema.py --check-baseline
-uv run python scripts/audit_schema.py --verify-columns
+uv run python scripts/audit_schema.py --verify-columns --out docs/reference/schema-audit-2026-10-17.json
 ```
 
+依赖变更或交付前另运行 `scripts/check_repository.py --audit-dependencies` 与 `npm audit`，不得忽略公告制造绿灯。
+Go 在 server 目录运行 `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...`，同时检查实际调用涉及的标准库与模块。
 按修改范围运行 pytest、Go vet/test、前端 typecheck/build 与 Playwright；全量检查在一个批次收尾只跑一次。
 脚本通过仅证明其检查项通过，不能据此宣称全仓安全、真实数据库或产品端到端均已验证。

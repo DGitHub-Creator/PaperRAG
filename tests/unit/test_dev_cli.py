@@ -327,3 +327,15 @@ class TestGenPrechecks:
         assert self._invoke(["gen"]) == 1
         assert calls == [], f"前置检查失败却仍然调用了 sqlc：{calls}"
         assert "前置检查不通过" in capsys.readouterr().out
+
+
+def test_dev_database_default_is_shared_with_go_but_never_injected_in_production(monkeypatch, tmp_path):
+    monkeypatch.setattr(dev, "ENV_FILE", tmp_path / "missing.env")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("APP_ENV", "development")
+    assert dev.process_env()["DATABASE_URL"] == "postgresql://postgres:postgres@127.0.0.1:5432/langchain_app"
+    monkeypatch.setenv("APP_ENV", "production")
+    assert "DATABASE_URL" not in dev.process_env()
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://user:synthetic@127.0.0.1/custom")
+    assert dev.process_env()["DATABASE_URL"].endswith("/custom")
+    assert dev.process_env()["DATABASE_URL"].startswith("postgresql://")

@@ -120,6 +120,10 @@ def process_env() -> dict[str, str]:
     env = dict(os.environ)
     for key, value in read_env_file(ENV_FILE).items():
         env.setdefault(key, value)
+    # 开发模板允许省略地址，Go 必须得到与 Python/compose 相同的本机默认值。
+    # 生产环境不提供开发数据库兜底，仍要求显式连接配置。
+    if env.get("APP_ENV", "development").strip().lower() not in {"prod", "production"}:
+        env.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/langchain_app")
     # 同一份 .env 要喂两个运行时，而两边的连接串语法不同：Python 的 SQLAlchemy 用
     # `postgresql+psycopg2://`，Go 的 pgx 只认 `postgres://` / `postgresql://`。
     # 在**交给 Go 的那一份**上剥掉方言后缀，.env 本身保持 Python 侧的原样。
@@ -196,7 +200,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         if not secret:
             problems.append(".env 里 JWT_SECRET_KEY 为空 → 应用会拒绝启动（335aeb7e 起 fail-fast）")
             hints.append('生成：uv run python -c "import secrets;print(secrets.token_urlsafe(32))" 写入 .env 的 JWT_SECRET_KEY=')
-        elif secret in SECRET_PLACEHOLDERS:
+        elif secret in SECRET_PLACEHOLDERS or secret.startswith("replace-with-"):
             problems.append("JWT_SECRET_KEY 仍是占位值，等同没配")
         else:
             print("[ok] JWT_SECRET_KEY 已配置")
@@ -494,7 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="起栈前自检：docker/.env/端口/uv").set_defaults(func=cmd_doctor)
 
-    up = sub.add_parser("up", help="compose up -d 并等待健康（全栈容器）")
+    up = sub.add_parser("up", help="compose up -d 并等待中间件健康")
     up.add_argument("svc", nargs="*", help="只起指定服务")
     up.add_argument("--timeout", type=int, default=300, help="等待 healthy 的秒数")
     up.add_argument("--no-wait", action="store_true", help="只起不等")

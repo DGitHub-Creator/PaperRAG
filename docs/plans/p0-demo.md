@@ -40,8 +40,8 @@ curl -s http://localhost:8080/api/v1/ready | python -m json.tool   # checks.data
 curl -s http://localhost:8000/health | head -c 120                 # 上游自己也在，但它不是入口
 uv run python scripts/check_nginx_routes.py                          # R1–R5：入口链与两份 compose 的形态
 uv run python scripts/check_route_ownership.py                       # 每条面归谁、Python 那条还在不在
-uv run python -m pytest -q -m chain                                  # 27 项跨语言对拍（要 serve + go-serve）
-cd frontend && npm run test:e2e                                      # 9 项 Playwright 结构级（E2E_BROWSER_CHANNEL 见 AGENTS §5）
+uv run python -m pytest -q -m chain                                  # 跨语言对拍，实际收集数以本次运行输出为准（要 serve + go-serve）
+cd frontend && npm run test:e2e                                      # Playwright 结构级，浏览器选项见 frontend/playwright.config.ts
 ```
 
 ## 4. P0 演示**不**包含的事（别在演示里说成已就位）

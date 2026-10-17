@@ -1,6 +1,6 @@
 # 13 — 当前实现与目标差距
 
-> 性质：可维护的实现说明。核验日期：2026-10-16；对应本轮未提交重构工作区。
+> 性质：可维护的实现说明。核验日期：2026-10-17；对应本轮整改实现，最终检查读数见 WORKLOG。
 > 本文不授予阶段完成状态。进度只看 [progress.json](../progress.json)，运行读数见 [WORKLOG](../WORKLOG.md)。
 > 目标见 [02](../rules/02-target-architecture.md)，整理前版本见 [历史快照](../archive/2026-10-16-13-frontend-backend-architecture.md)。
 
@@ -34,7 +34,9 @@ Go、Python、前端运行源码；dev compose 仅中间件。prod compose 使�
 - [documents.py](../../backend/api/documents.py) 处理 HTTP；[document_jobs.py](../../backend/services/document_jobs.py) 统一同步/异步索引及删除。
 - 上传按实际字节限制，先写独立 staging 文件；解析失败保留旧原件和旧索引。
 - JSON 指纹状态使用锁、临时文件及原子替换，只登记成功文件；批量失败不覆盖成功前缀。
-- 索引替换涉及文件、PostgreSQL、Milvus 和 BM25，**没有跨存储原子事务**；写入中途失败仍可能留下部分索引，原件与失败信息用于恢复。
+- 索引替换涉及文件、PostgreSQL、Milvus 和 BM25，**没有跨存储原子事务**；已有指纹文件持久化 pending 意图、PG 共享/排他锁隔离检索与写入、启动时重放未完成的局部索引操作。真实存储故障注入已覆盖旧索引删除后、向量写入确认前和原文发布后的进程退出；缺失原文时保留标记并拒绝启动。
+- 默认结构化 PDF 路径现在产生章节父块与原有叶子块，父块以 PG UPSERT 事务保存；已验证实际合并。父块不再经 Redis 缓存，回滚或外部删除即时可见。
+- BM25 文件使用跨进程锁、唯一临时文件和原子替换；保留词表维度，替换/删除按实际存留叶子重建统计，损坏状态拒绝覆盖。
 - 文档目录与指纹仍依赖文件系统，不存在完整的 PG 文档真相层；Milvus text 长度限制仍存在。
 - [workflow.py](../../backend/rag/workflow.py) 编排检索，[rag_pipeline.py](../../backend/rag/rag_pipeline.py) 实现节点，[state.py](../../backend/rag/state.py) 定义状态。
 - 不使用长期 MemorySaver 保留每次 RAG 状态；PDF 多模态/布局能力代码保留，但不宣称端到端已验收。
@@ -42,12 +44,15 @@ Go、Python、前端运行源码；dev compose 仅中间件。prod compose 使�
 
 ## 4. 数据库与任务状态
 
-- DDL 由 [Go migrations](../../server/migrations/) 管理；显式 `dev.py migrate-go` 执行。已接管库的 Python 启动只读检查 schema_migrations，版本至少 3 且 clean，禁止重放旧建表链；未接管旧库仍沿用 Alembic。
+- DDL 由 [Go migrations](../../server/migrations/) 管理；显式 `dev.py migrate-go` 执行。已接管库的 Python 启动只读检查 schema_migrations，版本至少 5 且 clean，禁止重放旧建表链；未接管旧库仍沿用 Alembic。
 - ai_executions 已由 [PostgresExecutionStore](../../backend/internal_api/postgres_executions.py) 读写；复用既有表与唯一约束。
 - 并发幂等提交、租约、终态与过期更新受数据库事务保护；新进程可读取执行记录。
-- **执行记录持久化不等于执行恢复**：后台任务仍为进程内执行，没有可靠消息投递、崩溃后续跑或全局调度。
-- 文档任务可选内存/Redis；Redis 用 WATCH/MULTI 防丢更新，终态不可重开；仍非 PG 任务真相，不保证进程重启后继续执行。
+- ai_executions.request_payload 保存首次接受的输入；PG 操作锁防止重复执行，恢复时换租约、拒绝旧结果。启动只恢复既有 PARSE_PAPER/INDEX_PAPER 局部任务，不接管 Go 全局调度；已用解析后强制退出的子进程验证恢复。
+- 文档任务可选内存/Redis；Redis 用 WATCH/MULTI 防丢更新，终态不可重开，保存私有重放上下文并在启动时恢复；上下文不进入 HTTP DTO。Redis 记录仍有保留期，内存模式不持久化，不等同于 PG 全局任务真相。
+- 000004 删除 7 个与主键重复的非唯一 id 索引，增加工作区成员唯一索引；有存量重复时整笔回滚，不自动删业务行。000005 增补执行重放列，回滚拒绝丢弃未结束任务的输入。
+- 操作锁并发先限流再借连接，嵌套索引/状态/父块操作预留连接；只读认证查询后立即释放连接。
 - [table-acl](../../contracts/table-acl.md) 含目标表与规划权限，不能据它推断物理表或实际调用方存在。
+- 开发库审计连接仍是 postgres 管理员；生产 compose 改用两个受限运行角色，显式 configure_database_roles 工具按当前真实调用授予表/序列权限，拒绝 DDL、跨域写入及额外所有权/成员/PUBLIC 权限。管理员凭据只供工具，不供应用。隔离真实角色测试和 HTTP 已通过；目标 Go 唯一写入接管仍未完成。
 - ORM 既有时间列沿用 naive UTC，新表使用 TIMESTAMPTZ；不能在未调查历史语义时直接转换。
 - schema-baseline.json 是历史快照。当前库另行只读导出；--check-baseline 是形态检查，--verify-columns 比快照，--live 才连接当前库。
 
@@ -75,7 +80,7 @@ uv run python scripts/verify_storage.py --http
 uv run python -m pytest -q
 ```
 
-verify_storage 使用隔离 PG 库与 Redis 测试键，--http 另起并清理真实 Go/Python 进程，覆盖认证/限流/会话；不调用外部 LLM/Milvus。
+verify_storage 使用隔离 PG 库与 Redis 测试键，--http 另起并清理真实 Go/Python 进程，覆盖认证/限流/会话，两个服务使用本轮创建的受限角色；不调用外部 LLM。设置 REFACTOR_TEST_MILVUS_URI 后另验隔离集合上的真实索引恢复，未设置会跳过；专项隔离模型权重，不证明真实模型问答质量。
 真实 RAG 验收另需 Milvus、模型服务、PDF 和对应 chain/e2e，跳过不算通过。
 
 ## 8. 维护方式

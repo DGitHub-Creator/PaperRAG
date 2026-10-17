@@ -5,7 +5,7 @@
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "2026-10-12",
-  "current": "P0 按既有验收收口；本批质量整改已实现并完成针对性验收，正分关注点提交与收尾。产品阶段、退出标准与任务卡仍以本文件为准，不按质量修复数量增加完成度。\n\n本轮修复覆盖依赖安全、JWT/模型兼容、父块与 BM25、一致性失败恢复、执行重放、当前运行权限和文档治理；证据见 docs/WORKLOG.md，能力边界见 docs/reference/13-frontend-backend-architecture.md。\n\nP1 接管仍受 contracts/p1-design-review.md 门禁约束；proposed 不代表批准，质量修复不计为 P1 产品完成。",
+  "current": "P0 按既有验收收口；本批质量整改与现行文档整理已完成，按依赖安全、存储恢复、部署文档分关注点交付。产品阶段、退出标准与任务卡仍以本文件为准，不按质量修复数量增加完成度。\n\n本轮修复覆盖依赖安全、JWT/模型兼容、父块与 BM25、一致性失败恢复、执行重放、当前运行权限和文档治理；证据见 docs/WORKLOG.md，能力边界见 docs/reference/13-frontend-backend-architecture.md。\n\nP1 接管仍受 contracts/p1-design-review.md 门禁约束；proposed 不代表批准，质量修复不计为 P1 产品完成。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -1030,12 +1030,12 @@
     }
   ],
   "quality_standardization": {
-    "status": "in_progress",
+    "status": "done",
     "scope": "全仓自有文件与数据库、文档、Git 治理；不计入产品阶段完成度",
     "checklist": "docs/plans/repository-standardization.md",
     "rules": "AGENTS.md#9",
     "note": "最终离线 Python 696 passed / 68 skipped；真实存储/权限 29 项、受限 HTTP 26 项、浏览器 12 项通过。完整锁文件 210 个版本、Go govulncheck 与 npm audit 无发现；真实模型端到端仍未验证。",
-    "current_task": "依赖安全已提交；存储恢复、数据库约束和受限运行权限已验证并提交，剩部署配置与文档收尾。",
+    "current_task": "当前质量整改批次已完成；后续产品阶段和未做的真实模型/完整部署验收见 repository-standardization.md，提交与发布证据见 WORKLOG。",
     "completed_tasks": [
       "R01",
       "R02",
@@ -1045,7 +1045,9 @@
       "R06",
       "R07",
       "R08",
+      "R09",
       "R10",
+      "R11",
       "R12"
     ]
   }

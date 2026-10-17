@@ -4,7 +4,7 @@
 > 当前实现见 [13](../reference/13-frontend-backend-architecture.md)，状态见 [progress.json](../progress.json)，启动见 [README](../../README.md)。
 
 > **本文状态（2026-10-09 复核）**：性质=**决策依据**（差距清单、断链处置、未调用接口审计纪律、测试缺口）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)。清单本身不单独跟踪状态；每条差距的处置去向与完成情况见 [04 §0/§3](04-migration.md) 与 [../progress.json](../progress.json)。
-> 现状见 01，目标见 02。每项标 **阻断里程碑**（A0/A/B/C）与**工作量档位**（S≈≤2h，M≈半天，L≈1–2天，XL≈≥3天；按 solo 15–20h/周）。
+> 下表保留早期审计差距作为决策依据，部分已修，不能当作当前待办；当前现状见 [13](../reference/13-frontend-backend-architecture.md) 与 [12 台账](12-known-code-issues.md)，目标见 02。每项标 **阻断里程碑**（A0/A/B/C）与**工作量档位**（S≈≤2h，M≈半天，L≈1–2天，XL≈≥3天；按 solo 15–20h/周）。
 
 ## 1. 功能正确性缺口（全部阻断 A）
 

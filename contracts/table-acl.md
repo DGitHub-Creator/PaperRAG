@@ -69,8 +69,8 @@ ls server/sql/queries/
 ```
 
 **写入边界的执行**目前只有第 1–4 条校验规则（值域、单 `W`、`ai_executions` 与 `research_*` 的律、
-Python 目标可写 ≤ 2）与 note 的存在性标识。"谁真的在写这张表"今天**无机检**——那需要 PG 侧的角色与 `GRANT`，
-属 P1-3/P2-1 建表时一并做（迁移里 `GRANT` 在角色定义之前不写，见 `05 §2.6`）。
+Python 目标可写 ≤ 2）与 note 的存在性标识。当前过渡运行权限另由 [角色配置工具](../scripts/configure_database_roles.py) 实际落实，并以真实受限连接验证；
+工具只授予当前真实调用所需权限，尚不等于上表的目标 Go 写入接管。未来业务表/角色变更仍随对应阶段设计实施。
 
 ## 当前写入偏差（迁移期事实，不是额外授权）
 
@@ -85,4 +85,14 @@ Python 目标可写 ≤ 2）与 note 的存在性标识。"谁真的在写这张
 | schema_migrations / alembic_version | 分别为 Go 工具与旧 Alembic 版本表；不是业务写入 API | server/cmd/migrate、backend/core/database.py |
 
 此表校准已识别调用，不声称数据库角色已隔离或所有读写路径已穷尽。
-工作区等遗留表的调用方、必要索引与实际 GRANT 仍需审计；质量整改不提前建立未来业务表。
+## 当前实现审计（2026-10-17）
+
+- Go 查询写 users、user_preferences，删除 chat_sessions（外键级联 chat_messages），并读取认证与会话数据。
+- Python 旧注册仍写 users，会话写 chat_sessions/chat_messages，索引写 parent_chunks，执行写 ai_executions；WorkspaceMember 只有访问校验读路径。
+- workspaces/workspace_members、paper_nodes/citation_edges/glossary_entries 未发现业务 CRUD 写入口；不为“覆盖”新增空业务接口。
+- 000004 去除 7 个非唯一 id 重复索引，保留主键、外键查询索引与业务唯一索引，新增 workspace_members(workspace_id,user_id) 唯一性。重复业务行导致迁移失败回滚，不擅自清洗。
+- [实际权限快照](../docs/reference/schema-audit-2026-10-17.json) 显示当前开发连接为 postgres，拥有超级用户/建库/建角色/绕过 RLS 权限；没有把目标矩阵实现为运行角色 GRANT。
+- 生产 compose 已提供独立受限 Go/Python 角色，显式角色工具按当前实际调用授予权限；不授予 SUPERUSER、CREATEDB、CREATEROLE、BYPASSRLS、public CREATE 或对象所有权。公开应用不再取得数据库管理员密码。
+- Go 当前可读写 users/user_preferences、读取会话消息并删除会话；Python 当前可写旧认证/会话、parent_chunks、ai_executions，读取工作区成员与迁移版本；具体列举只维护在角色工具 PERMISSIONS/SEQUENCES。
+- 真实权限测试验证允许现有读写、拒绝 public DDL 和跨域写；真实 Go/Python HTTP 也使用受限角色。测试角色随隔离库清理，未擅自改本机 .env。
+- 这完成当前过渡权限隔离；目标唯一写入归属仍依赖 P1 接管，不能立即撤销 Python 现有能力，也不提前建立未来业务表。

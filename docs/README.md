@@ -48,7 +48,8 @@
 - [13 架构现状](reference/13-frontend-backend-architecture.md)：现行说明，修改相关代码后同步。
 - [00 审计](reference/00-audit.md)、[01 架构](reference/01-current-architecture.md)：冻结的早期基线，不追改。
 - [schema-baseline.json](reference/schema-baseline.json)：历史真库快照，仅作对应版本的基线比较。
-- [schema-audit-2026-10-16.json](reference/schema-audit-2026-10-16.json)：本轮真库结构快照；only_in_db 表示未由 ORM 声明，不等同于业务列漂移。
+- [schema-audit-2026-10-17.json](reference/schema-audit-2026-10-17.json)：当前整改批次真库结构与权限快照；only_in_db 表示未由 ORM 声明，不等同于业务列漂移。
+- [schema-audit-2026-10-16.json](reference/schema-audit-2026-10-16.json)：此前版本快照，保留当时事实，不作为当前结构。
 - [timestamp-audit.md](reference/timestamp-audit.md)：当时的时间语义调查，不直接授权转换历史数据。
 
 ## 写作与重构规则

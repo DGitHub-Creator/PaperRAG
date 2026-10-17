@@ -4,14 +4,13 @@
 > 当前实现见 [13](../reference/13-frontend-backend-architecture.md)，状态见 [progress.json](../progress.json)，启动见 [README](../../README.md)。
 
 > **本文状态**：性质=**实施**（Schema 收编七步、`paper_chunks` DDL、TIMESTAMPTZ 验证与转换、存量重建）。里程碑口径一律用 **P0–P3**；旧 `Milestone A/B/C`、`A0-x` 的对应关系见 [04 §0/§3](04-migration.md)；逐轮实录见 [../WORKLOG.md](../WORKLOG.md)、卡片状态见 [../progress.json](../progress.json)。
-> **当前进度**：三份迁移已落——`000001_baseline`（真库 10 表抄录）、`000002_ai_executions`、`000003_user_preferences`，`sqlc.yaml` 的 schema 源已指过来（编号规则见 §2.6）；核查脚本 `scripts/audit_schema.py` 三模式（`--check-baseline` / `--live` / `--verify-columns`，判定单测 37 项）与 §4.1 时间戳验证（`scripts/probe_timestamps.py` → `docs/reference/timestamp-audit.md`）已落。**仍未做**：`000004_fix_drift`、`000005_paper_chunks`（§3）、§4.2 的时间戳**转换**（验证已做、转换未执行）、`scripts/rebuild_chunks.py`。
+> **2026-10-17 现状更新**：迁移 000001–000005 已实现并用于当前开发库；000004 为 index_constraints，000005 为 execution_replay。当前启动版本门禁至少为 5；逐列与权限快照见 [本轮审计](../reference/schema-audit-2026-10-17.json)。下文 chunk 新表及时间转换仍是后续阶段设计，不得占用已落地编号。
 > ✅ **执行器已接线（2026-10-15，决策 D8 / 台账 C18）**：`uv run python scripts/dev.py migrate-go`。
-> ⚠️ 历史口径保留如下，别把它读成现状：**golang-migrate 从未接线**：`server/migrations/` 今天只有核查器与 sqlc 两个离线读者，没有任何执行器会把它应用到库上（`dev.py migrate` 跑的是容器内 alembic，见台账 C18 / 决策 D8）；因此基线的 real 级幂等证据靠「临时库法」人工实跑，不是某条已接线的命令。**基线 DDL 必须由实际库结构抄录，禁止由 ORM 生成**（§1 末）。
 > 对应决策 Q4、Q5。原则：**先核查、后建基线、禁止对存量库重复初始化建表**；Milvus 降级为可重建索引，PostgreSQL 成为文献与分块正文的唯一真相（02 §0 L3）。
 
 ## 1. 收编前置核查（必须在任何写操作之前完成）
 
-存量库不可信任：`init_db()` 在 alembic 失败时静默回退 `Base.metadata.create_all`（`core/database.py:99-120`），所以**库可能物理存在表但没有任何 `alembic_version` 行**。真库已核查（`schema-baseline.json`，2026-10-11）：**10 张表，含 `alembic_version`**；`alembic_version` 是否算 Go 基线对象**待决策**（P0-2 的 `000001_baseline` 目前含它）。
+历史存量库须先核实：早期 `init_db()` 曾在 Alembic 失败时回退 `Base.metadata.create_all`（当前已禁止），所以**库可能物理存在表但没有任何 `alembic_version` 行**。真库已核查（`schema-baseline.json`，2026-10-11）：**10 张表，含 `alembic_version`**；`alembic_version` 当前作为历史基线对象保留；Go 迁移版本以 schema_migrations 为准，Python 在 Go 接管库不再重放旧迁移。后续生命周期清理另随迁移设计，不能原地改基线。
 
 核查脚本 `scripts/audit_schema.py`（**P0-2** 交付，只读）：
 
@@ -49,8 +48,9 @@
 | `000001` | 存量库结构基线（10 表 / 59 列） | P0-2 | 已落，real |
 | `000002` | `ai_executions`（Python 独占写的执行记录） | P0-7 | **2026-10-12 已落**（mock，见下） |
 | `000003` | `user_preferences`（设置页偏好：theme / start_view） | P0-6 尾 / 前端设置页 | **2026-10-14 已落**（mock） |
-| `000004` | `fix_drift`（基线两处已知漂移的处置） | P0-2 尾 | 未开工（2026-10-14 由 `000003` 顺延） |
-| `000005` | `paper_chunks` 等 chunk 可信化新表 | P2-1 / §3 | 未开工 |
+| `000004` | `index_constraints`：移除主键重复索引、工作区成员唯一性 | 质量整改 | 已实现，真实存量行保留、重复失败回滚与重跑通过 |
+| `000005` | `execution_replay`：首次请求 JSONB 与安全回滚 | 质量整改 | 已实现，真实进程退出后重放通过 |
+| 后续未占用编号 | `paper_chunks` 等 chunk 可信化新表 | P2-1 / §3 | 未开工；实际实施时分配编号 |
 | 下一个空位 | `auth_compat`（旧口令哈希兼容的预留） | P1 | **不占号，且触发条件已消失**：旧哈希兼容早已定案（X5 判据 = PBKDF2 兼容已实现、bcrypt 族显式拒绝）。唯一残余是真库里是否还躺着 bcrypt 族无法统计（原库不可复原，C20），处置是 P1 接管 `users` 前先跑一次 `--from-db`。⚠️ 原文写「仅在 **D3** 拍…」引用错了：D3 是 chunk 可信化那条决策，而 `03` 里的 D1/D2/D3 又是**功能断链**的编号——两个 D 命名空间别混（见 `09` §3 的告警） |
 
 规则两条：**(a)** 号按依赖顺序给，谁先被运行链路需要谁靠前——`fix_drift` 修的是基线，但**当前没有任何运行链路需要它**（它的处置还是"先核查是否等价"），而 `user_preferences` 被正在落地的设置页直接需要，所以 2026-10-14 让 `000003` 给了后者、`fix_drift` 顺延到 `000004`；**(b)** 条件式的预留**不占号**——占了一个用不上的号，后来的人只能继续往后挪，挪到最后没人知道哪个号对应哪件事。
@@ -60,13 +60,13 @@
 - **时间列一律 `TIMESTAMPTZ`**。基线 10 张表全是 `timestamp without time zone`，那是真库现状的如实登记（转换归 §4）；§4 末「新表一律 timestamptz」原文只点名 `paper_*`/`research_*`，本表未被点名，按同一方向处理。依据不是偏好而是契约：`schemas.py:94-99` 强制 `deadline` 必须带时区，naive 列存不下这个语义，实现写的也是 `datetime.now(timezone.utc)`。机检可见——`server/internal/db/models.go` 里这张表的三个时间戳生成为 `pgtype.Timestamptz`，与基线表的 `pgtype.Timestamp` 是两种类型。
 - **"可空语义"用 `NOT NULL DEFAULT ''` 承载，不用 NULL**。PG 的 UNIQUE 把 NULL 视为互不相等，所以 `UNIQUE(run_id, idempotency_key)` 在所有 `run_id IS NULL` 的行上会**静默失效**——幂等是这张表的第一语义，不能建在一个会漏的约束上。代价是"缺失"与"空串"在库里合并，写这一列的 Python PG 后端负责 `None ↔ ''` 映射。
 - **新表的 `created_at`/`updated_at` 不给库侧 DEFAULT**。基线有 `DEFAULT now()` 是存量事实；新表由写入方显式给 UTC 值，因为库默认值会把"记录时间"变成"落库时间"并掩盖漏写。
-- **只建实现真正读写的列**。§3.4 的租约设计提 `lease_owner/lease_token/lease_expires_at` 三列，`executions.py:36` 只用 `lease_token`，P0-7 也只验到"结果落库前比对 token"；另两列等 Go worker 起租约时随语义同批 `ADD COLUMN`（非破坏、可幂等）。同理本文件**不写 GRANT**：`contracts/table-acl.md:3` 说 ACL 靠 PG 角色落实，但角色名在任何地方都还没定义，给不存在的角色授权等于把纪律写成一条必失败的语句。
+- **只建实现真正读写的列**。§3.4 的租约设计提 `lease_owner/lease_token/lease_expires_at` 三列，`executions.py:36` 只用 `lease_token`，P0-7 也只验到"结果落库前比对 token"；另两列等 Go worker 起租约时随语义同批 `ADD COLUMN`（非破坏、可幂等）。业务迁移不夹带运行凭据与集群角色变更；当前 Go/Python 过渡角色由 `scripts/configure_database_roles.py` 显式创建再授权，配置依据实际调用，不提前执行目标 ACL 的写入收编。
 
 ## 3. Chunk 可信化：新表设计
 
-现状问题（03 §2）：叶子块正文只在 Milvus 且 `VARCHAR(2000)` 截断；`parent_chunks` 只收 level 1/2 而 PDF 默认路径不产 → 实际近空；无版本、无定位、无哈希。
+现状问题（03 §2）：叶子块正文只在 Milvus 且 `VARCHAR(2000)` 截断；`parent_chunks` 只收 level 1/2 而 PDF 默认路径不产曾导致近空；当前已补章节父块并验证 PG 合并；无版本、无定位、无哈希。
 
-新增（`server/migrations/000005_paper_chunks.{up,down}.sql`，**P2-1** 交付；按 §2.6 的规则成对交付，`down` 只 `DROP TABLE` 本迁移新建的表，交付后**必须同时登记进 `sqlc.yaml` 的 `schema` 列表**，否则 `dev.py gen` 的前置检查会直接拒绝；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
+新增（`server/migrations/<实施时分配编号>_paper_chunks.{up,down}.sql`，**P2-1** 交付；按 §2.6 的规则成对交付，`down` 只 `DROP TABLE` 本迁移新建的表，交付后**必须同时登记进 `sqlc.yaml` 的 `schema` 列表**，否则 `dev.py gen` 的前置检查会直接拒绝；DDL 由 Go 侧迁移文件持有，Python 同期加 SQLAlchemy 映射读取）：
 
 ```sql
 CREATE TABLE papers (
