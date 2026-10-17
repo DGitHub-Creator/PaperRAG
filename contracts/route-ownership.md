@@ -38,12 +38,12 @@
 | GET | `/api/v1/me/preferences` | go | — | 同上，配迁移 `000003` |
 | PUT | `/api/v1/me/preferences` | go | — | 同上 |
 | GET | `/api/v1/sessions` | go | 对拍保留（P1-1 删，tests/chain/test_go_read_sessions.py::test_go_read_session_list_matches_python_byte_for_byte） | naive TIMESTAMP 的 isoformat 形状与空列表 `[]` 都钉住 |
-| DELETE | `/api/v1/sessions/{session_id}` | go | 对拍保留（P1-1 删，tests/chain/test_go_read_sessions.py::test_go_read_unknown_session_delete_matches_python_text） | ⚠️ Go 不失效 Python 的 Redis 会话缓存，见台账 C35 |
+| DELETE | `/api/v1/sessions/{session_id}` | go | 对拍保留（P1-1 删，tests/chain/test_go_read_sessions.py::test_go_read_unknown_session_delete_matches_python_text） | C35 已修复：Python 会话缓存已移除，删除后直接读 PG；并发验收仍按 P1-1 执行 |
 | GET | `/api/v1/health` | go | — | 契约声明的前缀探针。Python 的 health **不带** `/api/v1` 前缀（C31） |
 | GET | `/api/v1/ready` | go | — | 两个探测键 `database` + `redis`，键名与 detail 文案与 Python 逐字对齐 |
 | GET | `/health` | shared | 是 | 两侧都有是刻意的：Python 容器的 healthcheck 打的是自己（`Dockerfile` backend 段） |
 | GET | `/ready` | shared | 是 | 同上。dev 形态下 Python 由 `dev.py serve` 起，探针仍归它自己 |
-| GET | `/api/v1/sessions/{session_id}` | proxy | 是 | 卡在 `rag_trace` 是 pydantic 投影而非透传（台账 C34），搬它之前要先定投影口径 |
+| GET | `/api/v1/sessions/{session_id}` | proxy | 是 | C34 投影技术阻塞已消除；仍由 Python 实现，G01 批准且环境就绪后可作为 G02 首个接管切片，不能据此提前开工 |
 | POST | `/api/v1/auth/refresh` | proxy | 是 | 前端不调但仍可达；刷新面归 Go 之前要先对齐 JWT claims 的 `type` 语义 |
 | POST | `/api/v1/chat` | proxy | 是 | 非流式问答。流式那一向由下面的 `/chat/stream` 承担 |
 | POST | `/api/v1/chat/stream` | proxy | 是 | SSE。Go 门面属 P1-4，事件日志与续传属 P2-5 |
@@ -57,10 +57,10 @@
 | DELETE | `/api/v1/documents/delete/async/{filename}` | proxy | 是 | 前端在用 |
 | GET | `/api/v1/documents/delete/jobs/{job_id}` | proxy | 是 | 前端不调但仍可达 |
 | POST | `/api/v1/documents/ingest` | proxy | 是 | 前端不调但仍可达（直接入库） |
-| POST | `/api/v1/cache/clear` | proxy | 是 | 前端不调但仍可达。Go 接管读面时要一并搬缓存失效（C35 同一形状） |
+| POST | `/api/v1/cache/clear` | proxy | 是 | 前端不调但仍可达。这是检索等缓存清理面，不是已移除的会话缓存；接管时单独核对清理范围 |
 | GET | `/api/v1/stats/usage` | proxy | 是 | 前端不调但仍可达。usage 持久化属 P2-6 |
 | DELETE | `/api/v1/stats/usage` | proxy | 是 | 同上 |
-| GET | `/metrics` | proxy | 是 | **三不管端点**（C31）：契约有、Python 有、nginx 无 location、前端不调、Go 未实现 |
+| GET | `/metrics` | proxy | 是 | 契约与 Python 实现已存在；nginx 未公开该路径，Go 未原生实现。公开访问与采集边界待设计，不通过删除契约消除差距 |
 | POST | `/internal/v1/ai/execute` | internal | 是 | 内部执行面。R3 保证 nginx 不把它暴露给浏览器 |
 | POST | `/internal/v1/ai/executions` | internal | 是 | 同上 |
 | GET | `/internal/v1/ai/executions/{execution_id}` | internal | 是 | 同上 |

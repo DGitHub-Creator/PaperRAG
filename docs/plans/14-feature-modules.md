@@ -143,7 +143,7 @@ G01–G21 是分工/交接标识，不是另一本任务状态表。正式 P 卡
 | 包 / 归属 | 输入 | 输出与主要修改范围 | 依赖 | 验收命令 | 期望 / 最低证据 | 规模与风险 |
 | --- | --- | --- | --- | --- | --- | --- |
 | G01 设计准备；全局/M17 | 愿景、本文、13、现行契约 | contracts/p1-design-review.md 五维逐项结论、卡片边界；不写业务代码 | P0 既有结果复核 | `uv run python scripts/check_design_review.py` | 人工五项确认且 approved，结构门禁通过；命令绿本身不算批准 | M；旧结论与当前实现漂移 |
-| G02 Go 入口与会话；M8/M17；P1-0…2 | 已批五维审查、原有 HTTP 行为 | Go 读/写接管与权限收口；更新 route-ownership/table-acl/OpenAPI | G01；沿用正式 P 卡依赖 | `uv run python scripts/verify_storage.py --http` | 真实鉴权、越权、并发、删除可见性与行为对拍；real | L；旧路径仍是调用方 |
+| G02 Go 入口与会话；M8/M17；P1-0…2 | 已批五维审查、环境就绪、原有 HTTP 行为 | Go 读/写接管与权限收口；更新 route-ownership/table-acl/OpenAPI | G01；沿用正式 P 卡依赖 | `uv run python scripts/verify_storage.py --http` | 真实鉴权、越权、并发、删除可见性与行为对拍；real | L；旧路径仍是调用方 |
 | G03 上传编排；M1/M17；P1-3 | 内部执行契约、现有解析与恢复 | Go PG 任务真相、上传/轮询/删除门面、局部执行接线；移除被接管旧写入 | G02、P0-7 | `uv run pytest -q -m chain tests/chain/test_upload_orchestration.py` | 经 Go 实际上传、完成/失败/重启后状态正确，不丢原文；real | L；重复派发与状态归属 |
 | G04 问答窄链路；M6/M8/M17/M19；P1-4…8 | 已上传文档、事件/错误契约 | Go SSE/WS、客户端接线、弃用审计、P1 演示；不提前建 P2 表 | G03 | `cd frontend && npx playwright test e2e/p1-research-flow.spec.ts` | 真模型上传→问答→来源、错误、取消、权限及原有链路通过；e2e | XL；模型成本与断连语义 |
 | G05 正文真相；M1/M3/M4；P2-1 | P1 退出、原文备份、目标标识 | Go 新迁移/sqlc、PG 正文与版本、重建/切换工具，Python 复用解析 | G04 | `uv run pytest -q -m chain tests/chain/test_paper_truth.py` | 空/存量迁移、完整正文、重跑/失败恢复、索引重建；real | XL；历史数据与截断 |
@@ -205,3 +205,10 @@ G21 的部署/恢复还须提供实际目标环境命令，不能仅凭浏览器
 
 旧 F 提案小时数与测试选择器是早期估计，已由本轮任务包和滚动重估口径取代；不是已实现用例。
 新增/合并模块须同步愿景覆盖、依赖、正式卡片和日程；不静默删除已确认能力，也不为赶日期绕过阶段门禁。
+
+### 接管前置校准（2026-10-17）
+
+C33 限流、C34 追踪投影、C35 会话缓存问题已修复，不重复列为待办，也不取消对应保留能力。
+GET /api/v1/sessions/{session_id} 仍为 proxy；G01 批准且环境就绪后可作为 G02 首个切片。
+现有 go_read 对拍可作行为基线，不能证明 Go 原生读取；必须核对显式路由与真实存储路径。
+2026-10-17 用户已授权按推荐方案签署 [P1 设计审查](../../contracts/p1-design-review.md)；执行 agent 先按该文档 §8 核验环境，再确认 T0 并认领 G02。批准设计不代表环境或功能已验收。
