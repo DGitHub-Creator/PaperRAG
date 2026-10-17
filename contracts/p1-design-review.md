@@ -131,7 +131,7 @@
 - **结论**：
   1. **表级 owner 的唯一出处是 `table-acl.md`**，本审查不复制一份。P1 期间要做的只有一件事：
      **让"声明的归属"与"实际的写入方"一致**——今天的偏差已点名：
-     `ai_executions` 声明 `python: W`，但**没有任何写入方**（`ExecutionStore` 是进程内 dict，台账 C37）；
+     `ai_executions` 声明 `python: W` 且写入方**已补上**（`backend/internal_api/postgres_executions.py`，由 `internal_api/router.py:36` 装配，含 advisory lock 与两个幂等轴，台账 C37 已闭）；
      `paper_chunks` 声明 `go: W / python: W until-P2`，而**这张表在库里不存在**（台账 C30）。
   2. **迁移责任**：Go 侧 schema 走 `server/migrations/` + `dev.py migrate-go`（决策 D8 已定案：
      显式动作，不进启动路径）；Python 那条线走 alembic，两张版本表互不知晓，
