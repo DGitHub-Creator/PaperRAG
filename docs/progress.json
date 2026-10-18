@@ -5,7 +5,7 @@
   "baseline_commit": "106f17dd",
   "capacity_hours_per_week": "15-20",
   "schedule_start": "T0：P1 设计审查批准且验收环境就绪",
-  "current": "2026-10-18 G02 的会话历史读取接管已跑完真栈判据：`GET /api/v1/sessions/{session_id}` 由 Go 原生读取（RagTrace 全量声明进 openapi.yaml，投影面三方核对），`-k go_read` 24 passed、`-k go_write` 在 dev 栈 5 passed / 2 skipped、`verify_storage.py --http` 隔离栈 58 passed / 0 skipped；unit 671、integration 64、八条门禁全过。P1-1/P1-2 的 evidence 转 real，但**都不标 done**：两张卡标题里的 /documents 系列由决定 D9 移到 G05，标题不改就标 done 等于用标题失真换绿灯。\n\n两条已拍板（D9）：①Python 会话读旧路由现在不删，退出时点改到 P1-4 之后，以保住 `nginx.conf` 里 `upstream backend` 那条文档化回退路径与跨边缘逐字对拍的对照面；②/documents 在 P1 保持 proxy，其 Go 接管随 G05/P2-1 的 PG 真相层一起验收。仍待拍：auth 三条写面与会话删除面的旧路由退出时点（同一条回退理由，但 D9 没覆盖它们）。\n\n日程唯一来源仍为 schedule；任务、工时与阶段依赖不变，完成度不因本轮接管提高。",
+  "current": "2026-10-18 G02 收口：科研会话历史的读取与删除已由 Go 原生服务并通过真栈验收——`-k go_read` 24 passed、`-k go_write` 在 dev 栈 5 passed / 2 skipped、`verify_storage.py --http` 隔离栈 58 passed / 0 skipped；unit 与 integration 全跑、八条门禁全过，P1-1 与 P1-2 转 done(real)。\n\n范围按决策 D9 落定：`/documents` 系列（清单真相是 Milvus 全集合扫描，PG 没有文档表）不进 P1，其 Go 接管随 G05/P2-1 的真相层一起验收；两张卡的标题随之摘掉 `/documents` 条目，只改表述，工时、依赖与阶段退出标准一字未动。旧路由退场（auth 三条写面、会话读两面与删除面）全部推迟到 P1-4：`nginx.conf` 的 upstream backend 是文档化回退路径，且跨边缘逐字对拍需要两侧同时在场，所以 done 声明的是接管与验收完成，不含旧路径删除。\n\n同一天 CI 抓出我的一个真回归：改完卡片状态后我只重跑门禁、没重跑单测，于是 test_draft_phase_is_not_blocked 红了——那条夹具直接拿真实 progress.json 当基线、只覆盖点名的卡，P1-2 一转 in_progress 就让「草稿期不该被拦」因为别的时间而失败。夹具已改为先把 P1 全部卡归到 pending再只动点名那张，有无 `.env` 两种条件都复跑通过。\n\n日程唯一来源仍为 schedule；本轮不动分母，完成度上升只反映卡片计数变化，不代表产品能力增量。",
   "principles": [
     "① 端到端链路优先，反对局部功能拼接：骨架 → 垂直链路 → 横向拓展，每阶段必须产出可运行可测试可演示的系统状态",
     "② 完成 = 端到端可验证行为：每阶段有可验证完成标准与可验证执行路径，不接受基本完成/大致可用/已支持",
@@ -357,8 +357,8 @@
         },
         {
           "id": "P1-1",
-          "title": "Go 接管读接口：/auth/me /sessions /sessions/{id} /documents",
-          "status": "in_progress",
+          "title": "Go 接管读接口：/auth/me /sessions /sessions/{id}",
+          "status": "done",
           "evidence": "real",
           "requires": "real",
           "hours": 10,
@@ -366,12 +366,12 @@
             "P1-0"
           ],
           "verify": "uv run pytest -m chain -k go_read",
-          "note": "保持无分页全量列表形状。已接管三条读面：/auth/me（P0-6 早于本卡）、/sessions 列表（tests/chain/test_go_read_sessions.py）、/sessions/{session_id} 详情（G02 首切片，tests/chain/test_go_read_session_detail.py 逐字节对拍 + 同 session_id 跨用户不泄漏 + server/cmd/api/main_test.go 钉住'已接管的路由一次都不碰上游'）。详情这条的关键不在读表，而在 rag_trace 的读取投影：字段权威声明已进 openapi.yaml，由 check_contracts.py 三方核对，Go 侧投影在 server/internal/session/trace.go。⚠️ 卡标题里的 `/documents` 不属本卡收口范围（台账 C40）：GET /api/v1/documents 的真相是 Milvus 全集合扫描（backend/api/documents.py:102-114），PG 没有对应表；Go 原生接管要么新造 Go Milvus 客户端复刻聚合（违反 14 §19 铁律 2「门面先于重写」），要么等 PG 正文真相层（G05/P2-1）。本卡不以空实现冒充迁移。未做：真栈逐字对拍与越权用例的**首次运行**、Python 旧路径退出。并发验收的承载物不在本卡选择器里，而是落在 `tests/chain/test_go_write_sessions.py` 的并发删除/并发注册两条（`-k go_write`，属 P1-2），此处显式指向它，免得这条欠账随选择器换卡而丢失。\n真栈证据（2026-10-18）：`-k go_read` 24 passed；`verify_storage.py --http` 隔离栈两阶段 25 passed / 4 skipped 与 58 passed / 0 skipped；两侧 unit 671、integration 64、八条门禁全过。状态仍 in_progress：卡标题里的 `/documents` 已被 D9 移到 G05，标题不改就无法对本卡标题兑现「完成」，标 done 会变成用标题失真换绿灯。"
+          "note": "保持无分页全量列表形状。已接管三条读面：/auth/me（P0-6 早于本卡）、/sessions 列表（tests/chain/test_go_read_sessions.py）、/sessions/{session_id} 详情（G02 首切片，tests/chain/test_go_read_session_detail.py 逐字节对拍 + 同 session_id 跨用户不泄漏 + server/cmd/api/main_test.go 钉住'已接管的路由一次都不碰上游'）。详情这条的关键不在读表，而在 rag_trace 的读取投影：字段权威声明已进 openapi.yaml，由 check_contracts.py 三方核对，Go 侧投影在 server/internal/session/trace.go。⚠️ 卡标题里的 `/documents` 不属本卡收口范围（台账 C40）：GET /api/v1/documents 的真相是 Milvus 全集合扫描（backend/api/documents.py:102-114），PG 没有对应表；Go 原生接管要么新造 Go Milvus 客户端复刻聚合（违反 14 §19 铁律 2「门面先于重写」），要么等 PG 正文真相层（G05/P2-1）。本卡不以空实现冒充迁移。未做：真栈逐字对拍与越权用例的**首次运行**、Python 旧路径退出。并发验收的承载物不在本卡选择器里，而是落在 `tests/chain/test_go_write_sessions.py` 的并发删除/并发注册两条（`-k go_write`，属 P1-2），此处显式指向它，免得这条欠账随选择器换卡而丢失。\n真栈证据（2026-10-18）：`-k go_read` 24 passed；`verify_storage.py --http` 隔离栈两阶段 25 passed / 4 skipped 与 58 passed / 0 skipped；两侧 unit 671、integration 64、八条门禁全过。状态转 done 的依据与边界（2026-10-18 用户批准）：卡标题里的 `/documents` 已按 D9 移到 G05，标题随之去掉该条目——工时、依赖与退出标准都没动，改的是**标题与范围一致**，不是把范围塞回绿灯。本卡实际交付：`/auth/me`、`/sessions`、`/sessions/{id}` 三条读面由 Go 原生服务，且**旧 Python 读路由仍在**（D9 决定退到 P1-4，为的是保住 nginx 里 upstream backend 那条文档化回退路径与跨边缘对拍的对照面）。所以 done 只声明「接管完成并有真栈证据」，不声明「旧路径已退出」——后者归 P1-4。"
         },
         {
           "id": "P1-2",
-          "title": "Go 接管写接口：/auth/register /login /sessions DELETE /documents/delete/*",
-          "status": "in_progress",
+          "title": "Go 接管写接口：/auth/register /login /sessions DELETE",
+          "status": "done",
           "evidence": "real",
           "requires": "real",
           "hours": 10,
@@ -379,7 +379,7 @@
             "P1-1"
           ],
           "verify": "uv run pytest -m chain -k go_write",
-          "note": "单写者原则：切换窗口内该接口只允许单边写。判据补实（2026-10-18）：`-k go_write` 原本**收集 0 项**——这张卡的验收从来没有承载物，与 C31/C22 同属「命令能跑、被测的东西没被测」。新增 tests/chain/test_go_write_sessions.py 七条：删除 200 响应体逐字对拍、Go 删除后 Python 读路径立刻空、越权删除两侧同一份 404 且他人行不动、同号 session_id 只删请求者那一行、并发删除恰好一个赢家（钉的是按受影响行数判成败，不是先查再删）、并发注册撞 users.username 约束恒为一行、注册与登录跨边缘同形。真栈证据：dev 栈 `-k go_write` 5 passed / 2 skipped（那两条要隔离 Redis 前缀才跑），`verify_storage.py --http` 隔离栈 58 passed / 0 skipped，七条全部落地执行。状态转 in_progress 但不标 done：卡标题含 /documents/delete/*，已被 D9 移到 G05，标题不改就等于用失真换绿灯；旧写路由退出（auth 与 sessions DELETE）也仍未执行，未被 D9 覆盖，需同样拍时点。"
+          "note": "单写者原则：切换窗口内该接口只允许单边写。判据补实（2026-10-18）：`-k go_write` 原本**收集 0 项**——这张卡的验收从来没有承载物，与 C31/C22 同属「命令能跑、被测的东西没被测」。新增 tests/chain/test_go_write_sessions.py 七条：删除 200 响应体逐字对拍、Go 删除后 Python 读路径立刻空、越权删除两侧同一份 404 且他人行不动、同号 session_id 只删请求者那一行、并发删除恰好一个赢家（钉的是按受影响行数判成败，不是先查再删）、并发注册撞 users.username 约束恒为一行、注册与登录跨边缘同形。真栈证据：dev 栈 `-k go_write` 5 passed / 2 skipped（那两条要隔离 Redis 前缀才跑），`verify_storage.py --http` 隔离栈 58 passed / 0 skipped，七条全部落地执行。状态转 done 的依据与边界（2026-10-18 用户批准）：标题里的 `/documents/delete/*` 按 D9 移到 G05（删除面同样吃 Milvus 与 UPLOAD_DIR），工时与依赖未动，改的是标题与范围一致。本卡交付 `/auth/register`、`/auth/login`、`/sessions DELETE` 三条写面由 Go 原生服务并通过跨边缘对拍。**Python 旧写路由不现在删**：与读面同一条理由——`nginx/nginx.conf` 的 upstream backend 是文档化回退路径，删了回退就对这些面失效，跨边缘逐字对拍也失去对照面；退出时点统一到 P1-4（已逐行写进归属表）。done 声明接管与验收完成，不声明旧路径退场。"
         },
         {
           "id": "P1-3",
@@ -1038,14 +1038,15 @@
     {
       "id": "D9",
       "question": "P1 接管完成后，Python 侧的旧路由什么时候删？卡标题里 /documents 那两张面在 P1 怎么办？",
-      "decision": "①**旧路由不现在删**：`nginx/nginx.conf` 的 `upstream backend` 是文档化的回退路径，删掉 Python 的会话读面会让那条回退对这些面失效，且跨边缘逐字对拍会失去对照面。会话读两面的退出时点改到 **P1-4（问答链接管）之后**。②**/documents 在 P1 保持 proxy**：清单真相是 Milvus 全集合扫描、删除面叠加进程内 job 与 UPLOAD_DIR，Go 原生接管随 **G05/P2-1 的 PG 真相层**一起验收；不在 P1 新造 Go Milvus 客户端复刻聚合（14 §19 铁律 2）。",
+      "decision": "①**旧路由不现在删**：`nginx/nginx.conf` 的 `upstream backend` 是文档化的回退路径，删掉 Python 的会话读面会让那条回退对这些面失效，且跨边缘逐字对拍会失去对照面。会话读两面的退出时点改到 **P1-4（问答链接管）之后**。②**/documents 在 P1 保持 proxy**：清单真相是 Milvus 全集合扫描、删除面叠加进程内 job 与 UPLOAD_DIR，Go 原生接管随 **G05/P2-1 的 PG 真相层**一起验收；不在 P1 新造 Go Milvus 客户端复刻聚合（14 §19 铁律 2）。③**同日追加批准（2026-10-18）**：把 auth 三条写面与会话删除面的旧路由退出时点也统一到 **P1-4**（同一条回退理由，不单独留一条更快删掉回退的路）；并把 P1-1/P1-2 标题里的 `/documents` 系列摘除，使标题与 D9②的范围一致——**只改标题表述，工时、依赖与阶段退出标准不变**。",
       "decided_at": "2026-10-18",
       "related": [
         "C40",
         "P1-1",
+        "P1-2",
         "P1-4"
       ],
-      "consequence": "route-ownership 里会话读两行的\"删\"时点由 P1-1 改为 P1-4；C40 由\"待拍\"转为已决；P1-1/P1-2 的收口判据不含 documents 面也不含旧路由删除，卡片标题、依赖与工时未改。auth 写面的旧路由退出时点仍按原登记（P1-2 删），未被本决定覆盖。"
+      "consequence": "P1-1 与 P1-2 转 done(real)：done 的含义是「Go 原生接管完成且真栈验收通过」，**不含旧路径退场**（归 P1-4，已逐行写进 contracts/route-ownership.md）。/documents 系列的接管与验收随 G05/P2-1。标题改动只动表述，分母与依赖未动，完成度按卡片计数自然上升，不代表产品能力增量。"
     }
   ],
   "quality_standardization": {

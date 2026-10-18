@@ -7,6 +7,11 @@
 > `DELETE /sessions/{session_id}` 五条——因为 chain 层的**逐字对拍**要求两侧同时在场。
 > "有意保留"与"忘了删"在外面长得一模一样，而 `check_contracts.py` 只比前端↔契约、**看不见服务侧**（台账 C31）。
 > 所以这里把每条面的归属写成表，由脚本回查三个真相源：Go 源码、Python 路由表、chain 用例。
+>
+> **退出时点（决策 D9，2026-10-18）**：接管完成后**不立即删** Python 旧路由，全部推迟到 **P1-4**（问答链接管）。
+> 两个理由都是实打实的：`nginx/nginx.conf` 里 `upstream backend` 是文档化的**回退路径**，删了这些路由，
+> 回退对它们就失效；而跨边缘**逐字对拍**需要两侧同时在场，删掉一侧，这条防漂移的判据就永远只能比自己。
+> 表里"对拍保留（P1-4 删，…）"就是这个意思；`/documents` 系列不在其中，它按 D9 归 G05 真相层。
 
 ## 1. 归属取值
 
@@ -31,14 +36,14 @@
 
 | 方法 | 路径 | 归属 | Python 仍在 | 说明 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/register` | go | 对拍保留（P1-2 删，tests/chain/test_go_write_sessions.py::test_go_write_register_and_login_return_the_same_shape_across_edges） | 原先登记为**未对拍保留**（C36）；2026-10-18 写了跨边缘的形状与并发唯一性用例，判据从欠账变成有承载物（首轮尚未跑，见 WORKLOG） |
-| POST | `/api/v1/auth/login` | go | 对拍保留（P1-2 删，tests/chain/test_contract_chain.py::test_login_response_shape_matches） | X4 的两侧互验与响应形状都钉在用例里 |
-| GET | `/api/v1/auth/me` | go | 对拍保留（P1-2 删，tests/chain/test_contract_chain.py::test_me_returns_identical_json） | 同一份 JSON 逐字一致，含 role 的取库不取 claims |
+| POST | `/api/v1/auth/register` | go | 对拍保留（P1-4 删，tests/chain/test_go_write_sessions.py::test_go_write_register_and_login_return_the_same_shape_across_edges） | 原先登记为**未对拍保留**（C36）；2026-10-18 写了跨边缘的形状与并发唯一性用例，判据从欠账变成有承载物（首轮尚未跑，见 WORKLOG） |
+| POST | `/api/v1/auth/login` | go | 对拍保留（P1-4 删，tests/chain/test_contract_chain.py::test_login_response_shape_matches） | X4 的两侧互验与响应形状都钉在用例里 |
+| GET | `/api/v1/auth/me` | go | 对拍保留（P1-4 删，tests/chain/test_contract_chain.py::test_me_returns_identical_json） | 同一份 JSON 逐字一致，含 role 的取库不取 claims |
 | POST | `/api/v1/auth/password` | go | — | Python 从来没有这条面，Go 是新面而非复刻（P0-6） |
 | GET | `/api/v1/me/preferences` | go | — | 同上，配迁移 `000003` |
 | PUT | `/api/v1/me/preferences` | go | — | 同上 |
 | GET | `/api/v1/sessions` | go | 对拍保留（P1-4 删，tests/chain/test_go_read_sessions.py::test_go_read_session_list_matches_python_byte_for_byte） | naive TIMESTAMP 的 isoformat 形状与空列表 `[]` 都钉住。退出时点由 P1-1 改 P1-4：**决定 D9**（保住 `upstream backend` 那条文档化回退路径，并留住跨边缘逐字对拍的对照面） |
-| DELETE | `/api/v1/sessions/{session_id}` | go | 对拍保留（P1-2 删，tests/chain/test_go_write_sessions.py::test_go_write_delete_response_body_matches_python_edge_byte_for_byte） | C35 已修复：Python 会话缓存已移除，删除后直接读 PG。并发验收已有承载物（`test_go_write_concurrent_delete_has_exactly_one_winner`，2026-10-18 真栈通过）。本行是**写面**，退出归 P1-2，不随 D9 推迟 |
+| DELETE | `/api/v1/sessions/{session_id}` | go | 对拍保留（P1-4 删，tests/chain/test_go_write_sessions.py::test_go_write_delete_response_body_matches_python_edge_byte_for_byte） | C35 已修复：Python 会话缓存已移除，删除后直接读 PG。并发验收已有承载物（`test_go_write_concurrent_delete_has_exactly_one_winner`，2026-10-18 真栈通过）。本行是**写面**，退出归 P1-2，不随 D9 推迟 |
 | GET | `/api/v1/sessions/{session_id}` | go | 对拍保留（P1-4 删，tests/chain/test_go_read_session_detail.py::test_go_read_detail_canonical_trace_matches_byte_for_byte） | G02 首切片：Go 按 `contracts/openapi.yaml` 的 RagTrace 全量声明做读取投影，坏历史行整条 null 而正文保留（C34）；投影面三方核对见 `check_contracts.py`。退出时点同 D9，改 P1-4 |
 | GET | `/api/v1/health` | go | — | 契约声明的前缀探针。Python 的 health **不带** `/api/v1` 前缀（C31） |
 | GET | `/api/v1/ready` | go | — | 两个探测键 `database` + `redis`，键名与 detail 文案与 Python 逐字对齐 |

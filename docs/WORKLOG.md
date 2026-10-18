@@ -239,7 +239,11 @@ P0 阶段此前日志已轮转至 [历史实录](archive/2026-10-15-p0-worklog.m
 - 内部执行面（`tests/chain/test_ai_executions.py`，10 error + 1 fail）本机**跑不了且与本次改动无关**：`.env` 里没有 `AICORE_INTERNAL_TOKEN` 这个键（实测读出的长度为 0），服务端按设计对所有内部面一律拒绝。10 个 error 是夹具 `pytest.fail` 要求注入令牌；那 1 个 fail 同因——它断言 `detail == "内部令牌无效"`，而未配置时服务端给的是另一句"AICORE_INTERNAL_TOKEN 未配置，内部执行面拒绝服务"，两个 401 原因本来就不同。该组的实现另有 `tests/unit/test_ai_executions_store.py` 与 `tests/unit/test_internal_error_codes.py` 在本轮 671 项里覆盖。要跑这组需要给本机 `.env` 补一个令牌并让服务端与测试进程取到同一个值，属环境配置，不在本轮改动面内。
 - **两条收口动作等用户拍板，未擅自执行**：①退出 Python 旧路径（`nginx/nginx.conf` 里 `upstream backend` 是**文档化的回退路径**，删掉 Python 的会话读面会让那条回退失效）；②C40 的 `/documents` 接管口径。详见 `contracts/route-ownership.md` 与台账 C40。
 - 归属与现状：`contracts/route-ownership.md` 里 `GET /api/v1/sessions/{session_id}` 由 `proxy` 改 `go` 并登记对拍用例名（该行现在是"Go 已原生 + Python 对拍保留待删"），`GET /api/v1/documents` 的说明按代码改正并指向 C40；`contracts/p1-design-review.md` §0 的会话详情现状行同步为已接管。契约的 `RagTrace` 声明、追踪头参数与路径占位名（`{sessionId}`/`{jobId}`→snake_case，只改契约符号不新增 URL）一并落进 `openapi.yaml`。
-- 状态口径：P1-1 仍 `in_progress`（越权/并发真栈验收、Python 旧路径退出未做），P1-0 保持 done 但其 chain 用例本轮被重锚，需在统一测试时复跑确认；完成度、工时、阶段依赖与退出标准一律未改。
+- 状态口径（本条已被下方"同日追记"更新）：P1-1 仍 `in_progress`，P1-0 保持 done 但其 chain 用例本轮被重锚；完成度、工时、阶段依赖与退出标准一律未改。
+- **同日追记：CI 抓出我一个真回归，红得对。** push 后远端 `Backend (pytest + ruff)` 判 failure，而我上一轮报的"unit 671 passed"是**改卡片状态之前**的读数——把 P1-2 转成 in_progress 之后我只重跑了门禁，没重跑单测。复现方式是把 `.env` 临时改名跑全量（CI 的 backend job 既没有 `.env` 也没有 PG service）：`tests/unit/test_check_design_review.py::TestTakeoverCoupling::test_draft_phase_is_not_blocked` 红，734 passed / 1 failed。
+- 根因不在门禁而在夹具：`progress_with()` 直接拿真实 `docs/progress.json` 当基线，只把**点名的那一张**改成给定状态，其余保持真实值。于是"P1-1 pending 且审查 proposed 必须绿"这条负向用例会因为**另一张卡**在别的时间转 in_progress 而失败——G5 报"没批就开工"是正确判定，夹具却默认整个 P1 都是 pending。已改成先把 P1 全部卡归到 pending、再只动点名那张，并把理由写进夹具 docstring：夹具依赖易变的真实状态，等于把单测变成进度表。有无 `.env` 两种条件下该文件均 20 passed。
+- **教训**：改 `docs/progress.json` 的任务状态后必须重跑读它的单测（`test_check_design_review.py` 与 `sync_progress --check` 都读它）。上一轮"八条门禁全过 + unit 671"因此是过期读数，在此更正，不以局部绿冒充整体绿。
+- 范围收口（用户批准）：P1-1 与 P1-2 转 `done(real)`，两卡**标题**摘掉 `/documents` 条目使标题与 D9 范围一致；工时、依赖与阶段退出标准一字未动，完成度上升只反映卡片计数。旧路由退场时点统一到 **P1-4**（会话读两面、会话删除面、auth 三条写面），理由与逐行去向写进 `contracts/route-ownership.md` 表头与决策 D9；`/documents` 系列按 D9 归 G05 真相层。本轮 done 的确切含义：Go 原生接管完成且真栈验收通过，**不含**旧路径删除。
 - 同批把 G02 的**判据承载物补齐**（都属"命令能跑而被测的东西没被测"这一类，与 C31/C22 同型）：
   ① P1-2 的 `verify` 是 `pytest -m chain -k go_write`，而该选择器**收集 0 项**——这张卡从来没有证据。新增
   `tests/chain/test_go_write_sessions.py` 七条：删除 200 响应体逐字对拍、Go 删除后 Python 读路径立刻空、

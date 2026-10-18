@@ -24,7 +24,7 @@
   `DELETE /documents/{filename}` 与 `/documents/delete/async/*` 同样要动 Milvus 与 `UPLOAD_DIR` 文件。
   Go 要"接管"它们，只有两条路：①在 Go 里新建 Milvus 客户端并复刻这套聚合——那是把已验证实现换成未验证实现，
   违反 `14 §19` 铁律 2「门面先于重写」与设计审查 §7；②先把文档/正文真相搬进 PG——那是 **M3/P2-1（G05）** 的范围，
-  不是 P1 的切片 | **已拍板（决策 D9，2026-10-18）**：`/documents` 系列在 P1 保持 `proxy`，Go 原生接管随 G05/P2-1 的 PG 真相层一起验收，P1 不新造 Go Milvus 客户端。D9 同时决定 **Python 会话读旧路由现在不删**——`nginx/nginx.conf` 的 `upstream backend` 是文档化的回退路径，删了这些路由会让回退对它们失效，且跨边缘逐字对拍失去对照面；会话**读**两面的退出时点改到 P1-4 之后，会话**删除**面是写面，退出仍归 P1-2。因此 P1-1/P1-2 的收口判据不含 documents 面、也不含旧路由删除；卡片标题、依赖与工时均未改，只登记口径。承载物：`tests/chain/test_go_read_session_detail.py`、`tests/chain/test_go_write_sessions.py`、`scripts/verify_storage.py --http`（2026-10-18 隔离栈两阶段 25 passed / 4 skipped + 58 passed） |
+  不是 P1 的切片 | **已拍板（决策 D9，2026-10-18）**：`/documents` 系列在 P1 保持 `proxy`，Go 原生接管随 G05/P2-1 的 PG 真相层一起验收，P1 不新造 Go Milvus 客户端。D9 同时决定 **Python 旧路由接管后不立即删**——`nginx/nginx.conf` 的 `upstream backend` 是文档化的回退路径，删了这些路由会让回退对它们失效，且跨边缘逐字对拍失去对照面；**同日追加批准**把会话读两面、会话删除面与 auth 三条写面的退出时点**统一到 P1-4**（不单独留一条更快拆掉回退的路）。P1-1/P1-2 的**标题**随之摘掉 `/documents` 条目以与范围一致——只改标题表述，工时、依赖与阶段退出标准一字未动，两卡按真栈读数转 done(real)，done 只声明接管与验收完成、不声明旧路径退场。承载物：`tests/chain/test_go_read_session_detail.py`、`tests/chain/test_go_write_sessions.py`、`scripts/verify_storage.py --http`（2026-10-18 隔离栈两阶段 25 passed / 4 skipped + 58 passed / 0 skipped） |
 | C38 | **曾是**：`X-Trace-Id` 只在代码里约定，契约里一次都没出现（`grep -c X-Trace-Id contracts/openapi.yaml` = 0），
   而 `server/internal/observability/trace.go` 从前写"该名字由 P0-4 写进 openapi.yaml 锁定"——**注释替实现撒了谎**。
   两端确实各自实现：Go 的 `Trace` 中间件生成/沿用并写响应头，`upstream.go` 的 Director 把它带给 Python；
