@@ -132,6 +132,15 @@ def validate(data: dict) -> list[str]:
     ids = [s.get("id") for s in data.get("schedule", [])]
     if len(ids) != len(set(ids)):
         errors.append("schedule 周次编号重复")
+
+    # 同一个决策号不能既"待拍"又"已拍"：那两条记录互相矛盾，而下一个 agent 读到 pending 那份
+    # 就会重新问一遍已经问过的问题，或把已定的事当成未决口子。D3 双挂过几天
+    # （2026-10-15 已决议并写了 consequence，pending 那条一直没删），此前没有任何检查会发现它。
+    pending_ids = {d.get("id") for d in data.get("decisions_pending", []) if d.get("id")}
+    resolved_ids = {d.get("id") for d in data.get("decisions_resolved", []) if d.get("id")}
+    both = sorted(pending_ids & resolved_ids)
+    if both:
+        errors.append(f"决策同时挂在 pending 与 resolved：{'、'.join(both)}——已决议的只留 resolved")
     return errors
 
 

@@ -172,7 +172,6 @@
 
 - **D1** 总纲要求 ai-core/ 独立目录，路线建议保留 backend/ 物理目录、ai-core 只作角色名，是否接受？ → 建议：接受（决策 Q2 + 原则④），改名留到 P2 后作为可单独回滚的提交（P0 目录结构）
 - **D2** 13 条在用接口在 P1 迁完、其余 12 条在 P1 末统一 Deprecation，是否符合总纲 P0 完成标准里「旧接口必须迁移或标记 deprecated」？ → 建议：符合原则①；若要求 P0 内完成则 P0 估时翻倍（P0 退出标准 X2）
-- **D3** chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？ → 建议：接受；证据级引用属 P2 的 Z1/Z3（P1 演示口径与 README 表述）
 - **D7** 是否按 ARTEX 的分层习惯，把 evidence / report / llmpool（含用量记账）/ guard / tools（MCP）/ notify 在 Go 侧升为一等模块？（02 目前把它们散在 P3/P4 展望里） → 建议：接受其中三个：evidence（L4 的直接承载）、report（V2 报告 + V4 Research Writing）、llmpool + 用量记账（P2-6 预算持久化的前置）；guard / tools(MCP) / notify 等 V3/V4 再定（02 的模块划分与 P3/P4 的边界）
 
 ## 风险登记（前 8）

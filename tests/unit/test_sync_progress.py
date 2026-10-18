@@ -140,6 +140,30 @@ class TestStructuralRules:
         assert any("hours" in e for e in sync_progress.validate(data))
 
 
+class TestDecisionLedgerCoherence:
+    """同一个决策号不能既待拍又已拍——D3 双挂过几天，此前没有任何检查会发现它。"""
+
+    def test_same_id_in_pending_and_resolved_is_red(self):
+        data = make_data()
+        data["decisions_pending"] = [{"id": "D3", "question": "q", "recommendation": "r"}]
+        data["decisions_resolved"] = [{"id": "D3", "question": "q", "decision": "d", "decided_at": "2026-10-15"}]
+        errors = sync_progress.validate(data)
+        assert any("同时挂在 pending 与 resolved" in e and "D3" in e for e in errors), errors
+
+    def test_disjoint_ledgers_pass(self):
+        data = make_data()
+        data["decisions_pending"] = [{"id": "D7", "question": "q", "recommendation": "r"}]
+        data["decisions_resolved"] = [{"id": "D3", "question": "q", "decision": "d", "decided_at": "2026-10-15"}]
+        assert sync_progress.validate(data) == []
+
+    def test_the_real_progress_file_has_no_double_ledgered_decision(self):
+        """真实文件必须自洽：夹具能造出违规，但收口判据是仓库里那份。"""
+        real = json.loads((Path(__file__).resolve().parents[2] / "docs" / "progress.json").read_text(encoding="utf-8"))
+        pending = {d.get("id") for d in real.get("decisions_pending", [])}
+        resolved = {d.get("id") for d in real.get("decisions_resolved", [])}
+        assert pending & resolved == set(), f"这些决策被同时登记在两边：{sorted(pending & resolved)}"
+
+
 class TestCompute:
     def test_deferred_and_cancelled_excluded_from_denominator(self):
         data = make_data(status="done", evidence="real", requires="real")

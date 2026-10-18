@@ -954,12 +954,6 @@
       "blocking": "P0 退出标准 X2"
     },
     {
-      "id": "D3",
-      "question": "chunk 可信化移到 P2 且改在 Go 侧 schema，接受 P1 引用为非证据级？",
-      "recommendation": "接受；证据级引用属 P2 的 Z1/Z3",
-      "blocking": "P1 演示口径与 README 表述"
-    },
-    {
       "id": "D7",
       "question": "是否按 ARTEX 的分层习惯，把 evidence / report / llmpool（含用量记账）/ guard / tools（MCP）/ notify 在 Go 侧升为一等模块？（02 目前把它们散在 P3/P4 展望里）",
       "recommendation": "接受其中三个：evidence（L4 的直接承载）、report（V2 报告 + V4 Research Writing）、llmpool + 用量记账（P2-6 预算持久化的前置）；guard / tools(MCP) / notify 等 V3/V4 再定",
