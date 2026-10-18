@@ -74,6 +74,8 @@ def verify_http(environment: dict, temporary: str, credentials: dict) -> int:
         return subprocess.run([
             sys.executable, "-m", "pytest", "-q", "--tb=short", "-m", "chain",
             "tests/chain/test_go_auth_cross_validation.py", "tests/chain/test_go_read_sessions.py",
+            "tests/chain/test_go_read_session_detail.py", "tests/chain/test_go_write_sessions.py",
+            "tests/chain/test_go_proxy.py",
         ], cwd=ROOT, env=environment).returncode
     finally:
         for child in children:
@@ -91,7 +93,11 @@ def verify_http(environment: dict, temporary: str, credentials: dict) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--postgres-container", default="researchpilot-postgres")
-    parser.add_argument("--http", action="store_true", help="另启 Go/Python 真实入口，验证认证、限流与会话删除")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="另启 Go/Python 真实入口，验证认证、限流、会话读/删的跨语言逐字对拍与代理转发",
+    )
     args = parser.parse_args()
     environment = {**{k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}, **os.environ}
     url = make_url(environment.get("DATABASE_URL") or "postgresql://postgres:postgres@127.0.0.1:5432/langchain_app")
