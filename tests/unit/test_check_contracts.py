@@ -52,10 +52,12 @@ def test_repo_contracts_are_self_consistent(monkeypatch):
     monkeypatch.setattr(cc, "CONTRACTS", _ROOT / "contracts")
     monkeypatch.setattr(cc, "FRONTEND_SRC", _ROOT / "frontend" / "src")
     errors: list[str] = []
-    surface, _ = cc.check_openapi(errors)
+    surface, doc = cc.check_openapi(errors)
     schema = cc.check_schema(errors)
     cc.check_error_codes(errors, schema)
     cc.check_acl(errors)
+    cc.check_trace_projection(errors, doc)
+    cc.check_trace_header(errors, doc)
     cc.check_surface(errors, surface)
     assert errors == []
     # 16 条前端在用 + 5 条探针（01 §3 与 X3 的口径；2026-10-14 新增改密码与偏好两条前端在用的面，13→16）
@@ -227,3 +229,180 @@ def test_contract_declares_uncalled_operation(contracts, tmp_path, monkeypatch):
     surface, _ = cc.check_openapi(errors)
     cc.check_surface(errors, surface)
     assert any("契约声明了前端没在调的操作" in e for e in errors)
+
+
+# ── rag_trace 投影面的三方核对（P1-1 会话详情接管）──────────────────────────
+#
+# 这一组的价值全在"每条都能红"：字段名、顺序、种类、必需性、嵌套指向、以及
+# 表写法本身被改坏。任何一条抓不到，Go 与 Python 就会静默漂成两种形状（台账 C38 的同类）。
+
+GO_TRACE = _ROOT / "server" / "internal" / "session" / "trace.go"
+
+
+@pytest.fixture()
+def projection(contracts, monkeypatch, tmp_path):
+    """给核对函数一套可篡改的副本：契约来自 tmp，Go 字段表也复制到 tmp。"""
+    go = tmp_path / "trace.go"
+    shutil.copy(GO_TRACE, go)
+    monkeypatch.setattr(cc, "GO_TRACE_FILE", go)
+
+    def run(mutate_yaml=None, mutate_go=None):
+        path = contracts / "openapi.yaml"
+        if mutate_yaml:
+            rewrite(path, *mutate_yaml)
+        if mutate_go:
+            text = go.read_text(encoding="utf-8")
+            mutated = mutate_go(text)
+            assert mutated != text, "Go 侧篡改没命中锚点，这条负向用例是假的"
+            go.write_text(mutated, encoding="utf-8")
+        doc = cc.yaml.safe_load(path.read_text(encoding="utf-8"))
+        errors: list[str] = []
+        cc.check_trace_projection(errors, doc)
+        return errors
+
+    return run
+
+
+def test_trace_projection_three_sides_agree(projection):
+    assert projection() == []
+
+
+def test_contract_field_rename_is_caught(projection):
+    errors = projection(('        tool_name:\n          type: string\n', '        tool_named:\n          type: string\n'))
+    assert any("tool_name" in e and "RagTrace" in e for e in errors)
+
+
+def test_contract_dropping_a_field_is_caught(projection):
+    errors = projection(('        hypothetical_doc:\n          type: string\n          nullable: true\n', ''))
+    assert any("hypothetical_doc" in e for e in errors)
+
+
+def test_contract_required_set_drift_is_caught(projection):
+    errors = projection(("      required: [tool_used, tool_name]", "      required: [tool_used]"))
+    assert any("RagTrace.tool_name 三方不一致" in e for e in errors)
+
+
+def test_missing_nested_schema_is_caught(projection):
+    errors = projection(('    RetrievedChunk:\n', '    RetrievedGhost:\n'))
+    assert any("RetrievedChunk" in e and "没有声明" in e for e in errors)
+
+
+def test_go_dropping_a_field_is_caught(projection):
+    errors = projection(mutate_go=lambda t: t.replace('\t\t{"grade_route", kindString, false, nil},\n', '', 1))
+    assert any("grade_route" in e for e in errors)
+
+
+def test_go_wrong_kind_is_caught(projection):
+    errors = projection(mutate_go=lambda t: t.replace('{"candidate_k", kindInt, false, nil}', '{"candidate_k", kindString, false, nil}', 1))
+    assert any("candidate_k 三方不一致" in e for e in errors)
+
+
+def test_go_wrong_nested_target_is_caught(projection):
+    errors = projection(mutate_go=lambda t: t.replace('{"citations", kindArray, false, citationSpec}', '{"citations", kindArray, false, chunkSpec}', 1))
+    assert any("citations 三方不一致" in e for e in errors)
+
+
+def test_unknown_kind_token_is_reported_not_silently_skipped(projection):
+    errors = projection(mutate_go=lambda t: t.replace('{"query", kindString, false, nil}', '{"query", kindGhost, false, nil}', 1))
+    assert any("kindGhost" in e for e in errors)
+
+
+def test_field_table_style_change_fails_loudly(projection):
+    """字段表改成别的写法时不能"抽到 0 个字段然后说一致"。"""
+    import re
+
+    strip = re.sub(r'^\s*\{"\w+", kind\w+, \w+, \w+\},\n', '', GO_TRACE.read_text(encoding="utf-8"), flags=re.M)
+    errors = projection(mutate_go=lambda _t: strip)
+    assert any("抽不到任何字段" in e for e in errors)
+
+
+def test_projection_helpers_parse_the_real_tables():
+    """自校验：Go 表确实被解析出来了，否则上面那些"红"可能只是因为解析器返回空。"""
+    specs, problems = cc.parse_go_trace_specs(GO_TRACE.read_text(encoding="utf-8"))
+    assert problems == []
+    by_schema = cc.go_specs_by_schema(specs)
+    assert set(by_schema) == {"RagTrace", "RetrievedChunk", "SourceReference", "CitationInfo", "UnsupportedClaim"}
+    assert len(by_schema["RagTrace"]) == 39
+    assert by_schema["RagTrace"][0] == ("tool_used", "bool", True, None)
+    assert by_schema["RagTrace"][-3] == ("source_map", "map", False, "SourceReference")
+    assert cc.python_trace_specs()["RagTrace"] == by_schema["RagTrace"]
+
+
+# ── 追踪头 X-Trace-Id 的三方核对（台账 C38）─────────────────────────────────
+
+GO_OBS = _ROOT / "server" / "internal" / "observability" / "trace.go"
+PY_LOGGING = _ROOT / "backend" / "core" / "logging_config.py"
+
+
+@pytest.fixture()
+def trace_header(contracts, monkeypatch, tmp_path):
+    """契约 + Go 常量 + Python 常量三份可篡改副本。"""
+    go = tmp_path / "trace.go"
+    shutil.copy(GO_OBS, go)
+    py = tmp_path / "logging_config.py"
+    shutil.copy(PY_LOGGING, py)
+    monkeypatch.setattr(cc, "GO_OBSERVABILITY_FILE", go)
+    monkeypatch.setattr(cc, "PY_LOGGING_FILE", py)
+
+    def run(mutate_yaml=None, mutate_go=None, mutate_py=None):
+        # 三个篡改器同形：都接收文件全文、返回改后的全文。接口不一致会让负向用例
+        # 静默变成 TypeError——那种"红"根本不指向任何被检规则。
+        path = contracts / "openapi.yaml"
+        for file_, mutator in ((path, mutate_yaml), (go, mutate_go), (py, mutate_py)):
+            if mutator:
+                text = file_.read_text(encoding="utf-8")
+                mutated = mutator(text)
+                assert mutated != text, f"{file_.name} 的篡改没命中锚点，这条负向用例是假的"
+                file_.write_text(mutated, encoding="utf-8")
+        errors: list[str] = []
+        cc.check_trace_header(errors, cc.yaml.safe_load(path.read_text(encoding="utf-8")))
+        return errors
+
+    return run
+
+
+def test_trace_header_three_sides_agree(trace_header):
+    assert trace_header() == []
+
+
+def test_trace_header_rule_drift_is_caught(trace_header):
+    errors = trace_header(mutate_go=lambda t: t.replace("{1,128}", "{1,64}", 1))
+    assert any("接受集合三方不一致" in e and "Go" in e for e in errors)
+
+
+def test_trace_header_name_drift_is_caught(trace_header):
+    errors = trace_header(mutate_py=lambda t: t.replace('TRACE_ID_HEADER = "X-Trace-Id"', 'TRACE_ID_HEADER = "X-Request-Id"', 1))
+    assert any("头名三方不一致" in e for e in errors)
+
+
+def test_missing_trace_param_declaration_is_caught(trace_header):
+    """契约里删掉声明就等于回到"两端代码私下约定"——正是 C38 登记的原始缺陷。"""
+    errors = trace_header(
+        mutate_yaml=lambda t: t.replace("    TraceId:\n", "    TraceGhost:\n", 1)
+    )
+    assert any("缺 TraceId" in e for e in errors)
+
+
+def test_contract_bounds_disagreeing_with_pattern_are_caught(trace_header):
+    errors = trace_header(
+        mutate_yaml=lambda t: t.replace("        maxLength: 128\n", "        maxLength: 256\n", 1)
+    )
+    assert any("minLength/maxLength" in e for e in errors)
+
+
+def test_constant_removal_fails_loudly_not_silently(trace_header):
+    """实现侧常量被改名/删除时，核对必须报"找不到"，不能当成一致通过。"""
+    errors = trace_header(mutate_go=lambda t: t.replace("const TraceIDRule", "const TraceIDX", 1))
+    assert any("找不到 TraceIDRule" in e for e in errors)
+
+
+def test_trace_header_helpers_parse_the_real_sources():
+    """自校验：两边确实都能从真实源码抽到常量，否则上面的红可能是解析器返回空。"""
+    errors: list[str] = []
+    go = GO_OBS.read_text(encoding="utf-8")
+    assert cc._go_const(go, "TraceIDHeader", "trace.go", errors) == "X-Trace-Id"
+    assert cc._go_const(go, "TraceIDRule", "trace.go", errors) == r"^[A-Za-z0-9._-]{1,128}$"
+    py = PY_LOGGING.read_text(encoding="utf-8")
+    assert cc._py_const(py, "TRACE_ID_HEADER", "logging_config.py", errors) == "X-Trace-Id"
+    assert cc._py_const(py, "TRACE_ID_RULE", "logging_config.py", errors) == r"^[A-Za-z0-9._-]{1,128}$"
+    assert errors == []

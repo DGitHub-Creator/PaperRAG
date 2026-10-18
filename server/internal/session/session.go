@@ -11,6 +11,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,6 +29,7 @@ var ErrStoreUnavailable = errors.New("会话读写面未装配")
 type Store interface {
 	ListSessionInfosForUser(ctx context.Context, userID int32) ([]db.ListSessionInfosForUserRow, error)
 	DeleteSessionForUser(ctx context.Context, arg db.DeleteSessionForUserParams) (int64, error)
+	ListMessagesForUserSession(ctx context.Context, arg db.ListMessagesForUserSessionParams) ([]db.ListMessagesForUserSessionRow, error)
 }
 
 // Info 对应 backend/schemas/schemas.py:286 的 SessionInfo（response_model 会把它投影成这三个键）。
@@ -38,10 +40,26 @@ type Info struct {
 	MessageCount int32 `json:"message_count"`
 }
 
+// Message 对应 backend/schemas/schemas.py:211 的 MessageInfo：四个键恒在。
+//
+// RagTrace 用 json.RawMessage 而不是具体结构体：投影在 trace.go 里按 openapi 声明做完，
+// 这里只负责按 Python 的键序把它塞进响应。nil 会序列化成 `null`，正是"无追踪/不合法"的对外形状。
+type Message struct {
+	Type      string          `json:"type"`
+	Content   string          `json:"content"`
+	Timestamp string          `json:"timestamp"`
+	RagTrace  json.RawMessage `json:"rag_trace"`
+}
+
 // ListResponse 对应 SessionListResponse。空列表必须是 `[]` 而不是 `null`——
 // 前端 `sessions.map(...)` 对 null 会炸，而 Python 侧返回的一直是空数组。
 type ListResponse struct {
 	Sessions []Info `json:"sessions"`
+}
+
+// DetailResponse 对应 SessionMessagesResponse；同样禁止 null（`messages.map` 是前端的常态写法）。
+type DetailResponse struct {
+	Messages []Message `json:"messages"`
 }
 
 // DeleteResponse 对应 SessionDeleteResponse；message 那句是逐字照抄，不做 i18n。
@@ -80,6 +98,36 @@ func (s *Service) List(ctx context.Context, identity *auth.Identity) (*ListRespo
 		})
 	}
 	return &ListResponse{Sessions: items}, nil
+}
+
+// Detail 返回当前用户某个会话的消息，按写入顺序（chat_messages.id 升序，不是时间序）。
+//
+// "会话不存在"与"会话属于别人"都返回 200 + 空数组，而不是 404：这是 Python 侧
+// `backend/api/sessions.py:21` 的既有行为，前端按 `messages.length` 判空。改成 404 会多给
+// 一个"这个会话号存在"的信号，而当前这条接口本来就不做任何存在性判断——接管不换语义（设计审查 §8）。
+func (s *Service) Detail(ctx context.Context, identity *auth.Identity, sessionID string) (*DetailResponse, error) {
+	if s.Store == nil {
+		return nil, ErrStoreUnavailable
+	}
+	rows, err := s.Store.ListMessagesForUserSession(ctx, db.ListMessagesForUserSessionParams{
+		UserID:    identity.ID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("查询会话消息失败: %w", err)
+	}
+	items := make([]Message, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, Message{
+			Type:      row.MessageType,
+			Content:   row.Content,
+			Timestamp: isoFormat(row.Timestamp),
+			// 投影失败只让 rag_trace 变 null：已保存正文是用户资产，不能被一条历史追踪拖垮
+			// （与 schemas.py:225 的 wrap 校验器同一口径，台账 C34）。
+			RagTrace: projectTrace(row.RagTrace),
+		})
+	}
+	return &DetailResponse{Messages: items}, nil
 }
 
 // Delete 删除当前用户名下那个会话；第二个返回值是"真的删掉了行"，

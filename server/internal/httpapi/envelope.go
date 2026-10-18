@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -20,12 +21,22 @@ const (
 )
 
 // WriteJSON 输出响应体。编码失败只可能发生在连接已断时，记 debug 后忽略。
+//
+// 两处刻意的选择，都是为了"Go 与 Python 对同一份数据给出同一串字节"：
+//   - SetEscapeHTML(false)：Go 默认把 < > & 转成 \u00xx，而 Starlette 的 JSONResponse 是
+//     ensure_ascii=False 且不转义 HTML——正文里一个 `&` 就会让两侧字节不同（P1 逐字对拍要卡）；
+//   - 去掉 encoder 补的结尾换行：Starlette 不补，留着就是恒差一个 `\n`。
 func WriteJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(body); err != nil {
 		slog.Debug("响应编码失败", "error", err)
+		return
 	}
+	_, _ = w.Write(bytes.TrimRight(buf.Bytes(), "\n"))
 }
 
 // WriteError 输出 {"detail": detail}。detail 可以是字符串，也可以是结构化对象。

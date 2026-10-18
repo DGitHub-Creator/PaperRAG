@@ -9,7 +9,6 @@ import logging
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -41,7 +40,12 @@ from backend.core.exceptions import (
     request_validation_error_handler,
     unhandled_error_handler,
 )
-from backend.core.logging_config import request_trace_id, setup_root_logger
+from backend.core.logging_config import (
+    TRACE_ID_HEADER,
+    request_trace_id,
+    sanitize_trace_id,
+    setup_root_logger,
+)
 from backend.core.metrics import init_metrics, metrics_endpoint, metrics_middleware
 from backend.core.rate_limit import default_limits, key_source, limiter, storage_backend
 from backend.core.stats import record_request
@@ -151,11 +155,12 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def _trace_middleware(request: Request, call_next):
-        trace_id = request.headers.get("X-Trace-Id") or uuid4().hex
+        # 接受集合由契约声明（components.parameters.TraceId）：非法值不沿用、不回显（台账 C38）。
+        trace_id = sanitize_trace_id(request.headers.get(TRACE_ID_HEADER))
         token = request_trace_id.set(trace_id)
         try:
             response = await call_next(request)
-            response.headers["X-Trace-Id"] = trace_id
+            response.headers[TRACE_ID_HEADER] = trace_id
             return response
         finally:
             # 归还当前请求的上下文，线程池/下游任务继承独立副本。

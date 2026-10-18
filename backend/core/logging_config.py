@@ -14,10 +14,12 @@
 import json
 import logging
 import os
+import re
 import sys
 from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from uuid import uuid4
 
 # ── 日志格式 ──────────────────────────────────────────────────────
 CONSOLE_FORMAT = (
@@ -38,6 +40,26 @@ JSON_LOG_ENABLED = os.getenv("JSON_LOG", "false").lower() == "true"
 # ── 全局初始化标记 ────────────────────────────────────────────────
 _initialized = False
 request_trace_id: ContextVar[str] = ContextVar("request_trace_id", default="-")
+
+# ── 请求追踪号的接受集合（契约 components.parameters.TraceId，台账 C38）──────
+# 头名与这串字面量同 Go 的 server/internal/observability/trace.go:TraceIDHeader/TraceIDRule、
+# 契约 openapi.yaml 的 name/pattern 必须逐字节相同，由 scripts/check_contracts.py 三方核对。
+# 追踪号只用于关联日志：不参与认证/授权判定，也不能当幂等键或防重放凭据。
+TRACE_ID_HEADER = "X-Trace-Id"
+TRACE_ID_RULE = r"^[A-Za-z0-9._-]{1,128}$"
+_TRACE_ID_RE = re.compile(TRACE_ID_RULE)
+
+
+def sanitize_trace_id(inbound: str | None) -> str:
+    """入站追踪号合法就沿用，非法或缺失就新生成一个 32 位十六进制值。
+
+    用 fullmatch 而不是 match：Python 的 `$` 也允许匹配结尾换行之前的位置，
+    `match` 会把 "abc\\n" 判成合法值，而 Go 的 RE2 不会 —— 两侧接受集合一漂，
+    同一个请求在两端日志里就再也关联不起来。非法入站值不回显。
+    """
+    if inbound is not None and _TRACE_ID_RE.fullmatch(inbound):
+        return inbound
+    return uuid4().hex
 
 
 class _TraceFilter(logging.Filter):

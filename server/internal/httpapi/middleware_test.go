@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
 
 func TestLoggerPreservesStreamingFlush(t *testing.T) {
@@ -64,6 +66,40 @@ func TestLoggerPreservesConnectionUpgrade(t *testing.T) {
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("期望协议升级响应，得到 %v, %v", resp, err)
+	}
+}
+
+// TestTraceMiddlewareEnforcesTheContractedAcceptanceSet 钉的是边缘那一步：
+// 非法入站值不会被写回响应头，也不会被注入上游（台账 C38 的"不回显"口径）。
+func TestTraceMiddlewareEnforcesTheContractedAcceptanceSet(t *testing.T) {
+	carrier := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 把 context 里的值暴露出来：注入给 Python 的必须是清洗后的那一个。
+		_, _ = io.WriteString(w, observability.TraceID(r.Context()))
+	})
+	run := func(header string) (response string, seenHeader []string, contextID string) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+		if header != "" {
+			req.Header.Set("X-Trace-Id", header)
+		}
+		rec := httptest.NewRecorder()
+		Trace(carrier).ServeHTTP(rec, req)
+		return rec.Header().Get("X-Trace-Id"), rec.Header().Values("X-Trace-Id"), rec.Body.String()
+	}
+
+	if got, values, ctxID := run("legal-id_1.2"); got != "legal-id_1.2" || len(values) != 1 || ctxID != "legal-id_1.2" {
+		t.Errorf("合法值应原样沿用且单值，实得 %q / %v / ctx=%q", got, values, ctxID)
+	}
+	for _, bad := range []string{"has space", strings.Repeat("a", 129), "追踪", "a:b", `'q'`} {
+		got, values, ctxID := run(bad)
+		if len(values) != 1 {
+			t.Fatalf("响应头必须恒为单值，实得 %v", values)
+		}
+		if got == bad {
+			t.Errorf("%q 非法却被回显了", bad)
+		}
+		if got != ctxID {
+			t.Errorf("响应头 %q 与注入下游的 %q 不是同一个 id", got, ctxID)
+		}
 	}
 }
 

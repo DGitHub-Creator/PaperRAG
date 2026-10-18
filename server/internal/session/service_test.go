@@ -23,6 +23,10 @@ type fakeStore struct {
 	deleted    int64
 	deleteErr  error
 	deleteSeen db.DeleteSessionForUserParams
+
+	messages     []db.ListMessagesForUserSessionRow
+	messagesErr  error
+	messagesSeen db.ListMessagesForUserSessionParams
 }
 
 func (f *fakeStore) ListSessionInfosForUser(context.Context, int32) ([]db.ListSessionInfosForUserRow, error) {
@@ -32,6 +36,11 @@ func (f *fakeStore) ListSessionInfosForUser(context.Context, int32) ([]db.ListSe
 func (f *fakeStore) DeleteSessionForUser(_ context.Context, arg db.DeleteSessionForUserParams) (int64, error) {
 	f.deleteSeen = arg
 	return f.deleted, f.deleteErr
+}
+
+func (f *fakeStore) ListMessagesForUserSession(_ context.Context, arg db.ListMessagesForUserSessionParams) ([]db.ListMessagesForUserSessionRow, error) {
+	f.messagesSeen = arg
+	return f.messages, f.messagesErr
 }
 
 // fakeUsers 只需要满足 /me 那一条查询：令牌换身份靠的是 GetProfileByUsername。

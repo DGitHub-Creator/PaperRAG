@@ -11,13 +11,12 @@ import (
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/observability"
 )
 
-// Trace 透传上游的 X-Trace-Id，没有就新生成一个，并写回响应头供前端排查。
+// Trace 按契约 `components.parameters.TraceId` 决定本次请求的追踪号：入站合法就沿用，
+// 非法或缺失就新生成，然后写回响应头供前端排查，并经 upstream.go 注入给 Python。
+// 这里只 Set 不 Append：多值入站头取第一个，响应头恒为单值（台账 C38 的边缘单点权威）。
 func Trace(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get(observability.TraceIDHeader)
-		if id == "" {
-			id = observability.NewTraceID()
-		}
+		id := observability.SanitizeTraceID(r.Header.Get(observability.TraceIDHeader))
 		w.Header().Set(observability.TraceIDHeader, id)
 		next.ServeHTTP(w, r.WithContext(observability.WithTraceID(r.Context(), id)))
 	})

@@ -125,9 +125,7 @@ func mountAuthRoutes(router *chi.Mux, cfg config.Config, pool *pgxpool.Pool, poo
 	return svc
 }
 
-// mountSessionRoutes 挂会话面（P1-1 接管的第一条业务读接口：列表与删除）。
-// 消息详情 `GET /sessions/{session_id}` 还没搬，见下方注释与台账 C34——
-// 那条返回的 rag_trace 要过 Python 的 RagTrace 投影，不是"照着读一张表"能了事的。
+// mountSessionRoutes 挂会话面（P1-1 接管的业务读接口：列表、详情、删除）。
 //
 // 显式路由优先于 NewRouter 里那条 `/api/*` 通配转发（chi 的 trie 按具体度匹配），
 // 所以接管一条就少转发一条，不用动反代本身。
@@ -138,6 +136,7 @@ func mountSessionRoutes(router *chi.Mux, authSvc *auth.Service, pool *pgxpool.Po
 		Logger: logger,
 	}
 	router.Get("/api/v1/sessions", rate.Default(session.ListHandler(svc)))
+	router.Get("/api/v1/sessions/{session_id}", rate.Default(session.DetailHandler(svc)))
 	router.Delete("/api/v1/sessions/{session_id}", rate.Default(session.DeleteHandler(svc)))
 }
 
@@ -158,6 +157,10 @@ func (u unavailableSessionStore) ListSessionInfosForUser(context.Context, int32)
 
 func (u unavailableSessionStore) DeleteSessionForUser(context.Context, db.DeleteSessionForUserParams) (int64, error) {
 	return 0, errors.New(u.reason)
+}
+
+func (u unavailableSessionStore) ListMessagesForUserSession(context.Context, db.ListMessagesForUserSessionParams) ([]db.ListMessagesForUserSessionRow, error) {
+	return nil, errors.New(u.reason)
 }
 
 // upstreamProxy 建到 Python 上游的反向代理（14 §19 铁律 2）。地址非法或为空时返回 nil，

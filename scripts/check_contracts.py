@@ -2,7 +2,7 @@
 
 三件事：
   1. 契约内部自洽：`$ref` 全部可解析、operationId 唯一、错误码表与 JSON Schema 枚举一致、
-     表写入矩阵不出现无过渡期的双写；
+     表写入矩阵不出现无过渡期的双写、rag_trace 投影面在 openapi/Python/Go 三处逐字段一致；
   2. 契约与前端实调集合一致：从 frontend/src 现场抽取，不维护第二份清单
      ——清单会腐烂，代码不会；
   3. 不伪装通过：任何一条不满足即 exit 1，并打印可定位的条目。
@@ -17,6 +17,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import get_args, get_origin
 
 try:
     import yaml
@@ -347,6 +348,308 @@ def check_acl(errors: list[str]) -> None:
         errors.append(f"Python 可写表超过 2 张：{'、'.join(python_writes)}")
 
 
+# ── rag_trace 投影面的三方一致（P1-1 会话详情接管，台账 C38 的同类问题）────────────
+#
+# 为什么单独一条机检：`chat_messages.rag_trace` 有 39 个声明字段，Go 原生接管后它就是
+# 第二个实现方。字段名、顺序、种类只要有一处漂开，浏览器就会看到两种形状，而漂开是**静默**的
+# ——读侧不报错，只是键少了或名字变了。这类"看不见的形状"靠人对账守不住，必须有机器天天核。
+#
+# 三方 = openapi.yaml 的 properties（权威声明）
+#       + backend/schemas/schemas.py 的 pydantic 模型（当前写方与读方）
+#       + server/internal/session/trace.go 的字段表（Go 读侧投影）。
+# 消息信封那一层（type/content/timestamp/rag_trace 四个键）不在这里查：
+# 它只有四个键且两侧都是手写结构体，漂开会直接让 tests/chain/test_go_read_session_detail.py 红。
+
+GO_TRACE_FILE = ROOT / "server" / "internal" / "session" / "trace.go"
+
+GO_SPEC_VAR_RE = re.compile(r"^var (\w+) = &traceSpec\{")
+GO_SPEC_NAME_RE = re.compile(r'^\s*name: "([A-Za-z]+)",')
+GO_FIELD_RE = re.compile(r'^\s*\{"([a-z0-9_]+)", (kind\w+), (true|false), (nil|\w+)\},')
+GO_KINDS = {
+    "kindString": "string",
+    "kindBool": "bool",
+    "kindInt": "int",
+    "kindFloat": "float",
+    "kindStrInt": "str|int",
+    "kindObject": "object",
+    "kindArray": "array",
+    "kindMap": "map",
+}
+
+TRACE_ROOT_MODEL = "RagTrace"
+
+
+def parse_go_trace_specs(text: str) -> tuple[dict[str, list[tuple]], list[str]]:
+    """从 Go 的字段表抽 `schema 名 → [(字段, 种类, 必需, 嵌套 schema)]`。
+
+    按行解析而不是 import：Go 侧没有可导入的元数据，而这份表就是它的声明本身。
+    表写法有约定（positional 字面量、一行一个字段），改了写法这里会直接报"抽不到字段"。
+    """
+    problems: list[str] = []
+    specs: dict[str, dict] = {}
+    current = None
+    for line in text.splitlines():
+        var = GO_SPEC_VAR_RE.match(line)
+        if var:
+            current = var.group(1)
+            specs[current] = {"schema": None, "fields": []}
+            continue
+        if current is None:
+            continue
+        name = GO_SPEC_NAME_RE.match(line)
+        if name and specs[current]["schema"] is None:
+            specs[current]["schema"] = name.group(1)
+            continue
+        field = GO_FIELD_RE.match(line)
+        if not field:
+            continue
+        fname, kind, required, elem = field.groups()
+        if kind not in GO_KINDS:
+            problems.append(f"trace.go 里 {fname} 用了未知字段种类 {kind}，GO_KINDS 没登记它")
+            continue
+        specs[current]["fields"].append((fname, GO_KINDS[kind], required == "true", None if elem == "nil" else elem))
+    for var, spec in specs.items():
+        if spec["schema"] is None:
+            problems.append(f"trace.go 的 {var} 没有 name: 行，三方核对认不出它是哪个 schema")
+        if not spec["fields"]:
+            problems.append(f"trace.go 的 {var} 抽不到任何字段，字段表写法变了？")
+    return specs, problems
+
+
+def go_specs_by_schema(specs: dict[str, dict]) -> dict[str, list[tuple]]:
+    """把 `var 名 → 表` 换成 `schema 名 → 表`，并把嵌套引用从 var 名解析成 schema 名。"""
+    var_to_schema = {var: spec["schema"] for var, spec in specs.items()}
+    out: dict[str, list[tuple]] = {}
+    for var, spec in specs.items():
+        fields = []
+        for fname, kind, required, elem in spec["fields"]:
+            if elem is None:
+                fields.append((fname, kind, required, None))
+                continue
+            if elem not in var_to_schema:
+                fields.append((fname, kind, required, f"未定义的嵌套表 {elem}"))
+                continue
+            fields.append((fname, kind, required, var_to_schema[elem]))
+        out[spec["schema"]] = fields
+    return out
+
+
+def python_trace_specs() -> dict[str, list[tuple]]:
+    """从 pydantic 模型现场抽同一份表（含被嵌套引用的模型，顺着注释走）。"""
+    from backend.schemas.schemas import RagTrace
+
+    out: dict[str, list[tuple]] = {}
+    queue = [RagTrace]
+    while queue:
+        model = queue.pop(0)
+        if model.__name__ in out:
+            continue
+        fields = []
+        for fname, info in model.model_fields.items():
+            kind, nested = _annotation_kind(info.annotation)
+            if nested is not None:
+                if isinstance(nested, type) and hasattr(nested, "model_fields"):
+                    queue.append(nested)
+                else:
+                    nested = None
+            fields.append((fname, kind, info.is_required(), nested.__name__ if nested is not None else None))
+        out[model.__name__] = fields
+    return out
+
+
+def _annotation_kind(ann):
+    args = get_args(ann)
+    if args and any(a is not type(None) for a in args):
+        non_null = [a for a in args if a is not type(None)]
+        if len(non_null) > 1:
+            kinds = {a for a in non_null}
+            if kinds == {str, int}:
+                return "str|int", None
+            return f"union{sorted(x.__name__ for x in kinds)}", None
+        ann = non_null[0]
+        args = get_args(ann)
+    origin = get_origin(ann)
+    if origin in (list, set, tuple):
+        elem = args[0] if args else None
+        return "array", elem
+    if origin is dict:
+        return "map", args[1] if len(args) > 1 else None
+    if ann is bool:
+        return "bool", None
+    if ann is int:
+        return "int", None
+    if ann is float:
+        return "float", None
+    if ann is str:
+        return "string", None
+    if isinstance(ann, type) and hasattr(ann, "model_fields"):
+        return "object", ann
+    return f"未知注解 {ann}", None
+
+
+def contract_trace_specs(doc: dict) -> dict[str, list[tuple]]:
+    """openapi 里的声明：键序就是 properties 的书写顺序（PyYAML 保序）。
+
+    找不到的 schema **不进结果**——少一侧就是"这一侧没声明"，比塞一张空表更容易指错方向：
+    空表会让报文字说着"字段集不符"，而真相是整块 schema 被删了。
+    """
+    schemas = (doc.get("components") or {}).get("schemas") or {}
+    out: dict[str, list[tuple]] = {}
+    visited: set[str] = set()
+    queue = [TRACE_ROOT_MODEL]
+    while queue:
+        name = queue.pop(0)
+        if name in visited:
+            continue
+        visited.add(name)
+        node = schemas.get(name)
+        if not isinstance(node, dict):
+            continue
+        required = set(node.get("required") or [])
+        fields = []
+        for key, prop in (node.get("properties") or {}).items():
+            kind, ref = _openapi_kind(prop if isinstance(prop, dict) else {})
+            if ref:
+                queue.append(ref)
+            fields.append((key, kind, key in required, ref))
+        out[name] = fields
+    return out
+
+
+def _ref_name(node) -> str | None:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            return ref.rsplit("/", 1)[-1]
+    return None
+
+
+def _openapi_kind(prop: dict) -> tuple[str, str | None]:
+    branches = prop.get("oneOf") or prop.get("anyOf")
+    if isinstance(branches, list) and branches:
+        types = sorted({b.get("type") for b in branches if isinstance(b, dict)})
+        if types == ["integer", "string"]:
+            return "str|int", None
+        return f"union{types}", None
+    kind = prop.get("type")
+    if kind == "boolean":
+        return "bool", None
+    if kind == "integer":
+        return "int", None
+    if kind == "number":
+        return "float", None
+    if kind == "string":
+        return "string", None
+    if kind == "array":
+        return "array", _ref_name(prop.get("items"))
+    if kind == "object":
+        return "map", _ref_name(prop.get("additionalProperties"))
+    return f"type:{kind}", None
+
+
+def check_trace_projection(errors: list[str], doc: dict) -> None:
+    """三方逐字段核对：名字、顺序、必需性、种类、嵌套指向。"""
+    specs, problems = parse_go_trace_specs(GO_TRACE_FILE.read_text(encoding="utf-8"))
+    errors.extend(problems)
+    if problems:
+        return
+    sides = {
+        "契约": contract_trace_specs(doc),
+        "Python": python_trace_specs(),
+        "Go": go_specs_by_schema(specs),
+    }
+    names = sorted(set().union(*(set(side) for side in sides.values())))
+    if TRACE_ROOT_MODEL not in names:
+        errors.append(f"三方核对找不到 {TRACE_ROOT_MODEL} 的声明，检查是否被改名")
+        return
+    for name in names:
+        per_side = {label: side.get(name) for label, side in sides.items()}
+        missing = [label for label, value in per_side.items() if value is None]
+        if missing:
+            errors.append(f"{name} 在 {'、'.join(missing)} 侧没有声明（三方必须都有，少一侧就是第二套真相）")
+            continue
+        fields = {label: [f[0] for f in value] for label, value in per_side.items()}
+        for other in ("Python", "Go"):
+            if fields["契约"] != fields[other]:
+                errors.append(
+                    f"{name} 的字段集/顺序与契约不符：{other} 侧缺 {sorted(set(fields['契约']) - set(fields[other]))}"
+                    f"，多 {sorted(set(fields[other]) - set(fields['契约']))}（顺序不同也算不符）"
+                )
+        for index, (fname, kind, required, elem) in enumerate(per_side["契约"]):
+            for label in ("Python", "Go"):
+                other = per_side[label]
+                if index >= len(other) or other[index][0] != fname:
+                    continue  # 顺序已经单独报过，这里不再重复
+                _, okind, orequired, oelem = other[index]
+                if (okind, orequired, oelem) != (kind, required, elem):
+                    errors.append(
+                        f"{name}.{fname} 三方不一致：契约=({kind}, required={required}, 嵌套={elem}) "
+                        f"{label}=({okind}, required={orequired}, 嵌套={oelem})"
+                    )
+
+
+# ── 追踪头契约的三方一致（台账 C38 的另一半：头名与接受集合）──────────────────
+#
+# 为什么也要机检：Go 与 Python 各有一份 `X-Trace-Id` 字面量和一份接受集合的写法，
+# 三处（契约 / Go / Python）里任何一处改了边界而另两处没跟上，表现是**日志关联悄悄断掉**：
+# 请求在 Go 侧被换成新 id，Python 又换成另一个，排障时两边看不出是同一个请求。
+
+GO_OBSERVABILITY_FILE = ROOT / "server" / "internal" / "observability" / "trace.go"
+PY_LOGGING_FILE = ROOT / "backend" / "core" / "logging_config.py"
+
+GO_CONST_RE = r'const\s+{name}\s*=\s*`(?P<raw>[^`]*)`|const\s+{name}\s*=\s*"(?P<quo>[^"]*)"'
+PY_CONST_RE = r'^{name}\s*=\s*r?"(?P<val>[^"]*)"'
+
+TRACE_PARAM_NAME = "TraceId"
+
+
+def _go_const(text: str, name: str, label: str, errors: list[str]) -> str | None:
+    m = re.search(GO_CONST_RE.format(name=re.escape(name)), text, re.M)
+    if not m:
+        errors.append(f"{label} 里找不到 {name} 常量，三方核对无法判定")
+        return None
+    return m.group("raw") if m.group("raw") is not None else m.group("quo")
+
+
+def _py_const(text: str, name: str, label: str, errors: list[str]) -> str | None:
+    m = re.search(PY_CONST_RE.format(name=re.escape(name)), text, re.M)
+    if not m:
+        errors.append(f"{label} 里找不到 {name} 常量，三方核对无法判定")
+        return None
+    return m.group("val")
+
+
+def check_trace_header(errors: list[str], doc: dict) -> None:
+    param = ((doc.get("components") or {}).get("parameters") or {}).get(TRACE_PARAM_NAME)
+    if not isinstance(param, dict):
+        errors.append(f"契约的 components.parameters 缺 {TRACE_PARAM_NAME}：追踪头又变回代码里的私下约定了")
+        return
+    name = param.get("name")
+    schema = param.get("schema") or {}
+    pattern = schema.get("pattern")
+    bounds = (schema.get("minLength"), schema.get("maxLength"))
+    if param.get("in") != "header" or not name or not pattern:
+        errors.append(f"{TRACE_PARAM_NAME} 必须是 in=header 且带 name/pattern，实得 in={param.get('in')} name={name}")
+        return
+    if bounds != (1, 128):
+        errors.append(f"{TRACE_PARAM_NAME} 的 minLength/maxLength 应与 pattern 的 {{1,128}} 同一条口径，实得 {bounds}")
+
+    go_header = _go_const(GO_OBSERVABILITY_FILE.read_text(encoding="utf-8"), "TraceIDHeader", "trace.go", errors)
+    go_rule = _go_const(GO_OBSERVABILITY_FILE.read_text(encoding="utf-8"), "TraceIDRule", "trace.go", errors)
+    py_text = PY_LOGGING_FILE.read_text(encoding="utf-8")
+    py_header = _py_const(py_text, "TRACE_ID_HEADER", "logging_config.py", errors)
+    py_rule = _py_const(py_text, "TRACE_ID_RULE", "logging_config.py", errors)
+
+    for label, value in (("Go", go_header), ("Python", py_header)):
+        if value is not None and value != name:
+            errors.append(f"追踪头头名三方不一致：契约={name} {label}={value}")
+    for label, value in (("Go", go_rule), ("Python", py_rule)):
+        if value is not None and value != pattern:
+            errors.append(f"追踪头接受集合三方不一致：契约 pattern={pattern} {label}={value}")
+    if go_rule and py_rule and go_rule != py_rule:
+        errors.append(f"Go 与 Python 的追踪头规则互不相同：{go_rule} vs {py_rule}")
+
+
 def check_surface(errors: list[str], surface: set[tuple[str, str]]) -> None:
     if not surface:
         return
@@ -372,10 +675,12 @@ def check_surface(errors: list[str], surface: set[tuple[str, str]]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    surface, _ = check_openapi(errors)
+    surface, doc = check_openapi(errors)
     schema = check_schema(errors)
     check_error_codes(errors, schema)
     check_acl(errors)
+    check_trace_projection(errors, doc)
+    check_trace_header(errors, doc)
     check_surface(errors, surface)
 
     if errors:

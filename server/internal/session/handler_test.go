@@ -14,11 +14,12 @@ import (
 	"github.com/DGitHub-Creator/ResearchPilot/server/internal/db"
 )
 
-// newRouter 把两条路由挂进真的 chi 路由器：DeleteHandler 靠 chi.URLParam 取会话号，
+// newRouter 把三条路由挂进真的 chi 路由器：DeleteHandler 靠 chi.URLParam 取会话号，
 // 不经过路由器直接调 handler 的话，测出来的"通过"只证明了我自己那半截。
 func newRouter(svc *Service) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/api/v1/sessions", ListHandler(svc))
+	r.Get("/api/v1/sessions/{session_id}", DetailHandler(svc))
 	r.Delete("/api/v1/sessions/{session_id}", DeleteHandler(svc))
 	return r
 }

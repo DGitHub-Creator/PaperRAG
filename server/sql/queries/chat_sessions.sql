@@ -23,3 +23,20 @@ ORDER BY cs.updated_at DESC;
 -- chat_messages 由 ON DELETE CASCADE 带走（000001 基线里那条外键就是这个用途）。
 DELETE FROM chat_sessions
 WHERE user_id = $1 AND session_id = $2;
+
+-- name: ListMessagesForUserSession :many
+-- 形状与语义逐条对齐 backend/services/conversation_storage.py:63 的 get_session_messages：
+-- 同样四列、同样按 ChatMessage.id 升序（写入顺序，不是时间序——同一轮里 human 与 ai 的
+-- timestamp 可以完全相同，按时间排会让问答先后颠倒）。
+-- 这里按 cs.user_id 过滤而不是 join users：Python 那边是 username→User.id 的 join，
+-- 而 Go 的 identity 已经是 users.id（auth.RequireIdentity 从令牌里解出来的就是这一行），
+-- 少一次 join 得到的是同一批行。(user_id, session_id) 正撞在 uq_user_session 上。
+-- 别人的会话与不存在的会话同样回 0 行 → 对外都是 200 + {"messages": []}，不给归属探测留缝。
+SELECT cm.message_type,
+       cm.content,
+       cm.timestamp,
+       cm.rag_trace
+FROM chat_messages cm
+JOIN chat_sessions cs ON cs.id = cm.session_ref_id
+WHERE cs.user_id = $1 AND cs.session_id = $2
+ORDER BY cm.id;

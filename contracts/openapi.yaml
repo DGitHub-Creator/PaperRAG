@@ -6,10 +6,12 @@
 # 且 P0-5 的跨语言测试只需比对结构与字段，不需要和服务器的自动导出做字节级 diff。
 #
 # 契约哲学（原则②：完成=可验证行为）：
-#   只锁「前端确实读取的字段」——它们必须存在、类型必须稳定；
-#   其余字段允许 Python 侧透传（additionalProperties 不设 false）。
-#   理由：01 §6.3 记录的老坑是给 rag_trace 加了字段白名单导致两种形状漂移，
-#   把 41 个字段全抄进 YAML 只会让这份契约在第一次加字段时就开始腐烂。
+#   只锁「前端确实读取的字段」——它们必须存在、类型必须稳定；其余字段允许 Python 侧透传。
+#   2026-10-17 更新（P1 设计审查 §8 / 台账 C38）：一旦同一形状有**第二个实现方**，
+#   "只锁子集"就不再够用——Go 原生接管会话详情读时，未声明的字段无处可查，只能凭空再造一套真相。
+#   因此 rag_trace 的投影面（RagTrace 及其四个嵌套模型）现在**全量声明**，
+#   由 `scripts/check_contracts.py` 三方核对 openapi ↔ Python 模型 ↔ Go 字段表；
+#   其余仍无人读取的透传字段不在全量之列。
 
 openapi: 3.0.3
 info:
@@ -20,6 +22,17 @@ info:
     本契约覆盖 16 条前端在用接口 + 5 条探针接口（共 21 个操作）；其余 12 条 As-Is
     接口无人调用，处置见 03-gap-analysis §5，**不在本契约内**——Go 不实现它们，
     直到 P1 有需求。
+
+    请求追踪头 `X-Trace-Id`（定义见 `components.parameters.TraceId`，台账 C38）：
+    它对**每一个** operation 都成立，因此不逐条重复声明——重复 21 遍就是 21 个会各自腐烂的副本。
+    口径：入口按 `TraceId` 的形状校验入站值，合法则沿用、非法或缺失则生成新值，
+    并把最终值写回响应头；生成形态两侧保留差异（Go 16 位十六进制、Python 直连 32 位），
+    只统一**接受集合**不统一**长度**。该头只用于关联日志，**不参与认证或授权判定**，
+    也不能当作防重放或幂等键；非法值一律不回显。
+    三方一致由 `scripts/check_contracts.py` 核对：本节的 pattern/minLength/maxLength
+    ↔ Go 的 `observability.TraceIDRule` ↔ Python 的 `logging_config.TRACE_ID_RULE`。
+    （不在公开契约里点名实现文件的目录路径：本文件有条守卫要求服务内部面的路径前缀
+    不得出现在这里，源码路径的字面量会误伤它。）
   x-decisions:
     # 2026-10-09 拍板，K1/K4 已落进代码（backend/core/exceptions.py）与本草稿。
     # 留这份记录是为了让"为什么 429 不是 slowapi 的形状"有据可查，不是待办。
@@ -216,23 +229,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/sessions/{sessionId}:
+  /api/v1/sessions/{session_id}:
     get:
       tags: [sessions]
       operationId: getSession
+      description: |
+        **没有 404 这一条**：`backend/api/sessions.py:21` 与 Go 接管后的实现同样对
+        "会话不存在"和"会话属于别人"返回 200 + `{"messages": []}`——这条读接口不做存在性判断，
+        改成 404 会多送出一个"这个会话号存在"的信号。鉴权仍然先行：无令牌一律 401。
+        存储失败时两侧都给 detail 信封的 500（文案与错误码表在 `contracts/error-codes.md`，
+        全契约的 5xx 一律不在 operation 里重复声明，本节也不开这个头）。
       parameters:
         - $ref: "#/components/parameters/SessionId"
       responses:
         "200":
-          description: 成功
+          description: '成功；空会话、别人的会话、不存在的会话都是 `{"messages": []}`'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionMessagesResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
     delete:
       tags: [sessions]
       operationId: deleteSession
@@ -336,7 +353,7 @@ paths:
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
 
-  /api/v1/documents/upload/jobs/{jobId}:
+  /api/v1/documents/upload/jobs/{job_id}:
     get:
       tags: [documents]
       operationId: getUploadJob
@@ -381,7 +398,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /api/v1/documents/delete/jobs/{jobId}:
+  /api/v1/documents/delete/jobs/{job_id}:
     get:
       tags: [documents]
       operationId: getDeleteJob
@@ -522,17 +539,31 @@ components:
 
   parameters:
     SessionId:
-      name: sessionId
+      name: session_id
       in: path
       required: true
       schema:
         type: string
     JobId:
-      name: jobId
+      name: job_id
       in: path
       required: true
       schema:
         type: string
+    TraceId:
+      # 请求追踪头（设计审查 §1/§8，台账 C38）。对每个 operation 成立，见 info.description。
+      name: X-Trace-Id
+      in: header
+      required: false
+      description: |
+        1–128 个 ASCII 字母、数字、`.`、`_`、`-`。合法则沿用，非法或缺失由入口生成新值；
+        响应头里的值一定是最终采用的那个，非法入站值**不回显**。只用于关联日志，
+        不参与认证/授权，也不能当幂等键或防重放凭据。
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._-]{1,128}$"
 
   responses:
     BadRequest:
@@ -720,19 +751,256 @@ components:
           nullable: true
           default: default_session
 
+    RetrievedChunk:
+      type: object
+      description: |
+        检索到的单个分块。由 backend/schemas/schemas.py:56 的 RetrievedChunk 声明并投影；
+        字段名与顺序与 Python 侧逐字一致（`scripts/check_contracts.py` 三方核对 openapi/Python/Go）。
+      required: [filename]
+      properties:
+        filename:
+          type: string
+        page_number:
+          oneOf:
+            - type: string
+            - type: integer
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        score:
+          type: number
+          nullable: true
+        rrf_rank:
+          type: integer
+          nullable: true
+        rerank_score:
+          type: number
+          nullable: true
+        parent_idx:
+          type: integer
+          nullable: true
+        child_idx:
+          type: integer
+          nullable: true
+        has_theorem_in_parent:
+          type: boolean
+          nullable: true
+        has_proof_in_parent:
+          type: boolean
+          nullable: true
+        chapter_path:
+          type: string
+          nullable: true
+
+    SourceReference:
+      type: object
+      description: RAG 追踪与引用共用的来源标签。声明方 backend/schemas/schemas.py:85。
+      properties:
+        filename:
+          type: string
+          nullable: true
+        page:
+          oneOf:
+            - type: string
+            - type: integer
+          nullable: true
+        chunk_id:
+          type: string
+          nullable: true
+        source_label:
+          type: string
+          nullable: true
+
+    CitationInfo:
+      type: object
+      description: |
+        一条引用的标签校验结果。supported=true 只表示 `[Source N]` 标签存在并被解析，
+        **不表示该陈述被证据语义接地**（D3 口径：P1 期间引用一律为非证据级）。
+        声明方 backend/schemas/schemas.py:94。
+      properties:
+        claim:
+          type: string
+          nullable: true
+        source_label:
+          type: string
+          nullable: true
+        filename:
+          type: string
+          nullable: true
+        page:
+          oneOf:
+            - type: string
+            - type: integer
+          nullable: true
+        chunk_id:
+          type: string
+          nullable: true
+        supported:
+          type: boolean
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    UnsupportedClaim:
+      type: object
+      description: 无法落到检索证据上的陈述。声明方 backend/schemas/schemas.py:106。
+      required: [claim]
+      properties:
+        claim:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        suggested_action:
+          type: string
+          nullable: true
+
     RagTrace:
       type: object
       description: |
-        由 backend/schemas/schemas.py 的 RagTrace 声明并投影，不保证未知字段透传。
-        新写入在保存前校验，REST、SSE 与持久化使用相同已声明字段。
+        由 backend/schemas/schemas.py:114 的 RagTrace 声明并投影，**不保证未知字段透传**：
+        未声明的键在读取时被丢弃，声明了但历史行里没有的键输出 null（见下方"读取投影"）。
+        新写入在保存前校验（`conversation_storage.py:22` 的 `RagTrace.model_validate`），
+        落库用 `model_dump(exclude_none=True)`，REST 响应用**全量键**——两者不对称是有意的。
         历史消息的追踪无法解析时 rag_trace 返回 null、正文保留并记录警告；不伪造检索证据。
         citations 保存 supported=true/false 的引用标签校验结果；标签存在不等同于语义接地。
+
+        读取投影（Go 与 Python 必须逐字一致，判据见 tests/chain/test_go_read_session_detail.py）：
+          1. tool_used / tool_name 缺失或类型不符 → **整条** rag_trace 为 null，不是逐字段降级；
+          2. 未声明的键丢弃（两侧都是默认 extra=ignore）；
+          3. 声明了但缺失的可选键输出 null，所以响应里的键集合恒为本节列出的全部字段；
+          4. 嵌套元素里任何一条不满足 1–3 同样使**整条** rag_trace 为 null。
       required: [tool_used, tool_name]
       properties:
         tool_used:
           type: boolean
         tool_name:
           type: string
+        query:
+          type: string
+          nullable: true
+        expanded_query:
+          type: string
+          nullable: true
+        step_back_question:
+          type: string
+          nullable: true
+        step_back_answer:
+          type: string
+          nullable: true
+        expansion_type:
+          type: string
+          nullable: true
+        hypothetical_doc:
+          type: string
+          nullable: true
+        retrieval_stage:
+          type: string
+          nullable: true
+        grade_score:
+          type: string
+          nullable: true
+        grade_route:
+          type: string
+          nullable: true
+        rewrite_needed:
+          type: boolean
+          nullable: true
+        rewrite_strategy:
+          type: string
+          nullable: true
+        rewrite_query:
+          type: string
+          nullable: true
+        rerank_enabled:
+          type: boolean
+          nullable: true
+        rerank_applied:
+          type: boolean
+          nullable: true
+        rerank_model:
+          type: string
+          nullable: true
+        rerank_endpoint:
+          type: string
+          nullable: true
+        rerank_error:
+          type: string
+          nullable: true
+        retrieval_mode:
+          type: string
+          nullable: true
+        candidate_k:
+          type: integer
+          nullable: true
+        leaf_retrieve_level:
+          type: integer
+          nullable: true
+        auto_merge_enabled:
+          type: boolean
+          nullable: true
+        auto_merge_applied:
+          type: boolean
+          nullable: true
+        auto_merge_threshold:
+          type: integer
+          nullable: true
+        auto_merge_replaced_chunks:
+          type: integer
+          nullable: true
+        auto_merge_steps:
+          type: integer
+          nullable: true
+        context_expansion_enabled:
+          type: boolean
+          nullable: true
+        context_expansion_applied:
+          type: boolean
+          nullable: true
+        expand_prev_parent:
+          type: integer
+          nullable: true
+        expand_next_parent:
+          type: integer
+          nullable: true
+        expand_max_chunks:
+          type: integer
+          nullable: true
+        expanded_chunk_count:
+          type: integer
+          nullable: true
+        retrieved_chunks:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/RetrievedChunk"
+        initial_retrieved_chunks:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/RetrievedChunk"
+        expanded_retrieved_chunks:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/RetrievedChunk"
+        source_map:
+          type: object
+          nullable: true
+          additionalProperties:
+            $ref: "#/components/schemas/SourceReference"
+        citations:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/CitationInfo"
+        unsupported_claims:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/UnsupportedClaim"
 
     StreamEvent:
       description: |

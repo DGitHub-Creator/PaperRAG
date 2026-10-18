@@ -30,6 +30,25 @@ func ListHandler(svc *Service) http.HandlerFunc {
 	}
 }
 
+// DetailHandler 处理 GET /api/v1/sessions/{session_id}。
+//
+// 鉴权与列表同序：先验令牌再解路径参数，没登录时不会因为 URL 里带了别人的会话号而先给出
+// 任何可区分信号（这里连 404 都不给，见 Service.Detail 的注释）。
+func DetailHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		identity, ok := auth.RequireIdentity(svc.Auth, w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.Detail(r.Context(), identity, chi.URLParam(r, "session_id"))
+		if err != nil {
+			writeServiceError(svc, w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, out)
+	}
+}
+
 // DeleteHandler 处理 DELETE /api/v1/sessions/{session_id}。
 //
 // 先验令牌再取路径参数：没登录时不该因为"URL 里带了个别人的会话号"而先回 404，
