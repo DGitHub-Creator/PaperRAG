@@ -64,12 +64,17 @@ PROGRESS = json.loads((ROOT / "docs" / "progress.json").read_text(encoding="utf-
 
 
 def progress_with(card: str, status: str) -> dict:
+    """取真实 progress.json 的形状，但把 P1 全部卡**先归到 pending**，再只改点名的那一张。
+
+    原先只覆盖点名那张，其余保持真实状态——于是这张卡今天转 in_progress，
+    "草稿期不该被拦"那条负向用例就会因为**别的时间**而红。夹具依赖易变的真实状态
+    等于把单测变成进度表：门禁没错，用例的前提错了。
+    """
     data = json.loads(json.dumps(PROGRESS))
     for phase in data["phases"]:
         if phase["id"] == "P1":
             for task in phase["tasks"]:
-                if task["id"] == card:
-                    task["status"] = status
+                task["status"] = "pending" if task["id"] != card else status
     return data
 
 
