@@ -19,7 +19,7 @@
 | 适用卡 | P1-1, P1-2, P1-3, P1-4, P1-7 |
 | 依据契约 | `contracts/openapi.yaml`, `contracts/error-codes.md`, `contracts/ai-execution.schema.json`, `contracts/table-acl.md`, `contracts/route-ownership.md` |
 | 关联决策 | D3（已关闭）、D4（保留 P1 → P2）、D6（使用审计已完成，目标归属与生命周期待定）、K1/K3/K4（`openapi.yaml` 的 `info.x-decisions`） |
-| 关联台账 | C33, C34, C35, C36, C37, C38（验收条件见 `docs/plans/12-known-code-issues.md` 的当前条目） |
+| 关联台账 | C33, C34, C35, C36, C37, C38, C39, C40（C39 监听地址与 C40 的 `/documents` 接管前置是执行期新登记，验收条件见 `docs/plans/12-known-code-issues.md` 的当前条目；登记不改变本审查五维结论与适用卡范围） |
 | 不做什么 | 不新增退出标准（**不加 Y7**）、不改工时与分母、不改 P1/P2 依赖、不为未来建无真实需求的抽象 |
 
 ---
@@ -35,7 +35,7 @@
 | C33 | Go 已实现 Redis 限流并挂载认证/会话路由；已有第 21 次登录 429、伪造代理头无效的历史验收 | 已修复，不是取消任务，也不是新增限流待办 |
 | C34 | 新追踪写前校验并投影；坏历史追踪置 null，正文保留并告警 | 详情读取的投影技术阻塞已消除 |
 | C35 | Python 会话缓存已移除，直接读取 PG | 不再要求新增缓存失效机制；并发验收仍按任务要求执行 |
-| 会话详情 GET | 仍由 Go 反代 Python，归属为 proxy | G01 批准且环境就绪后，可作为 G02 的首个接管切片；不是现在已原生接管 |
+| 会话详情 GET | 2026-10-18 起由 Go 原生读取（路由 `server/cmd/api/main.go:139`，投影 `server/internal/session/trace.go`），归属表已改 `go`；Python 那条按 P1-1 作**对拍保留**，删掉它才算卡片收口 | 逐字判据 `tests/chain/test_go_read_session_detail.py`；投影面三方核对 `scripts/check_contracts.py` |
 
 上述实现核对入口为 `server/internal/httpapi/ratelimit.go`、
 `backend/services/conversation_storage.py`、`backend/schemas/schemas.py`；

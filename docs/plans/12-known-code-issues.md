@@ -18,19 +18,31 @@
 
 | C36 | 注册 role、Unicode 密码、有效/错误邀请码、重复用户与非法入参已真实对拍 | 证据见 test_go_auth_cross_validation.py；旧 Python 认证面仍按阶段接管，不能仅凭本批对拍删除 |
 | C37 | 局部 AIExecution 已持久化首次输入并支持崩溃后重放、互斥与新租约 fencing | Go 全局任务投递、周期调度与预算记账尚待 P1/P3；不以局部恢复替代全局能力 |
-| C38 | `X-Trace-Id` 只在代码里约定，**契约里一次都没出现**（`grep -c X-Trace-Id contracts/openapi.yaml` = 0），
+| C40 | P1 卡片标题里的 `/documents` 两条面**不能在 P1 用 Go 原生接管**：
+  `GET /api/v1/documents` 的数据面是 **Milvus 全集合扫描**（`backend/api/documents.py:102-114` 的
+  `query_all(output_fields=["filename","file_type"])` 再按文件名数块），PG 里根本没有文档清单这张真相表；
+  `DELETE /documents/{filename}` 与 `/documents/delete/async/*` 同样要动 Milvus 与 `UPLOAD_DIR` 文件。
+  Go 要"接管"它们，只有两条路：①在 Go 里新建 Milvus 客户端并复刻这套聚合——那是把已验证实现换成未验证实现，
+  违反 `14 §19` 铁律 2「门面先于重写」与设计审查 §7；②先把文档/正文真相搬进 PG——那是 **M3/P2-1（G05）** 的范围，
+  不是 P1 的切片 | **已拍板（决策 D9，2026-10-18）**：`/documents` 系列在 P1 保持 `proxy`，Go 原生接管随 G05/P2-1 的 PG 真相层一起验收，P1 不新造 Go Milvus 客户端。D9 同时决定 **Python 会话读旧路由现在不删**——`nginx/nginx.conf` 的 `upstream backend` 是文档化的回退路径，删了这些路由会让回退对它们失效，且跨边缘逐字对拍失去对照面；会话**读**两面的退出时点改到 P1-4 之后，会话**删除**面是写面，退出仍归 P1-2。因此 P1-1/P1-2 的收口判据不含 documents 面、也不含旧路由删除；卡片标题、依赖与工时均未改，只登记口径。承载物：`tests/chain/test_go_read_session_detail.py`、`tests/chain/test_go_write_sessions.py`、`scripts/verify_storage.py --http`（2026-10-18 隔离栈两阶段 25 passed / 4 skipped + 58 passed） |
+| C38 | **曾是**：`X-Trace-Id` 只在代码里约定，契约里一次都没出现（`grep -c X-Trace-Id contracts/openapi.yaml` = 0），
   而 `server/internal/observability/trace.go` 从前写"该名字由 P0-4 写进 openapi.yaml 锁定"——**注释替实现撒了谎**。
-  两端现在确实各自实现：Go 的 `Trace` 中间件生成/沿用并写响应头，`upstream.go` 的 Director 把它带给 Python；
+  两端确实各自实现：Go 的 `Trace` 中间件生成/沿用并写响应头，`upstream.go` 的 Director 把它带给 Python；
   Python 的 `_trace_middleware` 读头绑进 contextvar 并回写响应头 | 已把该注释改成实话（不宣称已锁定）。
-  待办两条：①在 G01 设计审查批准后把请求头与响应头正式写进 `contracts/openapi.yaml`，让"锁定"成真；
+  ①**已闭合（2026-10-18）**：头名与接受集合正式写进契约，见下面 ③。
   ②**已复验并修掉（同日）**：真栈 `curl -D - :8080/metrics` 确实给出两行相同的 `X-Trace-Id`
   （中间件 Set + ReverseProxy 逐值 Add）。修法在 `upstream.go` 的 `ModifyResponse` 里
   **丢弃上游那份**（Go 边缘那份才是权威），并在 `TestUpstreamEmitsExactlyOneTraceHeader` 钉住
   "只有一个值"而不是"值相等"。修后实测四条路径各 1 个值，入站自带 id 也照常沿用。
   ⚠️ 第一版把 ModifyResponse 写成 `Set`，只把上游 2 值收成 1 值，**总数仍是 2**——被自己新加的单测当场抓住。
-  ③仍未决：**两端生成的 id 长度不同**（Go 16 位 hex，Python 直连时 `uuid4().hex` 32 位）。
-  经 Go 时值相同看不出来，但直连 Python 调试或内部调用方会拿到另一种形态。
-  统一成哪一种属契约级决定，随 G01 设计审查批准后与①一起写进 `openapi.yaml` |
+  ③**已闭合（2026-10-18）**：两端生成的 id 长度不同（Go 16 位 hex，Python 直连时 `uuid4().hex` 32 位），
+  设计审查 §6 第 1 项定的口径是**只统一接受集合、不统一生成长度**。现已写进契约：
+  `contracts/openapi.yaml` 的 `components.parameters.TraceId`（`^[A-Za-z0-9._-]{1,128}$`，1–128），
+  Go `observability.SanitizeTraceID`（`TraceIDRule`）与 Python `logging_config.sanitize_trace_id`
+  （`TRACE_ID_RULE`）按同一集合判定，非法或缺失即新生成且**不回显**；
+  三方字面量由 `scripts/check_contracts.py` 的 `check_trace_header` 核对，取值集合由
+  `tests/unit/test_trace_header.py`、`server/internal/observability/trace_test.go`、
+  `server/internal/httpapi/middleware_test.go` 钉住。仍待真栈复验：chain 层 `test_go_proxy.py` 的边缘单值。 |
 | C39 | `go-api` 在 dev 监听 **`0.0.0.0:8080`**（`config.Load` 的 `Addr` 默认 `:8080`），
   于是本机局域网可直连公开入口，而它带着 `/internal/*` 的反代前缀（`router.go` 的四个通配之一）。
   实测：`netstat` 显示 `0.0.0.0:8080` 与 `[::]:8080` 都在听。内部面本身无令牌一律 401，

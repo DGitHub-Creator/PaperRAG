@@ -77,8 +77,8 @@ Python 目标可写 ≤ 2）与 note 的存在性标识。当前过渡运行权�
 | 表 | 当前实际行为 | 实现依据 |
 | --- | --- | --- |
 | users | Go 与旧 Python 注册接口都能写；目标仅 Go，旧接口尚未删除 | server/internal/auth、backend/api/auth.py |
-| chat_sessions | Go 删除，Python 按轮 UPSERT；目标仅 Go，现有双写是待收编事实 | server/internal/session、backend/services/conversation_storage.py |
-| chat_messages | Python 在追加问答事务中写入；Go 删除会话触发级联 | backend/services/conversation_storage.py、000001 外键 |
+| chat_sessions | Go 读与删除，Python 按轮 UPSERT；目标仅 Go，现有双写是待收编事实。**读路径已于 P1-1 收口**（`GET /sessions` 与 `GET /sessions/{id}` 均由 Go 原生，Python 那条按 `route-ownership` 登记为对拍保留待删）；**写路径的退出时点尚未拍板**，它随问答链接管（P1-4/G04）一起定，不提前撤权 | server/internal/session、backend/services/conversation_storage.py |
+| chat_messages | Python 在追加问答事务中写入；Go 读（P1-1）并删除会话时触发级联；写权限同样待 P1-4 收编 | backend/services/conversation_storage.py、000001 外键 |
 | parent_chunks | Python 负责当前索引路径的写入与清理 | backend/rag/parent_chunk_store.py |
 | ai_executions | Python 已实际写入，不再是空表意图；Go 调度尚未完成 | backend/internal_api/postgres_executions.py |
 | user_preferences | Go SQL 查询负责更新 | server/sql/queries/user_preferences.sql |

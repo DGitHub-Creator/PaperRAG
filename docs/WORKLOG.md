@@ -221,3 +221,34 @@ P0 阶段此前日志已轮转至 [历史实录](archive/2026-10-15-p0-worklog.m
 - progress.json 同步“设计已批准、环境待核验”；正式任务状态、工时、阶段依赖不变。schedule 不擅自启动 W1，产品进度不增加。包含上一轮尚未提交的过期依据修正文档，一并交付。
 
 - 发布整合：远端新增 CI、JWT 测试隔离、C38 登记与反代追踪头去重提交，已保留；设计审查冲突合并保留已持久化、advisory lock 与双幂等轴事实。文档门禁复验通过，不宣称复验远端代码的运行行为。
+
+## 2026-10-18 · G02 首切片：会话详情 GET 的 Go 原生接管（代码完成，判据待跑）
+
+- 环境核验：T0 前置确认 `migrate-go` 全部落地、postgres/redis 容器 healthy、`:8000`/`:8080` 两侧健康检查 200；判据在同一条指令下统一跑完（见下文"已跑的部分"）。
+- 契约补齐：`contracts/openapi.yaml` 的 `RagTrace` 从 2 个 property 补到 39 字段并新增 `RetrievedChunk`/`SourceReference`/`CitationInfo`/`UnsupportedClaim`，required 仍只有 `tool_used`/`tool_name`；把"读取投影"四条口径（必需键不符→整条 null、未声明键丢弃、缺失可选键补 null、嵌套元素不合法连带整条）写进 description。同时删掉 `GET /api/v1/sessions/{session_id}` 的 **404 声明**——两侧真实行为都是 200 + `{"messages": []}`，契约在承诺一个没人实现的状态码。
+- 新增机检：`scripts/check_contracts.py` 的 `check_trace_projection` 做契约↔pydantic 模型↔Go 字段表的逐字段核对（名字、顺序、种类、必需性、嵌套指向）；`check_trace_header` 核对追踪头的头名与接受集合在三处字面量一致。配套负向单测：字段改名/删字段/种类错/嵌套指错/表写法变了/整块 schema 被删/常量被改名，每条都必须红。
+- Go 实现：`server/internal/session/trace.go` 按契约做 JSON 列的读取投影（按文档顺序解码、重复键取首位置末值、`isoFormat` 复用列表接口那一份）；`DetailHandler`+`Service.Detail`+sqlc 查询 `ListMessagesForUserSession`（`ORDER BY cm.id`，按 `cs.user_id`+`session_id` 过滤）；`server/cmd/api/main.go` 注册显式路由。`httpapi.WriteJSON` 关闭 HTML 转义并去掉结尾换行，对齐 Starlette 的 `ensure_ascii=False` + 紧凑分隔符——否则正文里一个 `&` 就两侧字节不同。
+- 实测纠正的三处取值集合分歧：pydantic 宽松模式下 `int` 字段收 `"10.0"`→10、收 `true`→1 而拒 `"1e2"`，`float` 字段收 `true`→1.0，`str | int` union 把 `"10.0"` 留在字符串分支。原 Go 投影在这三种形状上会把整条追踪变 null，而 Python 给出对象——已按实测集合改 `projectInt`/`projectFloat`/`projectBool`，并把这些形状钉进 Go 单测与 chain 用例。
+- C38 闭合：追踪头进契约（`components.parameters.TraceId`，`^[A-Za-z0-9._-]{1,128}$`），Go `SanitizeTraceID` 与 Python `sanitize_trace_id` 同一接受集合；非法或缺失即新生成且**不回显**，生成长度按 §6 保留 Go 16/Python 32 的差异。Python 侧用 `fullmatch` 而非 `match`（`$` 在 Python 里允许结尾换行前的位置，会多接受 `"abc\n"`）。
+- 判据自我纠错与补强：`tests/chain/test_go_proxy.py` 有两条用例原本以 `/api/v1/sessions*` 做"转发"探针，而这两条面本卡已搬 Go 原生——继续留着就是"测了一个不经过上游的转发用例"，且照样绿。已重锚到仍在 Python 的 `/api/v1/stats/usage`，用 403（认出用户、拒绝角色）与 401（头没送到）之差证明 Bearer 透传，并新增"就地提权后响应体原样透传"一条（403/401 证明不了 body 没被改写）。另证：全仓 Python 路由不读 query（`grep -rn 'Query(' backend/api/` 零命中），故 query 原样转发只在 Go 单测层用桩上游断言 `URL.Path`/`URL.RawQuery`，这点写进了文件 docstring 以免后人再拿真栈去证观测不到的东西。
+- 越权用例的补法：会话详情原先只有"不存在的会话回空数组"，那不是越权——`chat_sessions` 的唯一约束是 `(user_id, session_id)`，所以新增一条**同一个 session_id 挂在另一个用户名下**的用例（`twin_foreign_session`），断言响应里不含对方正文；过滤器一旦漏掉 `user_id` 就会红。追踪头的接受集合也补了 chain 层两侧用例（非法值不回显、128 边界值必须沿用；非 ASCII 值不在真栈测，HTTP 头值只能 latin-1，客户端先报错）。
+- 新登记 C40：卡标题里的 `/documents` 两条面不能在 P1 原生接管——`GET /api/v1/documents` 的清单真相是 Milvus 全集合扫描（`backend/api/documents.py:102-114` 的 `query_all` 再按文件名数块），PG 无对应表；删除面还叠加进程内 job 管理器与 `UPLOAD_DIR`。Go 接管只能新造 Milvus 客户端复刻聚合（违反 14 §19 铁律 2「门面先于重写」）或等 G05 真相层。旧文档那句"读文件系统 `UPLOAD_DIR` + `ingested_state.json` + Milvus 的 chunk 数"其实把 `/documents/ingest`（那个才读 ingested_state）和列表面混成了一件事，归属表现已按代码改正。⚠️ 收口口径需用户拍板，本轮不改卡片标题、依赖与工时。
+- 已跑的部分与其真实边界：本轮按"代码与用例全部写完 → 统一跑一轮"的顺序执行。环境=postgres/redis 容器 healthy、`migrate-go` 全部落地、`:8000` 与 `:8080` 两侧健康检查 200。结果：Go `gofmt`/`go vet`/`go test ./...` 九个包全绿；Python **unit 671 passed**、**integration 64 passed / 24 skipped**、**chain（相关面）46 passed / 18 skipped / 0 failed**；`check_contracts`、`check_route_ownership`、`check_design_review`、`check_nginx_routes`、`check_frontend`、`sync_progress --check`、`check_repository`、`audit_schema --check-baseline` 八条门禁全过；ruff 干净。
+- 三条 chain 红是**用例自身的前提错**，都不是被测实现的缺陷，已逐条改正后复跑：①JSON 字符串标量那组根本铺不进库（`CAST('不是对象' AS json)` 被 PG 拒），要存标量必须传带引号的 JSON 文档 `'"不是对象"'`；②`/api/v1/stats/usage` **自己就是请求计数面**，两次调用必然把 `count` 与 `last_accessed` 改掉，拿它比字节是在比测试数据；现改为该面比条目集合、字节级对拍换用 `/documents/upload/jobs`（两侧打同一进程，任务表不因读而变）；③删除响应对拍拿两个**不同的 session_id** 比整串字节，`session_id` 字段按定义就不同，现归一化后比字节、单独断言键序与文案。另修一处夹具接口不一致（契约篡改器一个按元组、两个按 callable，导致 TypeError 而非规则红）。
+- 契约新增的追踪头说明里点了源码路径 `server/internal/...`，被既有守卫 `test_internal_surface_stays_out_of_the_public_contract`（要求 `/internal/` 字面量不得出现在公开契约里）如实判红。**守卫是对的，改我的措辞**，已改成不含该字面量的表述并复跑通过。
+- 内部执行面（`tests/chain/test_ai_executions.py`，10 error + 1 fail）本机**跑不了且与本次改动无关**：`.env` 里没有 `AICORE_INTERNAL_TOKEN` 这个键（实测读出的长度为 0），服务端按设计对所有内部面一律拒绝。10 个 error 是夹具 `pytest.fail` 要求注入令牌；那 1 个 fail 同因——它断言 `detail == "内部令牌无效"`，而未配置时服务端给的是另一句"AICORE_INTERNAL_TOKEN 未配置，内部执行面拒绝服务"，两个 401 原因本来就不同。该组的实现另有 `tests/unit/test_ai_executions_store.py` 与 `tests/unit/test_internal_error_codes.py` 在本轮 671 项里覆盖。要跑这组需要给本机 `.env` 补一个令牌并让服务端与测试进程取到同一个值，属环境配置，不在本轮改动面内。
+- **两条收口动作等用户拍板，未擅自执行**：①退出 Python 旧路径（`nginx/nginx.conf` 里 `upstream backend` 是**文档化的回退路径**，删掉 Python 的会话读面会让那条回退失效）；②C40 的 `/documents` 接管口径。详见 `contracts/route-ownership.md` 与台账 C40。
+- 归属与现状：`contracts/route-ownership.md` 里 `GET /api/v1/sessions/{session_id}` 由 `proxy` 改 `go` 并登记对拍用例名（该行现在是"Go 已原生 + Python 对拍保留待删"），`GET /api/v1/documents` 的说明按代码改正并指向 C40；`contracts/p1-design-review.md` §0 的会话详情现状行同步为已接管。契约的 `RagTrace` 声明、追踪头参数与路径占位名（`{sessionId}`/`{jobId}`→snake_case，只改契约符号不新增 URL）一并落进 `openapi.yaml`。
+- 状态口径：P1-1 仍 `in_progress`（越权/并发真栈验收、Python 旧路径退出未做），P1-0 保持 done 但其 chain 用例本轮被重锚，需在统一测试时复跑确认；完成度、工时、阶段依赖与退出标准一律未改。
+- 同批把 G02 的**判据承载物补齐**（都属"命令能跑而被测的东西没被测"这一类，与 C31/C22 同型）：
+  ① P1-2 的 `verify` 是 `pytest -m chain -k go_write`，而该选择器**收集 0 项**——这张卡从来没有证据。新增
+  `tests/chain/test_go_write_sessions.py` 七条：删除 200 响应体逐字对拍、Go 删除后 Python 读路径立刻空、
+  越权删除两侧同一份 404 且他人行不动、**同号不同用户**只删请求者那一行、并发删除恰好一个赢家
+  （钉"按受影响行数判成败"而不是先查再删）、并发注册撞 `users.username` 约束恒为一行、注册与登录跨边缘同形。
+  ② `scripts/verify_storage.py --http`（G02 的验收命令）原先只跑两个 chain 文件，会话详情与写面都不在集合里，
+  已把 `test_go_read_session_detail.py`、`test_go_write_sessions.py`、`test_go_proxy.py` 一并纳入隔离栈。
+  ③ `contracts/route-ownership.md` 里 `/auth/register` 那行原登记为"**未**对拍保留（C36）"，现在有跨边缘用例了
+  才升级成"对拍保留"并指向它——顺序反了就是用一个不存在的证据占住一条遗留。
+  ④ `contracts/table-acl.md` 的会话两行按代码改正：读路径已随 P1-1 收口，**写路径退出时点仍未拍板**
+  （随 P1-4/G04 问答链接管一起定），所以运行角色一条权限都不撤——按目标提前撤权是设计审查 §5 明令禁止的。
+- 这七条与前面的对拍用例**都已执行**：dev 栈 `-k go_read` 24 passed、`-k go_write` 5 passed / 2 skipped（skip 的两条要隔离 Redis 前缀）、`-k proxy` 8 passed / 2 skipped；`verify_storage.py --http` 隔离栈两阶段 25 passed / 4 skipped 与 **58 passed / 0 skipped**，即全部写面用例在隔离栈真跑过。P1-1 与 P1-2 的 `evidence` 转 `real`，但**都不标 done**：两张卡标题里的 `/documents` 系列已被 D9 移到 G05，标题不动就标 done 等于用标题失真换绿灯；旧写路由（auth 三条 + 会话删除）的退出也还没做，且未被 D9 覆盖，需要同样的时点决定。

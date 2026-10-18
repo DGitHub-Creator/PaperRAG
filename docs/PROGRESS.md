@@ -1,17 +1,17 @@
 # 进度报告
 
 > 本文件由 `scripts/sync_progress.py` 从 [`progress.json`](progress.json) 生成，**请勿手改**。
-> 数据截止 2026-10-17 · 基线 `106f17dd` · 投入 15-20 小时/周
+> 数据截止 2026-10-18 · 基线 `106f17dd` · 投入 15-20 小时/周
 
 ## 一句话现状
 
 - **完成了多少**：31%（按工时加权；124/394 小时，任务完成 15/40，验收 8/25 通过）
-- **现在在哪**：2026-10-17 用户授权按推荐方案完成 P1 五维设计确认，contracts/p1-design-review.md 已 approved。设计门禁已解除，但本轮仅文档交接，未核验执行环境，不自动宣称 T0 已到或功能已开工。
+- **现在在哪**：2026-10-18 G02 的会话历史读取接管已跑完真栈判据：`GET /api/v1/sessions/{session_id}` 由 Go 原生读取（RagTrace 全量声明进 openapi.yaml，投影面三方核对），`-k go_read` 24 passed、`-k go_write` 在 dev 栈 5 passed / 2 skipped、`verify_storage.py --http` 隔离栈 58 passed / 0 skipped；unit 671、integration 64、八条门禁全过。P1-1/P1-2 的 evidence 转 real，但**都不标 done**：两张卡标题里的 /documents 系列由决定 D9 移到 G05，标题不改就标 done 等于用标题失真换绿灯。
 
-下一 agent 先读全局计划及审查 §8，核验环境/迁移/隔离验收条件，再按正式依赖更新任务与 schedule。G02 首个候选为会话详情 GET 的 Go 原生接管；C33/C34/C35 已修复，不重复安排。
+两条已拍板（D9）：①Python 会话读旧路由现在不删，退出时点改到 P1-4 之后，以保住 `nginx.conf` 里 `upstream backend` 那条文档化回退路径与跨边缘逐字对拍的对照面；②/documents 在 P1 保持 proxy，其 Go 接管随 G05/P2-1 的 PG 真相层一起验收。仍待拍：auth 三条写面与会话删除面的旧路由退出时点（同一条回退理由，但 D9 没覆盖它们）。
 
-日程唯一来源仍为 schedule；P1/P2/P3 任务、工时与阶段依赖不变，产品进度不因设计批准增加。
-- **还差多少**：待办 24 项 / 260 小时（约 13.0-17.3 周），进行中 1 项；可立即开工：无
+日程唯一来源仍为 schedule；任务、工时与阶段依赖不变，完成度不因本轮接管提高。
+- **还差多少**：待办 23 项 / 250 小时（约 12.5-16.7 周），进行中 2 项；可立即开工：无
 
 ## 阶段进度
 
@@ -79,9 +79,11 @@
 
 | # | 任务 | 状态 | 证据 | 工时 | 依赖 | 验收命令 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P1-0 | Go 反向代理（阶段 1）：透传 Python + 鉴权 + trace_id 注入 | 完成 | 真实链路（要求 real） | 6h | P0-9 | `uv run pytest -m chain -k proxy` | Go 门面：透传 + 鉴权头 + trace 注入。判据 `-k proxy` 原本只命中两条限流用例（名字带 proxy 是因为伪造 X-Forwarded-For），代理本身一条没测——已由 tests/chain/test_go_proxy.py 补 6 条：路径与 query 原样、Bearer 透传后两侧逐字同 JSON、未鉴权信封一致、trace 单值且入站沿用、通配不遮蔽 Go 原生面、未接管面不提前 404。⚠️ 该选择器另有 2 条限流用例需 `verify_storage.py --http` 的隔离栈才跑（本轮 skip，按设计）。 |
-| P1-1 | Go 接管读接口：/auth/me /sessions /sessions/{id} /documents | 进行中 | 未验证（要求 real） | 10h | P1-0 | `uv run pytest -m chain -k go_read` | 保持无分页全量列表形状 |
-| P1-2 | Go 接管写接口：/auth/register /login /sessions DELETE /documents/delete/* | 待办 | 未验证（要求 real） | 10h | P1-1 | `uv run pytest -m chain -k go_write` | 单写者原则：切换窗口内该接口只允许单边写 |
+| P1-0 | Go 反向代理（阶段 1）：透传 Python + 鉴权 + trace_id 注入 | 完成 | 真实链路（要求 real） | 6h | P0-9 | `uv run pytest -m chain -k proxy` | Go 门面：透传 + 鉴权头 + trace 注入。判据 `-k proxy` 原本只命中两条限流用例（名字带 proxy 是因为伪造 X-Forwarded-For），代理本身一条没测——已由 tests/chain/test_go_proxy.py 补 8 条：Bearer 透传（403 而非 401 才证明头到达上游）、未鉴权信封逐字一致、提权后响应体原样透传、trace 单值且合法入站沿用、非法入站两侧都不回显、通配不遮蔽 Go 原生面、未接管面不提前 404。⚠️ 该选择器另有 2 条限流用例需 `verify_storage.py --http` 的隔离栈才跑（本轮 skip，按设计）。
+2026-10-18 两点更正：①其中两条以 `/api/v1/sessions*` 为探针的用例随 P1-1 接管失效（会话面已归 Go，拿它测转发等于测了个没经过上游的用例），已重锚到仍在 Python 的 `/api/v1/stats/usage`——用 403/401 之差证明 Bearer 确实到达上游；②C38 的追踪头接受集合已进契约并由双端实现（`^[A-Za-z0-9._-]{1,128}$`，非法或缺失即新生成、不回显），三方字面量由 check_contracts.py 核对。query 透传只在 Go 单测层证明：全仓 Python 路由不读 query（`grep -rn 'Query(' backend/api/` 零命中），真栈无从观测。 |
+| P1-1 | Go 接管读接口：/auth/me /sessions /sessions/{id} /documents | 进行中 | 真实链路（要求 real） | 10h | P1-0 | `uv run pytest -m chain -k go_read` | 保持无分页全量列表形状。已接管三条读面：/auth/me（P0-6 早于本卡）、/sessions 列表（tests/chain/test_go_read_sessions.py）、/sessions/{session_id} 详情（G02 首切片，tests/chain/test_go_read_session_detail.py 逐字节对拍 + 同 session_id 跨用户不泄漏 + server/cmd/api/main_test.go 钉住'已接管的路由一次都不碰上游'）。详情这条的关键不在读表，而在 rag_trace 的读取投影：字段权威声明已进 openapi.yaml，由 check_contracts.py 三方核对，Go 侧投影在 server/internal/session/trace.go。⚠️ 卡标题里的 `/documents` 不属本卡收口范围（台账 C40）：GET /api/v1/documents 的真相是 Milvus 全集合扫描（backend/api/documents.py:102-114），PG 没有对应表；Go 原生接管要么新造 Go Milvus 客户端复刻聚合（违反 14 §19 铁律 2「门面先于重写」），要么等 PG 正文真相层（G05/P2-1）。本卡不以空实现冒充迁移。未做：真栈逐字对拍与越权用例的**首次运行**、Python 旧路径退出。并发验收的承载物不在本卡选择器里，而是落在 `tests/chain/test_go_write_sessions.py` 的并发删除/并发注册两条（`-k go_write`，属 P1-2），此处显式指向它，免得这条欠账随选择器换卡而丢失。
+真栈证据（2026-10-18）：`-k go_read` 24 passed；`verify_storage.py --http` 隔离栈两阶段 25 passed / 4 skipped 与 58 passed / 0 skipped；两侧 unit 671、integration 64、八条门禁全过。状态仍 in_progress：卡标题里的 `/documents` 已被 D9 移到 G05，标题不改就无法对本卡标题兑现「完成」，标 done 会变成用标题失真换绿灯。 |
+| P1-2 | Go 接管写接口：/auth/register /login /sessions DELETE /documents/delete/* | 进行中 | 真实链路（要求 real） | 10h | P1-1 | `uv run pytest -m chain -k go_write` | 单写者原则：切换窗口内该接口只允许单边写。判据补实（2026-10-18）：`-k go_write` 原本**收集 0 项**——这张卡的验收从来没有承载物，与 C31/C22 同属「命令能跑、被测的东西没被测」。新增 tests/chain/test_go_write_sessions.py 七条：删除 200 响应体逐字对拍、Go 删除后 Python 读路径立刻空、越权删除两侧同一份 404 且他人行不动、同号 session_id 只删请求者那一行、并发删除恰好一个赢家（钉的是按受影响行数判成败，不是先查再删）、并发注册撞 users.username 约束恒为一行、注册与登录跨边缘同形。真栈证据：dev 栈 `-k go_write` 5 passed / 2 skipped（那两条要隔离 Redis 前缀才跑），`verify_storage.py --http` 隔离栈 58 passed / 0 skipped，七条全部落地执行。状态转 in_progress 但不标 done：卡标题含 /documents/delete/*，已被 D9 移到 G05，标题不改就等于用失真换绿灯；旧写路由退出（auth 与 sessions DELETE）也仍未执行，未被 D9 覆盖，需同样拍时点。 |
 | P1-3 | 上传编排移到 Go（任务状态持久化 PG，取代 upload_jobs 进程内存态） | 待办 | 未验证（要求 real） | 14h | P1-2、P0-7 | `uv run pytest -m chain -k upload_orchestration` |  |
 | P1-4 | 流式接管：/chat/stream SSE + /ws/chat WS 的 Go 门面 | 待办 | 未验证（要求 real） | 14h | P1-3、P0-7 | `uv run pytest -m chain -k sse_shape` | X-Accel-Buffering 语义与 rag_trace 两种形状必须逐字节对齐 |
 | P1-5 | 前端基址切换与 nginx 收口：移除 app.py 静态挂载，业务 API 退出 Python | 待办 | 未验证（要求 e2e） | 6h | P1-4 | `cd frontend && npm run test:e2e` |  |
@@ -156,7 +158,7 @@
 | 周 | 日期 | 目标 | 阶段 | 状态 |
 | --- | --- | --- | --- | --- |
 | T0前 | 设计已批准；环境就绪待本轮执行核验 | G01：五维设计已按用户授权批准；待执行 agent 核验环境就绪后确认 T0 | 设计准备；M17 | 已完成（设计 approved + 环境核验：version 5 clean、PG/Redis healthy） |
-| W1–W7 | 相对 T0 第 1–7 周预留窗口 | G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段 | P1；M1/M6/M8/M17/M19 | 进行中 |
+| W1–W7 | 相对 T0 第 1–7 周预留窗口 | G02→G03→G04：Go 接管、上传任务、问答/引用窄链路与真实 E2E；验收后进入下一阶段 | P1；M1/M6/M8/M17/M19 | 进行中（G02 首切片已落地：会话详情 GET 由 Go 原生读取并通过逐字对拍；G02 余下面与 G03 起仍未开始） |
 | W8–W17 | P1 收口后；相对窗口随实际完成顺延 | G05/G07→G06、G08、G09：PG 正文、学术结构/定位、事件/用量、导入/书架与科研回归 | P2；M1–M9/M17/M18/M23 | planned |
 | W18–W24 | P2 收口后；相对窗口随实际完成顺延 | G10→G11：Run/Frontier/worker、固定研究闭环、恢复与 PARTIAL 报告；不提前做双图 | P3；M8/M13/M15/M17 | planned |
 | W25+基础扩展 | P3 收口并完成各包设计后滚动重估 | G12/G13/G14/G18/G20：项目精读、比较/书目版本、双图证据、首个受控工具与模型治理 | 后续规划；M2/M5/M7/M8/M10/M16/M18/M19/M20/M23 | planned |
